@@ -1,0 +1,10 @@
+# Подключение к текущему аккаунту. На другом компьютере добавьте в личный ~/.ssh/config.
+# Закрытый ключ и проверенный known_hosts остаются вне репозитория.
+Host timeweb-sandbox
+  HostName vh460.timeweb.ru
+  User cj999935
+  IdentityFile ~/.ssh/sandbox_timeweb_ed25519
+  IdentitiesOnly yes
+  BatchMode yes
+  StrictHostKeyChecking yes
+  ConnectTimeout 10

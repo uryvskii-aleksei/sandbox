@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Claude API'
+  short_description: 'Интеграции Claude API с учётом приложения и хостинга'
+  default_prompt: 'Используй $claude-api для реализации и проверки интеграции Claude в выбранном приложении Sandbox.'

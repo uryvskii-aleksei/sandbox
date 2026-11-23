@@ -1,0 +1,25 @@
+<header [class.closed]="!visibility">
+	<div class="container">
+		<div class="row">
+			<logo></logo>
+			<div class="search">
+				<div class="search__group">
+					<input class="search__input"
+						   type="text" 
+						   placeholder="Поиск..."  />
+					<button class="search__button">Найти</button>
+				</div>
+			</div>
+			<div class="account" (click)="login()" *ngIf="!userService.isAuth()">
+				<i class="fa fa-user account__icon" 
+				   aria-hidden="true"></i>
+				<span class="account__title">Войти</span>
+			</div>
+			<div class="profile" (click)="profile()" *ngIf="userService.isAuth()">
+				<i class="fa fa-cogs profile__icon" 
+				   aria-hidden="true"></i>
+				<span class="profile__title">Профиль</span>
+			</div>
+		</div>
+	</div>
+</header>

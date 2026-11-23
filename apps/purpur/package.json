@@ -1,0 +1,11 @@
+{
+  "name": "@sandbox/purpur",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "node ../../scripts/build-sites.mjs purpur",
+    "check": "node ../../scripts/build-sites.mjs --check purpur",
+    "dev": "node ../../scripts/preview-sites.mjs",
+    "test": "node --test tests/*.cjs"
+  }
+}

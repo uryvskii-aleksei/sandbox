@@ -1,0 +1,69 @@
+<div class="container"
+	 *ngIf="!project">
+	<span class="selectProject">Выберите проект из списка слева</span>
+</div>
+<div class="container"
+	 *ngIf="project">
+	<div class="name">
+		<input class="name__input"
+			   type="text"
+			   placeholder="Введите название проекта"
+			   [(ngModel)]="project.name" />
+	</div>
+	<div class="createData"
+		 [class.collapsed]="data && data.length"
+		 [tooltip]="'Создать новый объект'">
+		<i class="fa fa-plus createData__icon" 
+		   aria-hidden="true"
+		   (click)="createData()"></i>
+	</div>	
+	<div class="dataList">
+		<div class="container"
+			 [class.visible]="data.length"
+			 [class.fullScreen]="lockScale"
+			 (wheel)="wheel($event)"
+			 (mousedown)="startDragCanvas(item)"
+			 *ngIf="data">
+			<div class="canvas"
+				 [style.transform]="scaleStyle">
+				<data-detail 
+					*ngFor="let item of data; let i=index"
+					[dataList]="data"
+					[dataItem]="item"
+					[style.left.px]="item.coordinates.x || defaultX"
+					[style.top.px]="item.coordinates.y || defaultY"
+					[class.fullScreen]="item.fullScreen"
+					[class.grabbing]="dragging"
+					[class.linking]="item.linking"
+					(mousedown)="dragData(item)"
+					(mouseover)="linkData(item)">
+				</data-detail>
+				<svg class="connection"
+					 height="100%" 
+					 width="100%"
+					 *ngIf="data">
+					<ng-template ngFor 
+								 let-item 
+								 [ngForOf]="data">
+						<svg:g *ngIf="item.parent && findParent(item.parent)"
+							   class="connection__item">
+							<svg:line class="connection__line"
+									  [attr.x1]="item.coordinates.x + 50"
+									  [attr.y1]="item.coordinates.y + 50"
+									  [attr.x2]="findParent(item.parent).coordinates.x + 50"
+									  [attr.y2]="findParent(item.parent).coordinates.y + 50" />
+						</svg:g>
+					</ng-template>
+				</svg>
+			</div>
+		</div>
+		<range class="vertical"
+				  [value]="scaleOrigin"
+				  [min]="0"
+				  [max]="2"
+				  [step]="0.01"
+				  (scale)="handleScale($event)"></range>
+	</div>	
+</div>
+
+<loader *ngIf="loading"></loader>

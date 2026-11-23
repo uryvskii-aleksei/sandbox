@@ -1,0 +1,98 @@
+<div class="data__controls">
+	<div class="breakConnection icon"
+		 (click)="deleteParent()">
+		<i class="fa fa-chain-broken breakConnection_icon" 
+		   aria-hidden="true"></i>	 				
+	</div>
+	<div class="deleteData icon"
+		 (click)="delete(dataItem)">
+		<i class="fa fa-trash-o deleteData_icon" 
+		   aria-hidden="true"></i>	
+	</div>
+	<div class="addChild icon"
+		 (click)="createChild()">
+		<i class="fa fa-plus addChild_icon" 
+		   aria-hidden="true"></i>	
+	</div>
+	<div class="selectParent icon"
+		 (click)="showParentList = !showParentList">
+		<i class="fa fa-code-fork selectParent_icon" 
+		   aria-hidden="true"></i>	
+	</div>
+	<div class="parentList"
+		 [class.visible]="showParentList">
+		<span>Выбор родителя</span>
+		<select [(ngModel)]="dataItem.parent"
+				(change)="showParentList = !showParentList">
+			<option value="">Не выбран</option>
+			<ng-template ngFor 
+						 let-item 
+						 [ngForOf]="dataList">
+				<option *ngIf="item !== dataItem" [value]="item.id">{{item.name}}</option>
+			</ng-template>
+		</select>
+	</div>	
+</div>
+<div class="backdrop"
+	 (mousedown)="watchOpen($event)"
+	 (mouseup)="resolveOpen($event)">
+	<div class="backdrop__name">{{dataItem.name}}</div>
+</div>
+<div class="content">
+	<div class="content__approve"
+		 (click)="approve()">
+		<i class="fa fa-check content__approve_icon" 
+			   aria-hidden="true"></i>	 	
+	</div>
+	<div class="content__declane"
+		 (click)="declane()">
+		<i class="fa fa-times content__declane_icon" 
+			   aria-hidden="true"></i>	 	
+	</div>
+	<div class="content__name">
+		<input class="content__name_input"
+			   type="text"
+			   placeholder="Введите название объекта"
+			   [(ngModel)]="dataItem.name" />
+	</div>
+	<div class="data"
+		 *ngIf="dataItem.content.length">
+		<ng-template ngFor 
+					 let-group 
+					 [ngForOf]="dataItem.content | orderBy: 'order'">
+			<data-group [group]="group" 
+						[data]="dataItem">
+			</data-group>
+		</ng-template>
+	</div>
+	<div class="content__controls">
+		<div class="content__controls_delete"
+			 (click)="delete(dataItem)">
+			<i class="fa fa-trash-o content__controls_delete_icon" 
+		   	   aria-hidden="true"></i>
+		</div>	
+		<div class="content__controls_create"
+			 (click)="addGroup(dataItem)">
+			<i class="fa fa-plus content__controls_create_icon" 
+		   	   aria-hidden="true"></i>
+		</div>
+		<div class="content__controls_parent"
+			 (click)="showParentList = !showParentList">
+			<i class="fa fa-code-fork content__controls_parent_icon" 
+		   	   aria-hidden="true"></i>
+		</div>		
+		<div class="content__controls_parent_list"
+			 [class.visible]="showParentList">
+			<span>Выбор родителя</span>
+			<select [(ngModel)]="dataItem.Parent"
+					(change)="showParentList = !showParentList">
+				<option value="">Не выбран</option>
+				<ng-template ngFor 
+							 let-item 
+							 [ngForOf]="dataList">
+					<option *ngIf="item !== dataItem" [value]="item.id">{{item.name}}</option>
+				</ng-template>
+			</select>
+		</div>
+	</div>
+</div>

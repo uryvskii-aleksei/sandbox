@@ -1,0 +1,33 @@
+{
+  "name": "sandbox",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Личный монорепозиторий приложений и агентской обвязки",
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "apps/*",
+    "apps/mind-assistant/frontend",
+    "packages/*"
+  ],
+  "scripts": {
+    "check": "npm run check:harness && npm run check:sites && npm run check --workspace=@sandbox/mind-assistant && npm test && npm run test:sites && npm run format:check",
+    "check:sites": "node scripts/build-sites.mjs --check",
+    "build:sites": "node scripts/build-sites.mjs",
+    "dev:sites": "node scripts/preview-sites.mjs",
+    "dev:mind-assistant": "npm run dev --workspace=@sandbox/mind-assistant",
+    "build:mind-assistant": "npm run build --workspace=@sandbox/mind-assistant",
+    "test:mind-assistant": "npm run test --workspace=@sandbox/mind-assistant",
+    "check:harness": "node scripts/check-harness.mjs",
+    "test": "node --test scripts/*.test.mjs .agents/hooks/scripts/*.test.cjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "doctor": "node scripts/doctor.mjs",
+    "timeweb": "node scripts/timeweb.mjs",
+    "test:sites": "npm test --workspace=@sandbox/purpur && npm test --workspace=@sandbox/stonehaus"
+  },
+  "devDependencies": {
+    "prettier": "3.10.1"
+  }
+}

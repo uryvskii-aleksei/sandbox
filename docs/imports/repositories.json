@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "repositories": [
+    {
+      "repository": "AlekseiU/Frontend",
+      "commit": "9ad16f70d0c1cf3efe59397cded73accf67da75a",
+      "defaultBranch": "master",
+      "path": "apps/mind-assistant/legacy/frontend",
+      "fileCount": 151,
+      "historyMirror": ".imports/git/alekseiu/frontend.git"
+    },
+    {
+      "repository": "AlekseiU/Backend",
+      "commit": "291ae996f48e850c3b9451c66afac483f33226fa",
+      "defaultBranch": "master",
+      "path": "apps/mind-assistant/legacy/backend",
+      "fileCount": 36,
+      "historyMirror": ".imports/git/alekseiu/backend.git",
+      "dataBackup": ".imports/private/mind-assistant/legacy-postgresql.dump",
+      "dataRows": {
+        "projects": 0,
+        "data": 0,
+        "field_groups": 0,
+        "fields": 0
+      }
+    },
+    {
+      "repository": "uryvskii-aleksei/purpur",
+      "commit": "675cf9a95853c494590526959200035ccc02bb94",
+      "defaultBranch": "main",
+      "status": "imported",
+      "historyMirror": ".imports/git/purpur.git",
+      "path": "apps/purpur",
+      "archiveRefPrefix": "archive/purpur/",
+      "githubMetadata": "docs/imports/purpur-github.json",
+      "localChanges": "apps/stonehaus/site/v2",
+      "localSnapshotCommit": "8be897dbb58c0a5a13a907dd4d55d279ea0a2c5e"
+    }
+  ],
+  "excluded": ["AlekseiU/sandbox"]
+}

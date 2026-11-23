@@ -1,0 +1,71 @@
+@import "../../../assets/stylus/export.styl"
+
+:host
+	z-index: 100;
+	header
+		box-shadow(shadow.normal);
+		background-color: color.blue.normal;
+		border-bottom: border.white.solid;
+		color: color.white;
+		width: 100%;
+		&:hover
+			& .profile
+			& .account
+				padding: 12px 20px;
+				&__icon
+					font-size: font.menu;
+				&__title
+					margin: 8px 0 0;
+	& .container
+		display: block;
+	& .row
+		overflow-y: hidden;
+		flex-direction: row;
+		padding: 0;
+	& .search
+		display: flex;
+		align-items: center;
+		flex: 1 1 100%;
+		padding: 5px 5%;
+		&__group
+			box-shadow(shadow.normal);
+			display: flex;
+			width: 100%;
+		&__input
+			border: 0;
+			padding: 10px;
+			color: color.gray;
+			font-size: font.small;
+			border-radius: 4px 0 0 4px;
+			width: 100%;
+		&__button
+			@extend .button-blue;
+			border-radius: 0 4px 4px 0;
+			font-size: font.small;
+	& .profile
+	& .account
+		box-shadow(shadow.normal);
+		transition(transitions.normal);
+		text-align: center;
+		padding: 0 20px;
+		cursor: pointer;
+		user-select: none;
+		background-color: color.blue.normal;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		&:hover
+			background-color: color.blue.hover;
+			z-index: 1;
+		&:active
+			background-color: color.blue.active;
+		&__icon
+			transition(font-size 0.3s ease);
+			font-size: 0px;
+		&__title
+			transition(margin 0.3s ease);
+			display: block;
+			font-size: font.normal;
+			margin: 0;
+			font-weight: 100;

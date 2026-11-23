@@ -1,0 +1,4 @@
+# Optional personal configuration. Do not add tokens to this file.
+[mcp_servers.github]
+url = "https://api.githubcopilot.com/mcp/"
+bearer_token_env_var = "GITHUB_PERSONAL_ACCESS_TOKEN"

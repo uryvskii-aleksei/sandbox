@@ -1,0 +1,398 @@
+// Рефакторить!
+
+:host
+    font-size: 0;
+    flex: 1;
+    position: relative;
+    display: flex;
+    width: 90%;
+    margin: 50px auto;
+    flex-wrap: wrap;
+    & .title 
+        background-color: #1f408a;
+        border: 1px solid #1f408a;
+        position: absolute;
+        width: calc(100% - 2px);
+        overflow: hidden;
+        height: 32px;
+        margin-top: -33px;
+        z-index: 2;
+        border-bottom: 1px solid #fff;
+        border-radius: 4px 4px 0 0; 
+        place-self: baseline;
+        &__input
+            width: 100%;
+            border: 0 !important;
+            height: 100%;
+            margin: 0 !important;
+            padding: 0 !important;
+            text-align: center;
+            font-size: 14px !important;
+            background-color: transparent;
+            color: #fff;
+            font-weight: 300 !important;
+            &::placeholder
+                opacity: 1;
+                color: #fff;
+    & .textarea
+        flex: 1 0 100%;
+        position: relative;
+        & textarea
+            width: calc(100% - 56px);
+            border: 1px solid #1f408a;
+            border-top: 0;
+            border-left: 0;
+            padding: 15px 15px 15px 40px;
+            font-family: Roboto;
+            font-size: 14px;
+            font-weight: 300;
+            color: #333;
+            border-radius: 0 0 4px 0;
+            outline: none;
+            min-height: 80px;
+            resize: vertical;
+        &__delete     
+            width: 21px;
+            height: 26px;
+            cursor: pointer;
+            position: absolute;
+            top: 1px;
+            background: #bd001c;
+            transition: background 0.3s ease;
+            right: 1px;
+            border-radius: 0 0 0 4px;    
+            display: none;
+            justify-content: center;
+            align-items: center;
+            &:hover
+                background-color: #d71733;
+            &:active
+                background-color: #b20821;
+            &_icon
+                color: #fff;
+                font-size: 14px;
+        &__create
+            background-color: #1f408a;
+            width: 100%;
+            padding: 2px 0;
+            border-radius: 0 0 4px 4px;
+            &_icon
+                cursor: pointer;
+                background-color: #1f408a;
+                box-shadow: 0px 0px 15px #000;
+                border: 1px solid #fff;
+                color: #fff;
+                border-radius: 50%;
+                width: 19px;
+                height: 19px;
+                text-align: center;
+                line-height: 20px;
+                font-size: 14px;
+                transition: all 0.3s ease;
+                margin: 0 auto;
+                display: block;
+                &:hover
+                    background-color: #3458a7;
+                &:active
+                    background-color: #15306b;
+        &:hover
+            & .textarea__delete 
+                display: flex;
+    &.image 
+        border: 1px solid #1f408a;
+        border-left: 0;
+        border-radius: 4px;
+        position: relative;
+        & img 
+            width: calc(100% - 25px);
+            height: 100%;
+            border-radius: 4px;
+        &__change
+            position: absolute;
+            right: 7px;
+            top: 7px;
+            font-size: 30px;
+            background-color: #1f408a;
+            box-shadow: 0px 0px 15px #000;
+            border: 1px solid #fff;
+            color: #fff;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            text-align: center;
+            line-height: 60px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            &:hover
+                background-color: #3458a7;
+            &:active
+                background-color: #15306b;
+    &.date 
+        align-items: center;
+        border: 1px solid #1f408a;
+        border-left: 0;
+        border-radius: 4px;
+        & .wrapper
+            display: flex;
+            padding: 10px 0 25px 45px;
+            flex-wrap: wrap;
+            justify-content: flex-start;
+        & .date
+            position: relative;
+            margin: 0 15px 10px 0;
+            &__delete 
+                padding: 4px 4px;
+                cursor: pointer;
+                position: absolute;
+                top: 1px;
+                background: #bd001c;
+                transition: background 0.3s ease;
+                left: 1px;
+                height: 35px;
+                display: flex;
+                align-items: center; 
+                display: none;   
+                &_icon
+                    color: #fff;
+                    font-size: 16px;
+            &:hover
+                & .date__delete
+                    display: flex;
+        & input 
+            border: 1px solid #1f408a;
+            border-radius: 4px;
+            display: block;
+            padding: 8px 10px 8px 20px;
+            text-align: center;
+            font-family: Roboto;
+            font-size: 18px;
+            font-weight: 100;
+        & .create
+            background-color: #1f408a;
+            width: 100%;
+            padding: 2px 0;
+            border-radius: 0 0 4px 0;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            &_icon 
+                cursor: pointer;
+                background-color: #1f408a;
+                box-shadow: 0px 0px 15px #000;
+                border: 1px solid #fff;
+                color: #fff;
+                border-radius: 50%;
+                width: 19px;
+                height: 19px;
+                text-align: center;
+                line-height: 20px;
+                font-size: 14px;
+                transition: all 0.3s ease;
+                margin: 0 auto;
+                display: block;
+                &:hover
+                    background-color: #3458a7;
+                &:active
+                    background-color: #15306b;
+    &.url 
+        flex-wrap: wrap;
+        position: relative;
+        border-radius: 4px;
+        & .url__screenshot
+            flex: 1 0 99%;
+            border: 1px solid #1f408a;
+            border-top: 0;
+            border-radius: 0 0 4px 4px;
+            & .info
+                display: flex;
+                font-size: 14px;
+                padding: 10px 30px;
+                &__image
+                    max-width: 100px;
+                    max-height: 100px;
+                    min-width: 100px;
+                    min-height: 100px;
+                    & img 
+                        width: 100%;
+                        height: 100%;
+                &__col
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                    padding: 0 0 0 50px;
+                &__title
+                    font-size: 21px;
+                &__description
+                    font-style: italic;
+                &__link
+                    font-size: 12px;
+        & input 
+            border: 1px solid #1f408a;
+            border-radius: 0;
+            display: block;
+            padding: 8px 10px;
+            text-align: center;
+            font-family: Roboto;
+            font-size: 14px;
+            font-weight: 300;
+            width: calc(100% - 25px);
+            flex: 1 0 94%;
+            border-left: 0;
+        & .controls
+            position: absolute;
+            top: 0;
+            height: 100%;
+    &.video
+        border: 1px solid #1f408a;
+        border-left: 0;
+        border-radius: 4px;
+        overflow: hidden;
+        position: relative;
+        & video
+            width: 100%;
+        &__change
+            position: absolute;
+            right: 7px;
+            top: 7px;
+            font-size: 30px;
+            background-color: #1f408a;
+            box-shadow: 0px 0px 15px #000;
+            border: 1px solid #fff;
+            color: #fff;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            text-align: center;
+            line-height: 60px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            &:hover
+                background-color: #3458a7;
+            &:active
+                background-color: #15306b;
+    &.audio
+        border: 1px solid #1f408a;
+        border-left: 0;
+        border-radius: 4px;
+        overflow: hidden;
+        position: relative;
+        align-items: flex-end;
+        & audio
+            width: 100%;
+        &__change
+            position: absolute;
+            right: 7px;
+            top: 7px;
+            font-size: 30px;
+            background-color: #1f408a;
+            box-shadow: 0px 0px 15px #000;
+            border: 1px solid #fff;
+            color: #fff;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            text-align: center;
+            line-height: 60px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            &:hover
+                background-color: #3458a7;
+            &:active
+                background-color: #15306b;
+    & .empty
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        padding: 20px 0;
+        flex: 1;
+        & i 
+            font-size: 80px;
+            color: #1f408a;
+            transition: color 0.3s ease;
+            cursor: pointer;
+        & span
+            font-size: 14px;
+            font-weight: 100;
+            text-align: center;
+            display: block;
+            margin: 3px 0 0;
+        & input 
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        &:hover
+            & i
+                color: #3458a7;
+            &:active
+                & i
+                    color: #15306b;
+& .controls
+    border-right: 0;
+    border-radius: 0 0 0 4px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    background: #1f408a;
+    overflow: hidden;
+    flex: 1 0 25px;
+    position: absolute;
+    height: 100%;
+    max-width: 25px;
+    z-index: 1;
+    align-self: stretch;
+    &__drag
+        padding: 4px 6px;
+        cursor: pointer;
+        background: #1f408a;
+        box-shadow: 0px 0px 15px #000;
+        cursor: -webkit-grab;
+        &:hover
+            background-color: #3458a7;
+            z-index: 1;
+        &:active
+            cursor: -webkit-grabbing;
+            background-color: #15306b;
+        &_icon
+            color: #fff;
+            font-size: 15px;
+    &__delete
+        justify-content: center;
+        align-items: center;    
+        height: 24px;
+        width: 23px;
+        display: flex;
+        cursor: pointer;
+        box-shadow: 0px 0px 15px #000;
+        position: absolute;
+        bottom: 0;
+        background: #BD001C;
+        transition: background 0.3s ease;
+        &:hover
+            background-color: #d71733;
+            z-index: 1;
+        &:active
+            background-color: #b20821;
+        &_icon
+            color: #fff;
+            font-size: 16px;
+    &__up
+    &__down
+        padding: 4px 7px;
+        cursor: pointer;
+        background: #1f408a;
+        box-shadow: 0px 0px 15px #000;
+        text-align: center;
+        &:hover
+            background-color: #3458a7;
+            z-index: 1;
+        &:active
+            background-color: #15306b;
+        &_icon
+            color: #fff;
+            font-size: 15px;

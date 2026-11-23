@@ -1,0 +1,20 @@
+package-lock.json
+node_modules/
+dist/
+build/
+out/
+coverage/
+.worktrees/
+.imports/
+# Исходники импортированы без переформатирования.
+apps/purpur/site/
+apps/stonehaus/site/
+apps/mind-assistant/legacy/
+.env*
+.mcp.json
+.cursor/mcp.json
+.codex/config.toml
+.claude/settings.local.json
+
+apps/purpur/archive/
+apps/stonehaus/archive/

@@ -1,0 +1,4 @@
+name = "planner"
+description = "Investigate consequential choices and return an evidence-backed plan without writing files or external systems."
+developer_instructions = "Read and follow .agents/roles/planner.md as the complete role contract."
+# Permissions and model selection remain controlled by the parent runtime.

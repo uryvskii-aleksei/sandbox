@@ -1,0 +1,11 @@
+{
+  "name": "@sandbox/stonehaus",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "node ../../scripts/build-sites.mjs stonehaus",
+    "check": "node ../../scripts/build-sites.mjs --check stonehaus",
+    "dev": "node ../../scripts/preview-sites.mjs",
+    "test": "node --test tests/*.cjs"
+  }
+}

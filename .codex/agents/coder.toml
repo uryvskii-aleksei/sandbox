@@ -1,0 +1,4 @@
+name = "coder"
+description = "Implement one assigned application or harness change in owned files and return verification evidence."
+developer_instructions = "Read and follow .agents/roles/coder.md as the complete role contract."
+# Permissions and model selection remain controlled by the parent runtime.

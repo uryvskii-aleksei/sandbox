@@ -1,0 +1,142 @@
+<!-- Заголовок поля -->
+<div class="title">
+	<input class="title__input"
+		   [(ngModel)]="field.title" 
+		   placeholder="Заголовок" />
+</div>
+<!-- Элементы управления для всех типов полей -->
+<div class="controls">
+	<div class="controls__up"
+		 (click)="orderUp(field)">
+		<i class="fa fa-angle-up controls__up_icon" 
+		   aria-hidden="true"></i>
+	</div>
+	<div class="controls__down"
+		 (click)="orderDown(field)">
+		<i class="fa fa-angle-down controls__down_icon" 
+		   aria-hidden="true"></i>
+	</div>
+	<div class="controls__delete"
+		 (click)="delete(field)">
+		<i class="fa fa-trash-o controls__delete_icon" 
+		   aria-hidden="true"></i>
+	</div>
+</div>
+<!-- Разметка для поля описания -->
+<ng-template [ngIf]="field.type === 'textarea'">
+	<div class="textarea" *ngFor="let v of field.value; let i=index; trackBy:customTrackBy">
+		<textarea placeholder="Какой-то текст..."
+				  [value]="field.value[i]" 
+				  [(ngModel)]="field.value[i]">
+		</textarea>
+		<div class="textarea__delete">
+			<i class="fa fa-trash-o textarea__delete_icon" 
+			   aria-hidden="true"
+			   (click)="field.value.splice(i, 1)"></i>
+		</div>
+	</div>
+	<div class="textarea__create">
+		<i class="fa fa-plus textarea__create_icon" 
+		   aria-hidden="true"
+		   (click)="field.value.push('')"></i>
+	</div>
+</ng-template> 
+<!-- Разметка для изображения -->
+<ng-template [ngIf]="field.type === 'image'">
+	<div *ngIf="!field.value"
+		 class="empty">
+		<i class="fa fa-cloud-upload" aria-hidden="true"></i>
+		<span>Выберите изображение</span>
+		<input type="file"
+			   (change)="upload(field, $event)"
+			   [(ngModel)]="field.value" />
+	</div>			
+	<img *ngIf="field.value"
+		 [src]="field.value" />
+	<i class="fa fa-upload image__change" 
+   	   aria-hidden="true"
+   	   *ngIf="field.value"></i>
+</ng-template>
+<!-- Разметка для поля ссылки -->
+<ng-template [ngIf]="field.type === 'url'">
+	<input type="url" 
+		   placeholder="http://example.com"
+		   [(ngModel)]="field.value[0]" />
+	<div class="url__screenshot">
+		<div class="empty"
+			 *ngIf="field && !field.scrap">
+			<i class="fa fa-wpexplorer" 
+			   aria-hidden="true"
+			   (click)="parseUrl(field.value[0])"></i>
+			<span>Укажите ссылку</span>
+		</div>
+		<div class="info"
+			 *ngIf="field && field.scrap">
+			<div class="info__image">
+				<img [src]="field.scrap.image" />
+			</div>
+			<div class="info__col">
+				<div class="info__title">{{field.scrap.title}}</div>
+				<div class="info__description">{{field.scrap.description}}</div>
+				<div class="info__link"><a [href]="field.scrap.link">{{field.scrap.link}}</a></div>
+			</div>
+		</div>
+	</div>
+</ng-template> 
+<!-- Разметка для поля даты -->
+<ng-template [ngIf]="field.type === 'date'">
+	<div class="wrapper">
+		<div class="date" *ngFor="let v of field.value; let i=index; trackBy:customTrackBy">
+			<input type="date" 
+				[(ngModel)]="field.value[i]" />
+			<div class="date__delete">
+				<i class="fa fa-trash-o date__delete_icon" 
+					aria-hidden="true"
+					(click)="field.value.splice(i, 1)"></i>
+			</div>
+		</div>
+		<div class="create">
+			<i class="fa fa-plus create_icon" 
+				aria-hidden="true"
+				(click)="field.value.push('')"></i>
+		</div>
+	</div>
+</ng-template>
+<!-- Разметка для поля видео -->
+<ng-template [ngIf]="field.type === 'video'">
+	<div class="empty"
+		 *ngIf="!field.value">
+		<i class="fa fa-cloud-upload" aria-hidden="true"></i>
+		<span>Выберите видео</span>
+		<input type="file" />
+	</div>	
+	<video *ngIf="field.value"
+		   autobuffer 
+		   autoloop 
+		   loop 
+		   controls>
+		<source [src]="field.value">
+	</video>
+	<i class="fa fa-upload image__change" 
+   	   aria-hidden="true"
+   	   *ngIf="field.value"></i>		
+</ng-template>
+<!-- Разметка для поля аудио -->
+<ng-template [ngIf]="field.type === 'audio'">
+	<div class="empty"
+		 *ngIf="!field.value">
+		<i class="fa fa-cloud-upload" aria-hidden="true"></i>
+		<span>Выберите аудио</span>
+		<input type="file" />
+	</div>	
+	<audio *ngIf="field.value"
+		   autobuffer 
+		   autoloop 
+		   loop 
+		   controls>
+		<source [src]="field.value">
+	</audio>
+	<i class="fa fa-upload image__change" 
+   	   aria-hidden="true"
+   	   *ngIf="field.value"></i>					
+</ng-template>

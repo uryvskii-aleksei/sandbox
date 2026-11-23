@@ -97,3 +97,4 @@
 | Простое управление текстами и карточками | [simple-site-cms](simple-site-cms/README.md) |
 | Мобильное приложение покупателя | [customer-mobile-app](customer-mobile-app/README.md) |
 | Управление отделом с телефона | [cto-phone-department](cto-phone-department/README.md) |
+| Концепция Stone Haus v2 | [stonehaus-v2-concept](stonehaus-v2-concept/README.md) |

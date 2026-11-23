@@ -1,0 +1,4 @@
+interface:
+  display_name: 'UX Design'
+  short_description: 'Сценарии, адаптивные интерфейсы и состояния взаимодействия'
+  default_prompt: 'Используй $ux-design для проработки интерфейса выбранного приложения Sandbox.'

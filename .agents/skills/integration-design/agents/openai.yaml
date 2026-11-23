@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Integration Design'
+  short_description: 'Контракты API, повторные запросы и восстановление данных'
+  default_prompt: 'Используй $integration-design для проектирования и проверки интеграции выбранного приложения.'

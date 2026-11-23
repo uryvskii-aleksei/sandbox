@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { readConnection, readTargets } from './lib/timeweb-targets.mjs';
+import { checkRoleAdapters } from './lib/agent-roles.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const errors = [];
@@ -88,15 +89,8 @@ for (const name of names) {
     `Нет канонической ссылки skill ${name}`,
   );
 }
-for (const role of ['coder', 'planner', 'reviewer']) {
-  for (const file of [
-    `.codex/agents/${role}.toml`,
-    `.claude/agents/${role}.md`,
-    `.cursor/agents/${role}.md`,
-  ]) {
-    check(read(file).includes(`.agents/roles/${role}.md`), `Нет ссылки на роль в ${file}`);
-  }
-}
+const roleAdapters = checkRoleAdapters(root);
+errors.push(...roleAdapters.errors);
 const settings = ['.codex/hooks.json', '.claude/settings.json', '.cursor/hooks.json'];
 for (const file of settings) {
   check(
@@ -142,6 +136,6 @@ if (errors.length) {
   process.exitCode = 1;
 } else {
   console.log(
-    `Обвязка: локальные ссылки, ${names.length} skills, роли, hooks и цели Timeweb проверены.`,
+    `Обвязка: локальные ссылки, ${names.length} skills, ${roleAdapters.roles.length} ролей, hooks и цели Timeweb проверены.`,
   );
 }

@@ -1,0 +1,4 @@
+name = "qa"
+description = "Verify application behavior against acceptance criteria on an identified build and report reproducible defects and evidence gaps."
+developer_instructions = "Read and follow .agents/roles/qa.md as the complete role contract."
+# Permissions and model selection remain controlled by the parent runtime.

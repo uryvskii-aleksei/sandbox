@@ -7,7 +7,10 @@
       "defaultBranch": "master",
       "path": "apps/mind-assistant/legacy/frontend",
       "fileCount": 151,
-      "historyMirror": ".imports/git/alekseiu/frontend.git"
+      "historyMirror": ".imports/git/alekseiu/frontend.git",
+      "archiveRefPrefix": "archive/mind-assistant/frontend/",
+      "archiveCommit": "9ad16f70d0c1cf3efe59397cded73accf67da75a",
+      "githubMetadata": "docs/imports/mind-assistant-github.json"
     },
     {
       "repository": "AlekseiU/Backend",
@@ -22,7 +25,18 @@
         "data": 0,
         "field_groups": 0,
         "fields": 0
-      }
+      },
+      "archiveRefPrefix": "archive/mind-assistant/backend/",
+      "archiveCommit": "081aab35162b1dafb3e76a0ecc5725b63f9812fb",
+      "githubMetadata": "docs/imports/mind-assistant-github.json",
+      "historyExclusions": ["sql", "mindassistant"],
+      "historicalDataBackup": ".imports/private/mind-assistant/legacy-historical-postgresql.dump",
+      "historicalDataRows": {
+        "projects": 1,
+        "data": 5
+      },
+      "historicalDataSha256": "aab46049e8e716621be2d76ebc5a043df252b0c6d8e839277fec2419276370be",
+      "historyCommitMap": "docs/imports/mind-assistant-backend-commits.json"
     },
     {
       "repository": "uryvskii-aleksei/purpur",

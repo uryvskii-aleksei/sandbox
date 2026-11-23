@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Quality Assurance'
+  short_description: 'Приёмка, исследование поведения и проверка исправлений'
+  default_prompt: 'Используй $quality-assurance для проверки выбранного приложения по его требованиям.'

@@ -1,0 +1,146 @@
+{
+  "repository": "AlekseiU/Backend",
+  "excludedPaths": ["sql", "mindassistant"],
+  "commits": [
+    {
+      "source": "0f90e84154dbc089d7e4954feccf74719e54a257",
+      "archive": "0f90e84154dbc089d7e4954feccf74719e54a257"
+    },
+    {
+      "source": "29bf96975ce2d58539cbbebb618e1c81c9d0ebaf",
+      "archive": "29bf96975ce2d58539cbbebb618e1c81c9d0ebaf"
+    },
+    {
+      "source": "2b051dd38243a94bcfe669257bff6b2dcde74bd3",
+      "archive": "bb9a1f5c9dad585e789dcfbb580929ca596190ce"
+    },
+    {
+      "source": "e027e743028b513d1f2fb98ca9c43e6a1f236070",
+      "archive": "0c65698b31866cd56329ec9cb50bd9bee5ea00b1"
+    },
+    {
+      "source": "62cbd4734cad8cd04252eef3eedf5ad5a3682055",
+      "archive": "b615c95106605bb64acdb9d228dcdc81f1777372"
+    },
+    {
+      "source": "f6c930c919230aa80a1a64e3a6a8c889ab433427",
+      "archive": "c9bdd6f6dee4a7debb84a8eaa91b7f826f8aab09"
+    },
+    {
+      "source": "9d7d3d574ab35bc165ed62e93792ceb36837fd3e",
+      "archive": "1f495ac3529149c21bdb23b2ebb5de9e2723253f"
+    },
+    {
+      "source": "8124c7f220e83a3e7e3fd252d70f420a3531576d",
+      "archive": "765833b1954e68696510d83bca92a0775016b20d"
+    },
+    {
+      "source": "f318ac5092999c98aa369bd265c5f11edfaad7b5",
+      "archive": "ab42b3080d9d31e340c19c6f36d16561a8dfdad6"
+    },
+    {
+      "source": "7204b0ea81d346f81648d7e61ac9fa9bea8b5952",
+      "archive": "b977e2aaec3bbd4802ce85f646d6e1bd899ce3b6"
+    },
+    {
+      "source": "48ad8cb1dd298ee7a887ec0c661cf2d627f338da",
+      "archive": "df0e752d46723d0a1062efed76d16f920a81bb41"
+    },
+    {
+      "source": "530e503cf92d89f31f288c36f1b534829f1f0fd8",
+      "archive": "bdece2ccca66efc3386e17ee1617fc3b43acc3cc"
+    },
+    {
+      "source": "4e78bf4987788d15077a0aad03e27c747b2630e1",
+      "archive": "da19b69f4b5deca01c986d2abe90aa356d69579b"
+    },
+    {
+      "source": "57e734b4c239fb5ba5769206b8a6ae14d06d6b86",
+      "archive": "eda4232693ed06d7cf5dfddc48e41faa46483a89"
+    },
+    {
+      "source": "bdcec72f1a4a83e9ed15a17a3c7a75934b607da9",
+      "archive": "404b4522d34f79f46960c60e45e6320cb17a3a62"
+    },
+    {
+      "source": "b347ce3923e313b602dac7dcdd11faf5d3937d8f",
+      "archive": "b3edea36ffd6fd25e11ee6430cf1fb4d4960c790"
+    },
+    {
+      "source": "85cc5c36e259ee53e7ecfec62a168845c6fb9dfb",
+      "archive": "df47d43a6de4d731c895ac6d37f3ac7806982033"
+    },
+    {
+      "source": "0ed039e41a82a01c2edca07dbcb59a746a2d07f0",
+      "archive": "6b7731fadf73dea44d5bfb0c11b4968a0dba3056"
+    },
+    {
+      "source": "fdb624d791b1086c3a0bbb73bab201cbb90c75dc",
+      "archive": "5d1d2dee2ef0cd6d9676697fbd95de5d22293edc"
+    },
+    {
+      "source": "cdc1fb6b6665a780279d77fcf71ca5848216f14e",
+      "archive": "3c33adb46ddb973fab0dfe086947096a046a70e7"
+    },
+    {
+      "source": "8aaed754e66e4096d467b64395eca9edf1969afa",
+      "archive": "a5223193560850a4dacfd2eecb11ce72c8f10e9a"
+    },
+    {
+      "source": "28353b87c4b32a96e4903eb156f15bcbd833ea63",
+      "archive": "ef629dbd47ce95e0d707cde8cc429e28a0098156"
+    },
+    {
+      "source": "104de438eb2faa99d592ab733cd47fae6a1f49c9",
+      "archive": "961774e1e36a5fe56c664c21cb34d0b7f764968d"
+    },
+    {
+      "source": "bfaa1252f37240bfdbd213208c5a45142d77666a",
+      "archive": "bc9f73f4ed5a479fda0fe36148099f3bb662d23e"
+    },
+    {
+      "source": "42ea38b886e7d564c64b6690385bd4d40f3ef542",
+      "archive": "c037fa7b67e5b15bcc25e24f4b5f28fb7760483b"
+    },
+    {
+      "source": "52784d560296ee5d8723fcb17dfd1b234f9bc3a4",
+      "archive": "465abb8f15b484c71e7031bb89d97a064561ef04"
+    },
+    {
+      "source": "122df61284e0e56eaeb63014f972fb3bfb229cc7",
+      "archive": "c590d4104c7d1466994afa7397f9e58fe159451f"
+    },
+    {
+      "source": "860963696a7aef72f8966a72dd7fd66cf51fab48",
+      "archive": "4dc98b41c47c59eb2e37220c50946fd37f015515"
+    },
+    {
+      "source": "3aace19df9b30ac16d76fc1b883ffb584ab7c991",
+      "archive": "7683529f7656f0f5c3ee6b2f20f76fb90eebaf8e"
+    },
+    {
+      "source": "93c2680f2aa36a1fdd432a987500d492a030182d",
+      "archive": "19d45590fdbf6a7454dd60f04aab173440019d76"
+    },
+    {
+      "source": "8aae39f906ed4f43dc7f354560c52559162c4496",
+      "archive": "bf8f45d3e2cbc423690e0fae4616bbb09205b06c"
+    },
+    {
+      "source": "4166f7d34fd9bb2a38b2d76e3b94eaff6dfadff9",
+      "archive": "d8bd2b25642c205ecef85baea4d8e05cd17c0e6a"
+    },
+    {
+      "source": "890c913a3f08d5a38187f88de7435801d7809ae0",
+      "archive": "8e9d5900803921340e5e27c1eeb91fb9ddad10b9"
+    },
+    {
+      "source": "c688d0972a41f9f4cf2002e740066d2576318064",
+      "archive": "cb47c07f15fc474422d1c620b1d81580d64614ca"
+    },
+    {
+      "source": "291ae996f48e850c3b9451c66afac483f33226fa",
+      "archive": "081aab35162b1dafb3e76a0ecc5725b63f9812fb"
+    }
+  ]
+}

@@ -29,7 +29,7 @@ The format-touched hook uses the installed formatter owning the edited file. It 
 - Shared packages must not depend on private application internals. Extract code only when there is an actual shared responsibility. Keep app-specific deployment files with the app and the non-secret destination mapping in `infra/timeweb/targets.json`.
 - Root npm workspaces cover direct `apps/*` and `packages/*` JavaScript packages. Other languages may use their own toolchain. Use the committed lockfile and real manifest scripts. Do not run multiple package managers over the same dependency graph.
 - Add dependencies when the task needs them and explain material additions. Prefer existing capabilities and the smallest supported dependency. Preserve pins outside scope. Public package releases use SemVer. Website deployments are identified by commit and target, without mandatory version bumps for every edit.
-- New branches use `feature/<issue>-<slug>`, `fix/<issue>-<slug>`, `chore/<slug>` or `docs/<slug>`. Omit an absent issue ID. Fetch the default branch before starting when access is available. Never overwrite a dirty checkout to update it. The initial repository bootstrap can remain on unborn `main` until a commit is requested.
+- New branches use `feature/<issue>-<slug>`, `fix/<issue>-<slug>`, `chore/<slug>` or `docs/<slug>`. Omit an absent issue ID. Fetch the default branch before starting when access is available. Never overwrite a dirty checkout to update it. Continue an existing migration in its owned workspace when the task remains active.
 
 ## Development quality
 
@@ -38,6 +38,7 @@ The format-touched hook uses the installed formatter owning the edited file. It 
 - Build accessible interfaces with semantic HTML, keyboard controls and required ARIA. Use the app's existing styling, icons and translations. Keep loading, empty and failure states explicit. Validate inputs at trust boundaries. Client validation is not a security boundary.
 - Never commit tokens, SSH keys, `.env` files, connection dumps, production data or raw logs. Keep public build artifacts separate from backend configuration, uploads and secrets. Do not print credentials during diagnostics.
 - Verify changed behavior and affected consumers with [build-and-test](.agents/skills/build-and-test/SKILL.md). Tests should cover meaningful behavior or failure boundaries, not mirror implementation or documentation wording. Do not weaken checks to make them pass.
+- Use [quality-assurance](.agents/skills/quality-assurance/SKILL.md) for acceptance and exploratory behavior checks, [ux-design](.agents/skills/ux-design/SKILL.md) for interaction design and [integration-design](.agents/skills/integration-design/SKILL.md) for API/data contracts. Load only the procedure needed by the task.
 - Match CI evidence to the actual commit. Report local checks, CI, independent review and deployment separately. Self-review is not independent review. Missing optional tools do not justify claiming a check passed.
 - Keep temporary logs, browser output, review snapshots and research experiments outside the repository. Preserve source fixtures and approved snapshots. Ignore dependency and generated build directories.
 

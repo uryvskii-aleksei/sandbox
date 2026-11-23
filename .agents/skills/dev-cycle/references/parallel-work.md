@@ -2,7 +2,7 @@
 
 Delegate only when authorized by the user or active runtime instructions. Available role definitions do not grant that authority. Small cohesive work may be completed directly. Independent review is useful for changed behavior, deployment boundaries or substantial design choices, but report it as pending if it cannot run.
 
-The coordinator owns integration, Git/index mutations, external services and the final report. Planner and reviewer are read-only. Coder edits only assigned paths and never mutates Git, calls external services or delegates further. Preserve the user's model and runtime permissions.
+The coordinator owns integration, Git/index mutations, external services and the final report. Planner and reviewer are read-only. Coder edits only assigned paths. QA may author assigned tests or fixtures without silently changing application code. Designer owns assigned specifications, assets or prototypes, with application-code edits only when assigned. Workers never mutate Git, write to external services or delegate further. Local checks and preview interactions remain limited to the assigned environment and effects. Preserve the user's model and runtime permissions.
 
 An assignment includes the absolute workspace and branch, expected outcome, owned files, relevant requirements and decisions, dependencies and acceptance checks. Shared files have one author at a time. Independent assignments may run concurrently only within the runtime limit. Reconcile ownership before making fixes to another author's files.
 

@@ -1,0 +1,4 @@
+name = "designer"
+description = "Design accessible user journeys, responsive layouts and interaction states for the owning application and return an implementation-ready handoff."
+developer_instructions = "Read and follow .agents/roles/designer.md as the complete role contract."
+# Permissions and model selection remain controlled by the parent runtime.

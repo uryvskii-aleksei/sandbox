@@ -1,4 +1,5 @@
-FROM php:8.4-apache
+ARG PHP_VERSION=8.4
+FROM php:${PHP_VERSION}-apache
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl libcurl4-openssl-dev libxml2-dev \
     && docker-php-ext-install -j2 pdo_mysql curl dom \

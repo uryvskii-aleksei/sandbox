@@ -8,6 +8,9 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { setTimeout } from 'node:timers/promises';
 
+const phpVersion = process.env.MIND_ASSISTANT_TEST_PHP_VERSION ?? '8.4';
+if (!['8.2', '8.4'].includes(phpVersion)) throw new Error('Проверяются PHP 8.2 или 8.4.');
+
 const app = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'mind-assistant-test-'));
 const environment = path.join(temporary, '.env');
@@ -20,7 +23,7 @@ const port = listener.address().port;
 await new Promise((resolve) => listener.close(resolve));
 fs.writeFileSync(
   environment,
-  `DB_NAME=mindassistant_test\nDB_USER=mindassistant\nDB_PASSWORD=${randomBytes(24).toString('hex')}\nAPI_PORT=${port}\n`,
+  `PHP_VERSION=${phpVersion}\nDB_NAME=mindassistant_test\nDB_USER=mindassistant\nDB_PASSWORD=${randomBytes(24).toString('hex')}\nAPI_PORT=${port}\n`,
   { mode: 0o600 },
 );
 const project = `sandbox-mind-assistant-test-${process.pid}`;

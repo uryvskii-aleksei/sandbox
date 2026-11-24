@@ -12,7 +12,7 @@
     "packages/*"
   ],
   "scripts": {
-    "check": "npm run check:harness && npm run check:sites && npm run check --workspace=@sandbox/mind-assistant && npm test && npm run test:sites && npm run format:check",
+    "check": "npm run check:harness && npm run check:sites && npm run check --workspace=@sandbox/mind-assistant && npm test && npm run test:sites && npm run test:deploy:mind-assistant && npm run format:check",
     "check:sites": "node scripts/build-sites.mjs --check",
     "build:sites": "node scripts/build-sites.mjs",
     "dev:sites": "node scripts/preview-sites.mjs",
@@ -25,7 +25,10 @@
     "format:check": "prettier --check .",
     "doctor": "node scripts/doctor.mjs",
     "timeweb": "node scripts/timeweb.mjs",
-    "test:sites": "npm test --workspace=@sandbox/purpur && npm test --workspace=@sandbox/stonehaus"
+    "test:sites": "npm test --workspace=@sandbox/purpur && npm test --workspace=@sandbox/stonehaus",
+    "deploy:mind-assistant": "node apps/mind-assistant/scripts/deploy.mjs",
+    "test:deploy:mind-assistant": "npm run test:deploy --workspace=@sandbox/mind-assistant",
+    "release:mind-assistant": "node apps/mind-assistant/scripts/request-release.mjs"
   },
   "devDependencies": {
     "prettier": "3.10.1"

@@ -16,7 +16,10 @@ services:
       retries: 40
     restart: unless-stopped
   api:
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        PHP_VERSION: ${PHP_VERSION:-8.4}
     ports:
       - '127.0.0.1:${API_PORT:-8081}:80'
     environment:

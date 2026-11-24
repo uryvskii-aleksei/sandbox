@@ -17,7 +17,7 @@
 
 ## 2. Локальная подготовка
 
-Нужны Git, Node.js 24+ и npm. Для Timeweb нужны SSH и rsync, для GitHub CLI при его использовании — `gh`.
+Нужны Git, Node.js 24+, npm и Python 3.10+ для проверок поставки. Для Timeweb нужны SSH и rsync, для GitHub CLI при его использовании — `gh`.
 
 ```bash
 npm ci
@@ -48,4 +48,4 @@ Skills не создают разрешение на внешние действ
 
 Timeweb — обычный виртуальный хостинг с SSH/SFTP. Текущий технический домен и подключение записаны в [инструкции Timeweb](infra/timeweb/README.md). SSH, SFTP и передача через rsync проверены. Команда `npm run timeweb -- check` проверяет доступ к хостингу. [Реестр статических целей](infra/timeweb/targets.json) пока пуст: импорт существующих сайтов не включает их повторную публикацию. MindAssistant имеет отдельную [процедуру PHP/MySQL](apps/mind-assistant/deployment.md).
 
-В GitHub Actions подготовлена проверка обвязки. Автоматический деплой добавляется для конкретного приложения после настройки его домена, сборки и доступа. В репозитории нет ключей, токенов или облачного API Timeweb.
+GitHub Actions проверяет обвязку, сайты и MindAssistant, включая PHP 8.2/8.4 с MySQL. Проверенный коммит `main` выпускается на [MindAssistant](https://cj999935.tw1.ru/mind-assistant/) командой `npm run release:mind-assistant`. Workflow публикует артефакт, задание Timeweb забирает его по HTTPS и подтверждает результат. Обычный push в `main` выполняет только проверки. SSH-ключи и пароль MySQL остаются вне GitHub.

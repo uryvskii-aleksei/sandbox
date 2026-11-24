@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "sshHost": "timeweb-sandbox",
+  "host": "vh460.timeweb.ru",
+  "user": "cj999935",
+  "url": "https://cj999935.tw1.ru/mind-assistant/",
+  "remoteRoot": "/home/c/cj999935/.sandbox/mind-assistant",
+  "publicPath": "/home/c/cj999935/public_html/mind-assistant"
+}

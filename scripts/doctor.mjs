@@ -39,11 +39,11 @@ try {
   const targets = readTargets(root);
   report(
     Object.keys(targets).length ? 'OK' : 'ИНФО',
-    `Timeweb: настроено целей — ${Object.keys(targets).length}`,
+    `Timeweb: настроено статических целей — ${Object.keys(targets).length}`,
   );
   if (!Object.keys(targets).length)
     console.log(
-      '  Цели добавляются вместе с приложениями. Проверка аккаунта: npm run timeweb -- check.',
+      '  PHP-приложения используют собственную процедуру поставки. Проверка аккаунта: npm run timeweb -- check.',
     );
 } catch (error) {
   report('ОШИБКА', error.message);

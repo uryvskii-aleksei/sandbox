@@ -15,7 +15,10 @@
 | [simplify-solution](skills/simplify-solution/SKILL.md)   | Упрощение решений и удаление доказанно неиспользуемого кода                      |
 | [github](skills/github/SKILL.md)                         | GitHub Issues, ветки, PR и Actions                                               |
 | [timeweb](skills/timeweb/SKILL.md)                       | SSH, поставка статических/PHP-приложений и восстановление                        |
+| [skill-doctor](skills/skill-doctor/SKILL.md)             | Аудит skills, ролей, адаптеров и согласованности инструкций                      |
 | [claude-api](skills/claude-api/SKILL.md)                 | Интеграции Claude API в выбранном приложении                                     |
+
+`skill-doctor` проверяет качество и согласованность инструкций. `npm run check:harness` проверяет структуру и ссылки, `npm run doctor` — окружение и подключения. Пример запроса: «Используй $skill-doctor для аудита обвязки».
 
 `quality-assurance` определяет ожидаемое поведение, а `build-and-test` — способ его проверить. UX задаёт видимые состояния, интеграции — значение результата между системами. Подробности диагностики и восстановления загружаются только для соответствующей задачи. Источники и решения — в [описании обвязки](../docs/designs/agent-harness.md).
 

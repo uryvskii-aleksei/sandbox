@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Skill Doctor'
+  short_description: 'Аудит skills, ролей и согласованности обвязки'
+  default_prompt: 'Используй $skill-doctor, чтобы проверить агентскую обвязку текущего репозитория и перечислить подтверждённые проблемы.'

@@ -29,4 +29,4 @@ For rollout, data changes, restore or incident work, read [recovery](references/
 
 Keys and known-host data stay outside Git. Verify the fingerprint through a trusted channel and keep host checking enabled. Do not publish a full workspace, `.env`, source-control data, backups or development dependencies. Preserve other apps, uploads and server secrets. DNS changes, destructive cleanup and live restores are separate scoped operations.
 
-For GitHub Actions, use the owning app's environment secrets and verified host entry. Add a deployment workflow only for a concrete app, artifact and destination. Keep PR checks free of deployment credentials.
+For GitHub Actions, follow the owning app's actual workflow and credential model. MindAssistant uses the [artifact/pull procedure](../../../apps/mind-assistant/deployment.md) without Timeweb SSH secrets in GitHub. Do not assume every workflow needs an SSH key. Add a workflow only for a concrete app, artifact and destination. Keep PR checks free of deployment credentials.

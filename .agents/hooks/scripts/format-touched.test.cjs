@@ -40,6 +40,13 @@ test('events from all runtimes identify only edited paths', () => {
     ['c.ts', 'd.ts'],
   );
   assert.deepEqual(collectPaths({ input: JSON.stringify({ file_path: 'e.ts' }) }), ['e.ts']);
+  assert.deepEqual(
+    collectPaths({
+      tool_name: 'apply_patch',
+      tool_input: { command: '*** Begin Patch\n*** Update File: f.ts\n*** End Patch' },
+    }),
+    ['f.ts'],
+  );
 });
 
 test('formats edited files with their owning formatter and preserves unrelated files', (t) => {
@@ -68,6 +75,8 @@ test('never borrows a sibling formatter or follows an escaping symlink', (t) => 
   assert.equal(safeFile(f.root, link, f.root), null);
   assert.equal(safeFile(f.root, f.write('.env.json'), f.root), null);
   assert.equal(safeFile(f.root, f.write('.codex/auth.json'), f.root), null);
+  assert.equal(safeFile(f.root, f.write('.imports/private/config.json'), f.root), null);
+  assert.equal(safeFile(f.root, f.write('.aws/sso/cache/session.json'), f.root), null);
   assert.equal(safeFile(f.root, 'deleted.js', f.root), null);
 });
 

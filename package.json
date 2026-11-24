@@ -28,7 +28,10 @@
     "test:sites": "npm test --workspace=@sandbox/purpur && npm test --workspace=@sandbox/stonehaus",
     "deploy:mind-assistant": "node apps/mind-assistant/scripts/deploy.mjs",
     "test:deploy:mind-assistant": "npm run test:deploy --workspace=@sandbox/mind-assistant",
-    "release:mind-assistant": "node apps/mind-assistant/scripts/request-release.mjs"
+    "release:mind-assistant": "node apps/mind-assistant/scripts/request-release.mjs",
+    "deploy:sites": "node scripts/deploy-sites.mjs",
+    "test:legacy:mind-assistant": "npm run test:legacy --workspace=@sandbox/mind-assistant",
+    "test:restore:mind-assistant": "node apps/mind-assistant/scripts/verify-backup.mjs"
   },
   "devDependencies": {
     "prettier": "3.10.1"

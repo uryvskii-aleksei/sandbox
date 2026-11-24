@@ -18,4 +18,4 @@ npm run build --workspace=@sandbox/stonehaus
 
 ## 3. Публикация
 
-На хостинге версии доступны в [stonehaus/v1](https://cj999935.tw1.ru/stonehaus/v1/), [v2](https://cj999935.tw1.ru/stonehaus/v2/) и [v3](https://cj999935.tw1.ru/stonehaus/v3/). Каждая версия имеет собственный каталог. Не направляйте артефакт приложения в корень Purpur. Настройки и ограничения поставки — в [Timeweb](../../infra/timeweb/README.md).
+На хостинге версии доступны в [stonehaus/v1](https://cj999935.tw1.ru/stonehaus/v1/), [v2](https://cj999935.tw1.ru/stonehaus/v2/) и [v3](https://cj999935.tw1.ru/stonehaus/v3/). Статические цели зарегистрированы в [Timeweb](../../infra/timeweb/targets.json). Полная поставка с backup и проверкой HTTPS: `node scripts/deploy-sites.mjs plan stonehaus`, затем `publish stonehaus --apply` из корня Sandbox. Она обновляет только каталоги Stonehaus. Первичная установка и восстановление — в [процедуре поставки](deployment.md).

@@ -29,7 +29,7 @@ export function Board({ cards, busy, open, child, position }: Props) {
     if (
       busy ||
       event.button !== 0 ||
-      (event.target instanceof Element && event.target.closest('button'))
+      (event.target instanceof Element && event.target.closest('button:not(.card-title)'))
     )
       return;
     event.stopPropagation();
@@ -77,12 +77,14 @@ export function Board({ cards, busy, open, child, position }: Props) {
           return next;
         });
       }
-    } else
+    } else {
       setTemporary((values) => {
         const next = { ...values };
         delete next[card.id];
         return next;
       });
+      if (!cancelled) open(card);
+    }
   };
   return (
     <section
@@ -106,12 +108,7 @@ export function Board({ cards, busy, open, child, position }: Props) {
             if (!parent) return null;
             const a = point(parent);
             const b = point(card);
-            return (
-              <path
-                key={card.id}
-                d={`M ${a.x + 120} ${a.y + 100} C ${a.x + 120} ${a.y + 145}, ${b.x + 120} ${b.y - 45}, ${b.x + 120} ${b.y}`}
-              />
-            );
+            return <line key={card.id} x1={a.x + 50} y1={a.y + 50} x2={b.x + 50} y2={b.y + 50} />;
           })}
         </svg>
         {cards.map((card) => (
@@ -122,8 +119,15 @@ export function Board({ cards, busy, open, child, position }: Props) {
             onPointerDown={(event) => start(event, card)}
           >
             <span className="card-eyebrow">{card.parent ? 'СВЯЗАННАЯ МЫСЛЬ' : 'МЫСЛЬ'}</span>
-            <button className="card-title" disabled={busy} onClick={() => open(card)}>
-              {card.name}
+            <button
+              className="card-title"
+              disabled={busy}
+              onClick={(event) => {
+                // Pointer открывает карточку в end, клавиатура — штатным click.
+                if (event.detail === 0) open(card);
+              }}
+            >
+              <span title={card.name}>{card.name}</span>
             </button>
             <div className="card-bottom">
               <span>{card.content.length} групп</span>

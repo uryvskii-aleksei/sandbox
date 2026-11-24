@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "app": "stonehaus",
+  "user": "cj999935",
+  "sshHost": "timeweb-sandbox",
+  "publicPath": "/home/c/cj999935/public_html/stonehaus",
+  "url": "https://cj999935.tw1.ru/stonehaus/",
+  "ownedFiles": [],
+  "ownedDirectories": ["v1", "v2", "v3"],
+  "requiredFiles": ["v1/index.html", "v2/index.html", "v3/index.html"],
+  "checks": [
+    { "path": "v1/", "status": 200, "file": "v1/index.html" },
+    { "path": "v2/", "status": 200, "file": "v2/index.html" },
+    { "path": "v3/", "status": 200, "file": "v3/index.html" },
+    { "path": "v1/styles.css", "status": 200, "file": "v1/styles.css" },
+    { "path": "v2/styles.css", "status": 200, "file": "v2/styles.css" },
+    { "path": "v3/styles.css", "status": 200, "file": "v3/styles.css" }
+  ]
+}

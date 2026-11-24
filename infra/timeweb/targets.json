@@ -1,5 +1,27 @@
 {
   "version": 1,
   "provider": "timeweb-shared",
-  "targets": {}
+  "targets": {
+    "stonehaus-v1": {
+      "app": "apps/stonehaus",
+      "buildDir": "dist/v1",
+      "sshHost": "timeweb-sandbox",
+      "remotePath": "/home/c/cj999935/public_html/stonehaus/v1",
+      "url": "https://cj999935.tw1.ru/stonehaus/v1/"
+    },
+    "stonehaus-v2": {
+      "app": "apps/stonehaus",
+      "buildDir": "dist/v2",
+      "sshHost": "timeweb-sandbox",
+      "remotePath": "/home/c/cj999935/public_html/stonehaus/v2",
+      "url": "https://cj999935.tw1.ru/stonehaus/v2/"
+    },
+    "stonehaus-v3": {
+      "app": "apps/stonehaus",
+      "buildDir": "dist/v3",
+      "sshHost": "timeweb-sandbox",
+      "remotePath": "/home/c/cj999935/public_html/stonehaus/v3",
+      "url": "https://cj999935.tw1.ru/stonehaus/v3/"
+    }
+  }
 }

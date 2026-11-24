@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "app": "purpur",
+  "user": "cj999935",
+  "sshHost": "timeweb-sandbox",
+  "publicPath": "/home/c/cj999935/public_html",
+  "url": "https://cj999935.tw1.ru/",
+  "ownedFiles": [
+    ".htaccess",
+    "app.js",
+    "brand.css",
+    "cdek-points.php",
+    "fonts.css",
+    "gift-theme.css",
+    "hero-video.css",
+    "index.html",
+    "order.php",
+    "products.js",
+    "readability.css",
+    "repository-main.html",
+    "store.js",
+    "styles.css"
+  ],
+  "ownedDirectories": ["assets", "concept", "purpur"],
+  "requiredFiles": [
+    ".htaccess",
+    "index.html",
+    "order.php",
+    "cdek-points.php",
+    "purpur/v1/index.html",
+    "purpur/v2/index.html",
+    "purpur/v3/index.html"
+  ],
+  "checks": [
+    { "path": "", "status": 200, "file": "index.html" },
+    { "path": "styles.css", "status": 200, "file": "styles.css" },
+    { "path": "app.js", "status": 200, "file": "app.js" },
+    { "path": "repository-main.html", "status": 200, "file": "repository-main.html" },
+    { "path": "purpur/v1/", "status": 200, "file": "purpur/v1/index.html" },
+    { "path": "purpur/v2/", "status": 200, "file": "purpur/v2/index.html" },
+    { "path": "purpur/v3/", "status": 200, "file": "purpur/v3/index.html" },
+    { "path": "order.php", "status": 405 },
+    { "path": "cdek-points.php", "status": 400 }
+  ]
+}

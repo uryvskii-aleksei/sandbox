@@ -49,3 +49,6 @@ jobs:
       - run: npm run test:mind-assistant
         env:
           MIND_ASSISTANT_TEST_PHP_VERSION: ${{ matrix.php }}
+      - run: npm run test:legacy:mind-assistant
+        env:
+          MIND_ASSISTANT_TEST_PHP_VERSION: ${{ matrix.php }}

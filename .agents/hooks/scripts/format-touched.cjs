@@ -55,6 +55,7 @@ function collectPaths(payload) {
       }
       for (const key of [
         'tool_input',
+        'command',
         'input',
         'arguments',
         'args',
@@ -79,7 +80,7 @@ function safeFile(root, filename, cwd) {
     const parts = path.relative(root, file).split(path.sep);
     if (
       parts.some((part) =>
-        /^(?:\.git|\.codex|\.cursor|\.claude|node_modules|dist|build|out|\.worktrees|\.env(?:\..*)?|\.mcp\.json)$/.test(
+        /^(?:\.git|\.codex|\.cursor|\.claude|node_modules|dist|build|out|\.worktrees|\.imports|\.aws|\.env(?:\..*)?|\.mcp\.json)$/.test(
           part,
         ),
       )

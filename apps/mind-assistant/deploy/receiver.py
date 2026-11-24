@@ -91,6 +91,11 @@ def extract_artifact(archive_path, destination, commit, digest):
     marker["artifactSha256"] = digest
     marker["deploymentStatus"] = "verifying"
     (destination / "release.json").write_text(json.dumps(marker, sort_keys=True) + "\n")
+    # Cron может использовать umask 077. Apache должен обходить публичные каталоги.
+    destination.chmod(0o755)
+    for directory in destination.rglob("*"):
+        if directory.is_dir():
+            directory.chmod(0o755)
     return names
 
 
@@ -190,15 +195,19 @@ class Deployment:
         return output.name
 
     def migrate(self, stage):
-        path = str(self.config).replace("\\", "\\\\").replace("'", "\\'")
-        wrapper = stage / "config.local.php"
-        wrapper.write_text("<?php\nreturn require '" + path + "';\n")
-        wrapper.chmod(0o600)
+        local_config = stage / "config.local.php"
+        # Веб-PHP Timeweb не читает файлы вне public_html даже при is_readable=true.
+        # Источник остаётся приватным. Рабочая копия 600 защищена FilesMatch в .htaccess.
+        local_config.write_bytes(self.config.read_bytes())
+        local_config.chmod(0o600)
         self.run(["php", str(stage / "database" / "migrate.php")], "Database migration")
 
     def verify(self, commit, digest):
         public_url = self.target_url()
+        checked_path = ""
         def request(relative):
+            nonlocal checked_path
+            checked_path = relative.split("?", 1)[0] or "/"
             request = urllib.request.Request(public_url + relative, headers={"Cache-Control": "no-cache"})
             with urllib.request.urlopen(request, timeout=12) as response:
                 return response.status, response.read(1024 * 1024)
@@ -225,7 +234,8 @@ class Deployment:
                 last_error = error
                 if attempt < 4:
                     time.sleep(1)
-        raise DeployError("HTTPS application verification failed.") from last_error
+        code = " HTTP " + str(last_error.code) if isinstance(last_error, urllib.error.HTTPError) else " invalid response"
+        raise DeployError("HTTPS verification failed at " + checked_path + code + ".") from last_error
 
     def publish(self, stage, commit, digest):
         previous = self.current()
@@ -245,12 +255,13 @@ class Deployment:
             stage.rename(self.public)
             self.verify(commit, digest)
             self.mark_ready()
-        except Exception:
+        except Exception as error:
             if self.public.exists():
                 self.public.rename(self.root / "releases" / ("failed-" + uuid.uuid4().hex))
             if old.exists():
                 old.rename(self.public)
-            raise DeployError("Publication failed; previous files restored. Database changes were not reversed.")
+            detail = " " + str(error) if isinstance(error, DeployError) else ""
+            raise DeployError("Publication failed; previous files restored. Database changes were not reversed." + detail)
         return {"status": "published", "commit": commit, "backup": backup, "url": self.target_url()}
 
     def mark_ready(self):

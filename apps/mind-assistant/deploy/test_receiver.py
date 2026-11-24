@@ -115,6 +115,23 @@ class DeploymentTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             package(source, self.root / "package.gz", COMMIT)
 
+    def test_extraction_makes_public_directories_traversable_under_private_cron_umask(self):
+        source = self.source()
+        (source / "assets" / "nested").mkdir(parents=True)
+        (source / "assets" / "nested" / "index.js").write_text("source")
+        archive = self.root / "release.gz"
+        metadata = package(source, archive, COMMIT)
+        previous = os.umask(0o077)
+        try:
+            stage = self.root / "stage"
+            stage.mkdir()
+            receiver.extract_artifact(archive, stage, COMMIT, metadata["sha256"])
+        finally:
+            os.umask(previous)
+        for directory in [stage, *[p for p in stage.rglob("*") if p.is_dir()]]:
+            self.assertEqual(directory.stat().st_mode & 0o777, 0o755)
+        self.assertEqual((stage / "index.html").stat().st_mode & 0o777, 0o644)
+
     def test_rejects_changed_checksum_duplicates_and_size_overflow(self):
         archive, digest = self.archive([("index.html", b"hello", tarfile.REGTYPE)] * 2)
         target = self.root / "extracted"

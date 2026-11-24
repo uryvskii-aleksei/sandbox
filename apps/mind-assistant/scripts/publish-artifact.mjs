@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-import { verifyCi } from './verify-deploy-ci.mjs';
+import { isReleaseReady, verifyCi } from './verify-deploy-ci.mjs';
 import { validateTarget } from './deploy-target.mjs';
 
 const app = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -30,6 +30,18 @@ await verifyCi(commit);
 if (run('git', ['ls-remote', 'origin', 'refs/heads/main']).trim().split(/\s+/)[0] !== commit) {
   throw new Error('main уже изменилась. Запустите workflow для актуального коммита.');
 }
+// Проверяем TLS/маршрут runner до выпуска, не требуя уже установленного приложения.
+run('curl', [
+  '--ipv4',
+  '--silent',
+  '--show-error',
+  '--head',
+  '--connect-timeout',
+  '5',
+  '--max-time',
+  '15',
+  target.url,
+]);
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'mind-assistant-release-'));
 try {
   const artifact = path.join(temporary, `mind-assistant-${commit}.tar.gz`);
@@ -89,32 +101,56 @@ try {
   console.log(`Опубликован артефакт ${commit}. Ожидаем задачу Timeweb.`);
   const deadline = Date.now() + 8 * 60 * 1000;
   let confirmed = false;
+  let lastProblem = '';
+  const reported = new Set();
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`${target.url}release.json?release=${commit}`, {
-        signal: AbortSignal.timeout(10000),
-        cache: 'no-store',
-      });
-      if (response.ok) {
-        const release = await response.json();
-        if (
-          release.commit === commit &&
-          release.artifactSha256 === metadata.sha256 &&
-          release.deploymentStatus === 'ready'
-        ) {
-          console.log(`MindAssistant опубликован и проверен: ${target.url}`);
-          confirmed = true;
-          break;
-        }
+      const response = spawnSync(
+        'curl',
+        [
+          '--ipv4',
+          '--fail',
+          '--silent',
+          '--show-error',
+          '--connect-timeout',
+          '5',
+          '--max-time',
+          '10',
+          '--header',
+          'Cache-Control: no-cache',
+          '--url',
+          `${target.url}release.json?release=${commit}&check=${Date.now()}`,
+        ],
+        {
+          encoding: 'utf8',
+          timeout: 12000,
+          maxBuffer: 65536,
+        },
+      );
+      if (response.error || response.status !== 0) {
+        throw new Error(
+          `HTTPS curl ${response.error?.code ?? response.status}: ${response.stderr?.trim().slice(0, 240) ?? ''}`,
+        );
       }
-    } catch {
-      /* Следующая проверка дождётся опубликованного и проверенного релиза. */
+      const release = JSON.parse(response.stdout);
+      if (isReleaseReady(release, commit, metadata.sha256)) {
+        console.log(`MindAssistant опубликован и проверен: ${target.url}`);
+        confirmed = true;
+        break;
+      }
+      lastProblem = 'Пока не получена метка ready с ожидаемыми приложением, SHA и суммой.';
+    } catch (error) {
+      lastProblem = error.message;
+    }
+    if (!reported.has(lastProblem)) {
+      reported.add(lastProblem);
+      console.log(`Ожидание Timeweb: ${lastProblem}`);
     }
     await new Promise((resolve) => setTimeout(resolve, 10000));
   }
   if (!confirmed) {
     throw new Error(
-      'Timeweb не подтвердил релиз за 8 минут. Артефакт сохранён; проверьте приватный deploy.log перед повтором.',
+      `Timeweb не подтвердил релиз за 8 минут. ${lastProblem} Артефакт сохранён; проверьте приватный deploy.log перед повтором.`,
     );
   }
 } finally {

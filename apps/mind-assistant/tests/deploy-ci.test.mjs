@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { verifiedRun } from '../scripts/verify-deploy-ci.mjs';
+import { isReleaseReady, verifiedRun } from '../scripts/verify-deploy-ci.mjs';
 import { validateTarget } from '../scripts/deploy-target.mjs';
 
 const commit = 'a'.repeat(40);
@@ -12,6 +12,28 @@ const success = {
   status: 'completed',
   conclusion: 'success',
 };
+
+test('only the verified exact application, source and artifact confirm a release', () => {
+  const digest = 'c'.repeat(64);
+  const ready = {
+    version: 1,
+    app: 'mind-assistant',
+    commit,
+    artifactSha256: digest,
+    deploymentStatus: 'ready',
+  };
+  assert.equal(isReleaseReady(ready, commit, digest), true);
+  for (const change of [
+    { version: 2 },
+    { app: 'other' },
+    { commit: 'b'.repeat(40) },
+    { artifactSha256: 'd'.repeat(64) },
+    { deploymentStatus: 'verifying' },
+  ]) {
+    assert.equal(isReleaseReady({ ...ready, ...change }, commit, digest), false);
+  }
+  assert.equal(isReleaseReady(null, commit, digest), false);
+});
 
 test('deployment evidence belongs to the exact main push commit', () => {
   assert.equal(verifiedRun({ workflow_runs: [success] }, commit), success);

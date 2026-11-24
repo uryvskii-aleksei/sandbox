@@ -12,6 +12,17 @@ export function verifiedRun(data, commit) {
   return latest;
 }
 
+export function isReleaseReady(release, commit, digest) {
+  return Boolean(
+    release &&
+    release.version === 1 &&
+    release.app === 'mind-assistant' &&
+    release.commit === commit &&
+    release.artifactSha256 === digest &&
+    release.deploymentStatus === 'ready',
+  );
+}
+
 export async function verifyCi(commit) {
   if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('Нужен точный commit SHA.');
   const headers = { Accept: 'application/vnd.github+json' };

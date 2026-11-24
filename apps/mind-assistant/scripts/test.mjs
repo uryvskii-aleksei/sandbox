@@ -100,13 +100,22 @@ try {
     await setTimeout(200);
   }
   assert.equal(ready, true, 'Собранный API не запустился.');
-  const index = await (await fetch(`${base}/`)).text();
+  // mod_deflate AddSuffix не возвращает 304 для gzip ETag. Проверяем исходное представление.
+  const page = await fetch(`${base}/`, { headers: { 'Accept-Encoding': 'identity' } });
+  const index = await page.text();
+  assert.match(page.headers.get('cache-control') ?? '', /no-cache/);
+  assert.match(page.headers.get('cache-control') ?? '', /must-revalidate/);
+  const etag = page.headers.get('etag');
+  assert.ok(etag, 'HTML должен поддерживать условную перепроверку кэша.');
+  const unchanged = await fetch(`${base}/`, {
+    headers: { 'If-None-Match': etag, 'Accept-Encoding': 'identity' },
+  });
+  assert.equal(unchanged.status, 304);
+  assert.match(unchanged.headers.get('cache-control') ?? '', /no-cache/);
   assert.match(index, /<title>MindAssistant/);
-  assert.equal(
-    await (await fetch(`${base}/workplace/123`)).text(),
-    index,
-    'SPA-маршрут должен обновляться.',
-  );
+  const deepPage = await fetch(`${base}/workplace/123`);
+  assert.equal(await deepPage.text(), index, 'SPA-маршрут должен обновляться.');
+  assert.match(deepPage.headers.get('cache-control') ?? '', /no-cache/);
   for (const match of index.matchAll(/(?:src|href)="(\/mind-assistant\/assets\/[^\"]+)"/g)) {
     assert.equal((await fetch(`http://127.0.0.1:${artifactPort}${match[1]}`)).status, 200);
   }

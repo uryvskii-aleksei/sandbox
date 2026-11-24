@@ -186,6 +186,7 @@ button {
 }
 .auth-illustration span {
   background: #fff;
+  color: var(--accent);
   padding: 18px 12px;
   border-radius: 5px;
   box-shadow: 0 8px 24px #10274f20;

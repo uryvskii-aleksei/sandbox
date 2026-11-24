@@ -5,6 +5,7 @@ RUN apt-get update \
     && docker-php-ext-install -j2 pdo_mysql curl dom \
     && a2enmod rewrite \
     && rm -rf /var/lib/apt/lists/*
+RUN a2enmod headers
 COPY apache.conf /etc/apache2/sites-available/000-default.conf
 COPY php.ini /usr/local/etc/php/conf.d/mind-assistant.ini
 WORKDIR /var/www/mind-assistant

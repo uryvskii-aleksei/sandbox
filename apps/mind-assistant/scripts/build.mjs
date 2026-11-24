@@ -28,6 +28,11 @@ RewriteRule ^api(?:/.*)?$ api.php [QSA,L]
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ index.html [L]
+<IfModule mod_headers.c>
+    <FilesMatch "^(?:index\\.html|release\\.json)$">
+        Header always set Cache-Control "no-cache, max-age=0, must-revalidate"
+    </FilesMatch>
+</IfModule>
 <FilesMatch "^(?:config\\..*\\.php|\\..*)$">
     Require all denied
 </FilesMatch>

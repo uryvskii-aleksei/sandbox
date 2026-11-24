@@ -538,7 +538,8 @@ button {
     stroke-dashoffset: 0;
   }
   to {
-    stroke-dashoffset: 1000;
+    /* SVG-линия начинается у родителя. Пунктир движется к потомку. */
+    stroke-dashoffset: -1000;
   }
 }
 .mind-card {

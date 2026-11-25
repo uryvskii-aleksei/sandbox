@@ -1,6 +1,6 @@
 ---
 name: github
-description: Work with sandbox GitHub Issues, branches, pull requests and Actions using a connected integration or gh. Use for repository delivery, PR review or CI investigation. A local change alone does not authorize publication.
+description: Work with sandbox GitHub Issues, branches, pull requests and Actions using a connected integration or gh. Use for repository delivery, PR review or CI investigation.
 ---
 
 # GitHub
@@ -13,9 +13,11 @@ Read the requested issue, relevant linked decisions and existing work. Preserve 
 
 ## Branch and PR delivery
 
-Use an [owned workspace](../dev-cycle/references/task-worktree.md). A PR delivery request includes its scoped commits, push and PR maintenance. A commit request alone excludes push. Do not merge, close issues or deploy unless that outcome was requested. Use `Closes #…` only when closure on merge is intended.
+Use an [owned workspace](../dev-cycle/references/task-worktree.md) and the delivery endpoint in [Scope and authority](../../../AGENTS.md#scope-and-authority). Commit only the verified changes owned by the current task. Use `Closes #…` only when closure on merge is authorized.
 
 Before a write, re-read the current branch/HEAD or remote object. Push the exact intended source ref. Create or update one matching PR, preserve human content and verify the resulting source commit and changed files. If the base repository is empty, a PR needs an existing base commit. Do not invent empty history solely to open one.
+
+When the endpoint is `main`, follow [PR checks](../build-and-test/references/ci-evidence.md) to a result. Fix failures caused by the task within its scope. If required checks, reviews or branch protection block merge and you cannot resolve the blocker, leave the PR open and report the condition. Before merging, verify the current PR head, base, diff and CI evidence. Use GitHub's merge operation with the expected head SHA where supported, then verify that the reported merge commit is in remote `main`.
 
 Write Russian PR prose around the problem, resulting behavior and actual checks. Use the repository template as a starting point, remove unused placeholders and keep a substantial implementation plan in `## План`. Mark an item complete only after its changes are actually in the PR. A local task needs no empty draft PR.
 

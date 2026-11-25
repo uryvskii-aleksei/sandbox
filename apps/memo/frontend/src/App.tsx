@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { CSSProperties, FormEvent } from 'react';
 import { api } from './api';
 import { Board } from './Board';
 import { CardEditor } from './CardEditor';
+import { PanelDivider } from './PanelDivider';
 import { childPosition, excerpt } from './graph';
 import { QuickCapture } from './QuickCapture';
 import { isTextInput, shortcutHelp } from './shortcuts';
-import { draftKey, listDrafts, removeLocal } from './storage';
+import { draftKey, listDrafts, readLocal, removeLocal, writeLocal } from './storage';
 import { folderTrail } from './types';
 import type {
   BoardSelection,
@@ -21,6 +22,27 @@ import type {
 import { IconButton } from './ui';
 
 type BlockKind = 'record' | 'folder';
+
+const panelKey = 'memo:panels';
+function panelPreferences() {
+  const saved = readLocal(panelKey);
+  const defaults = { left: 248, right: 450, collapsed: false };
+  if (!saved || typeof saved !== 'object') return defaults;
+  return {
+    left:
+      'left' in saved && typeof saved.left === 'number' && saved.left >= 176 && saved.left <= 410
+        ? saved.left
+        : defaults.left,
+    right:
+      'right' in saved &&
+      typeof saved.right === 'number' &&
+      saved.right >= 270 &&
+      saved.right <= 690
+        ? saved.right
+        : defaults.right,
+    collapsed: 'collapsed' in saved && saved.collapsed === true,
+  };
+}
 
 type View = 'dashboard' | 'project' | 'inbox' | 'recent' | 'search' | 'trash' | 'drafts';
 interface Route {
@@ -152,6 +174,10 @@ export function App() {
   const searchArea = useRef<HTMLDivElement>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [markToolsSlot, setMarkToolsSlot] = useState<HTMLSpanElement | null>(null);
+  const [panels, setPanels] = useState(panelPreferences);
+  useEffect(() => {
+    writeLocal(panelKey, panels);
+  }, [panels]);
   useEffect(() => {
     if (!shortcutsOpen) return;
     const dismiss = (event: PointerEvent) => {
@@ -161,7 +187,7 @@ export function App() {
     document.addEventListener('pointerdown', dismiss);
     return () => document.removeEventListener('pointerdown', dismiss);
   }, [shortcutsOpen]);
-  const modal = editing !== null || capturing;
+  const modal = capturing;
   const selected = route.view === 'project' ? route.project : undefined;
   const folder = route.view === 'project' ? (route.folder ?? null) : null;
   const loadKey = `${route.view}:${selected ?? ''}:${folder ?? ''}:${route.view === 'search' ? query : ''}`;
@@ -269,21 +295,23 @@ export function App() {
   }, [user, route.view, selected, folder, query, revision]);
   useEffect(() => {
     const update = () => {
-      if (modal) {
-        const closeButton = document.getElementById(editing ? 'close-editor' : 'close-capture');
+      if (capturing) {
+        const closeButton = document.getElementById('close-capture');
         if (closeButton instanceof HTMLButtonElement && closeButton.disabled) {
           history.pushState(null, '', routeUrl(route));
           return;
         }
         closeButton?.click();
       }
+      if (editing) document.getElementById('close-editor')?.click();
       setRoute(currentRoute());
       setFocusId(null);
     };
     window.addEventListener('popstate', update);
     return () => window.removeEventListener('popstate', update);
-  }, [modal, editing, route]);
+  }, [capturing, editing, route]);
   const navigate = (next: Route, focus: number | null = null) => {
+    if (editing) document.getElementById('close-editor')?.click();
     history.pushState(null, '', routeUrl(next));
     setRoute(next);
     setFocusId(focus);
@@ -316,12 +344,20 @@ export function App() {
       })),
     );
   };
-  const openId = (id: number, edit = false) =>
+  const openId = (id: number, edit = false) => {
+    if (editing?.id === id) {
+      if (edit) document.querySelector<HTMLButtonElement>('[data-edit-record]')?.click();
+      return;
+    }
+    const closeButton = document.getElementById('close-editor');
+    if (closeButton instanceof HTMLButtonElement && closeButton.disabled) return;
     run(async () => {
       const result = await api.visit(id);
+      replaceCard(result);
       setOpenForEditing(edit);
       setEditing(result);
     });
+  };
   const locate = (card: Card) => {
     setViewMode('board');
     navigate({ view: 'project', project: card.project, folder: card.folder ?? undefined }, card.id);
@@ -395,6 +431,11 @@ export function App() {
         event.preventDefault();
         setShortcutsOpen(false);
         shortcutsButton.current?.focus();
+        return;
+      }
+      if (event.key === 'Escape' && editing && !isTextInput(event)) {
+        event.preventDefault();
+        document.getElementById('close-editor')?.click();
         return;
       }
       if (!event.altKey || event.ctrlKey || event.metaKey || event.repeat || isTextInput(event))
@@ -597,27 +638,56 @@ export function App() {
       </main>
     );
 
+  const docking: CSSProperties & Record<'--memo-sidebar-width' | '--memo-record-width', string> = {
+    '--memo-sidebar-width': `${panels.collapsed ? 62 : panels.left}px`,
+    '--memo-record-width': `${panels.right}px`,
+  };
   return (
     <>
-      <div className="application" inert={modal}>
-        <aside className="sidebar">
-          <a
-            className="brand"
-            href={routeUrl({ view: 'dashboard' })}
-            onClick={(event) => {
-              event.preventDefault();
-              navigate({ view: 'dashboard' });
-            }}
-          >
-            <span className="brand-mark">m.</span>Memo
-          </a>
+      <div
+        className={`application ${editing ? 'has-record-dock' : ''}`}
+        style={docking}
+        inert={modal}
+      >
+        <aside
+          className={`sidebar ${panels.collapsed ? 'sidebar-collapsed' : ''}`}
+          id="memo-sidebar"
+        >
+          <div className="sidebar-top">
+            <a
+              className="brand"
+              aria-label="Memo"
+              href={routeUrl({ view: 'dashboard' })}
+              onClick={(event) => {
+                event.preventDefault();
+                navigate({ view: 'dashboard' });
+              }}
+            >
+              <span className="brand-mark">m.</span>
+              <span className="sidebar-label">Memo</span>
+            </a>
+            <IconButton
+              icon="sidebar"
+              className="sidebar-toggle"
+              label={panels.collapsed ? 'Развернуть левую панель' : 'Свернуть левую панель'}
+              aria-expanded={!panels.collapsed}
+              aria-controls="memo-sidebar"
+              onClick={() =>
+                setPanels((current) => ({ ...current, collapsed: !current.collapsed }))
+              }
+            />
+          </div>
           <button
             className="capture-button"
+            aria-label="Быстрая запись"
+            title={panels.collapsed ? 'Быстрая запись' : undefined}
             aria-keyshortcuts="Alt+N"
             disabled={busy}
             onClick={() => setCapturing(true)}
           >
-            ＋ Быстрая запись <kbd>Alt+N</kbd>
+            <span aria-hidden="true">＋</span>
+            <span className="sidebar-label">Быстрая запись</span>
+            <kbd>Alt+N</kbd>
           </button>
           <p className="nav-section">ЛИЧНОЕ ПРОСТРАНСТВО</p>
           <nav className="main-navigation" aria-label="Личное пространство">
@@ -627,10 +697,12 @@ export function App() {
                 className={`nav-item ${route.view === item.view ? 'selected' : ''}`}
                 disabled={busy}
                 onClick={() => navigate({ view: item.view })}
+                aria-label={item.label}
+                title={panels.collapsed ? item.label : undefined}
                 aria-current={route.view === item.view ? 'page' : undefined}
               >
                 <span aria-hidden="true">{item.icon}</span>
-                <span>{item.label}</span>
+                <span className="sidebar-label">{item.label}</span>
                 {item.view === 'drafts' && drafts.length > 0 && <small>{drafts.length}</small>}
               </button>
             ))}
@@ -645,9 +717,13 @@ export function App() {
                   className={`nav-item ${selected === project.id ? 'selected' : ''}`}
                   disabled={busy}
                   onClick={() => navigate({ view: 'project', project: project.id })}
+                  aria-label={project.name}
+                  title={panels.collapsed ? project.name : undefined}
                 >
-                  <span className="project-dot" />
-                  <span>{project.name}</span>
+                  <span className="project-dot" aria-hidden="true">
+                    <span>{project.name.slice(0, 1).toLocaleUpperCase('ru')}</span>
+                  </span>
+                  <span className="sidebar-label">{project.name}</span>
                   <small>{project.cards ?? 0}</small>
                 </button>
               ))}
@@ -679,6 +755,16 @@ export function App() {
               ↪
             </button>
           </div>
+          {!panels.collapsed && (
+            <PanelDivider
+              side="left"
+              label="Ширина левой панели"
+              width={panels.left}
+              min={176}
+              max={410}
+              resize={(left) => setPanels((current) => ({ ...current, left }))}
+            />
+          )}
         </aside>
         <main className="workspace">
           <div className="global-search" ref={searchArea}>
@@ -873,6 +959,18 @@ export function App() {
                       Переименовать
                     </button>
                   </form>
+                  {activeFolder && (
+                    <button
+                      className="text-button"
+                      disabled={busy}
+                      onClick={() => {
+                        setProjectSettingsOpen(false);
+                        openId(activeFolder.id, true);
+                      }}
+                    >
+                      Переименовать папку
+                    </button>
+                  )}
                   <button className="text-button" disabled={busy} onClick={exportActive}>
                     Экспорт
                   </button>
@@ -1157,6 +1255,41 @@ export function App() {
             </section>
           )}
         </main>
+        {editing && (
+          <div className="record-dock">
+            <PanelDivider
+              side="right"
+              label="Ширина панели записи"
+              width={panels.right}
+              min={270}
+              max={690}
+              resize={(right) => setPanels((current) => ({ ...current, right }))}
+            />
+            <CardEditor
+              key={`${user.id}:${editing.id}`}
+              card={editing}
+              userId={user.id}
+              initiallyEditing={openForEditing}
+              close={() => setEditing(null)}
+              saved={replaceCard}
+              deleted={(card) => {
+                setEditing(null);
+                setDeletedItem({ id: card.id, type: 'card' });
+                setNotice(
+                  card.kind === 'folder'
+                    ? 'Папка перемещена в корзину.'
+                    : 'Запись перемещена в корзину.',
+                );
+                refresh();
+              }}
+              copied={(card) => {
+                setOpenForEditing(true);
+                setEditing(card);
+                refresh();
+              }}
+            />
+          </div>
+        )}
       </div>
       {capturing && (
         <QuickCapture
@@ -1167,34 +1300,6 @@ export function App() {
             setCapturing(false);
             setNotice('Запись сохранена.');
             if (selected === card.project && folder === (card.folder ?? null)) setFocusId(card.id);
-            refresh();
-          }}
-        />
-      )}
-      {editing && (
-        <CardEditor
-          key={`${user.id}:${editing.id}`}
-          card={editing}
-          userId={user.id}
-          initiallyEditing={openForEditing}
-          close={() => {
-            setEditing(null);
-            refresh();
-          }}
-          saved={replaceCard}
-          deleted={(card) => {
-            setEditing(null);
-            setDeletedItem({ id: card.id, type: 'card' });
-            setNotice(
-              card.kind === 'folder'
-                ? 'Папка перемещена в корзину.'
-                : 'Запись перемещена в корзину.',
-            );
-            refresh();
-          }}
-          copied={(card) => {
-            setOpenForEditing(true);
-            setEditing(card);
             refresh();
           }}
         />

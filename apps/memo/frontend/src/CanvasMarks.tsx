@@ -6,7 +6,14 @@ import { markTools } from './shortcuts';
 import { IconButton } from './ui';
 
 type Point = Card['coordinates'];
-type Handle = 'at' | 'end' | 'body' | 'scale';
+const labelCorners = ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const;
+type LabelCorner = (typeof labelCorners)[number];
+type Handle = 'at' | 'end' | 'body' | LabelCorner;
+const isLabelCorner = (handle: Handle): handle is LabelCorner =>
+  handle === 'top-left' ||
+  handle === 'top-right' ||
+  handle === 'bottom-left' ||
+  handle === 'bottom-right';
 type Gesture = {
   pointer: number;
   mark: BoardMark;
@@ -43,7 +50,7 @@ function moveMark(mark: BoardMark, handle: Handle, dx: number, dy: number): Boar
     x: Math.max(-limit, Math.min(limit, point.x + dx)),
     y: Math.max(-limit, Math.min(limit, point.y + dy)),
   });
-  if (handle === 'scale') return mark;
+  if (isLabelCorner(handle)) return mark;
   if (mark.kind === 'label') return { ...mark, at: shift(mark.at) };
   if (handle !== 'body') {
     const target = shift(mark[handle]);
@@ -316,10 +323,9 @@ export function MarkLayer({
       handle,
       origin: { x: event.clientX, y: event.clientY },
       moved: false,
-      box:
-        handle === 'scale'
-          ? (event.currentTarget.parentElement?.getBoundingClientRect() ?? null)
-          : null,
+      box: isLabelCorner(handle)
+        ? (event.currentTarget.parentElement?.getBoundingClientRect() ?? null)
+        : null,
     };
   };
   const displacement = (event: PointerEvent, current: Gesture) => ({
@@ -328,9 +334,25 @@ export function MarkLayer({
   });
   const movedMark = (current: Gesture, dx: number, dy: number): BoardMark => {
     const { mark, handle, box } = current;
-    if (handle === 'scale' && mark.kind === 'label' && box && box.width && box.height) {
-      const ratio = 1 + (dx * box.width + dy * box.height) / (box.width ** 2 + box.height ** 2);
-      return { ...mark, scale: fitLabelScale((mark.scale ?? 1) * ratio) };
+    if (isLabelCorner(handle) && mark.kind === 'label' && box && box.width && box.height) {
+      const left = handle.endsWith('left');
+      const top = handle.startsWith('top');
+      const oldScale = mark.scale ?? 1;
+      const ratio =
+        1 +
+        ((left ? -dx : dx) * box.width + (top ? -dy : dy) * box.height) /
+          (box.width ** 2 + box.height ** 2);
+      const next = fitLabelScale(oldScale * ratio);
+      const change = (1 - next / oldScale) / scale;
+      const bound = (value: number) => Math.max(-limit, Math.min(limit, value));
+      return {
+        ...mark,
+        scale: next,
+        at: {
+          x: bound(mark.at.x + (left ? box.width * change : 0)),
+          y: bound(mark.at.y + (top ? box.height * change : 0)),
+        },
+      };
     }
     return moveMark(mark, handle, dx / scale, dy / scale);
   };
@@ -350,8 +372,8 @@ export function MarkLayer({
     await marks.update(
       mark.id,
       mark.kind === 'label'
-        ? handle === 'scale'
-          ? { scale: mark.scale }
+        ? isLabelCorner(handle)
+          ? { scale: mark.scale, at: mark.at }
           : { at: mark.at }
         : { at: mark.at, end: mark.end },
     );
@@ -384,7 +406,7 @@ export function MarkLayer({
     event.preventDefault();
     marks.choose(mark, false);
     const next =
-      handle === 'scale' && mark.kind === 'label'
+      isLabelCorner(handle) && mark.kind === 'label'
         ? { ...mark, scale: fitLabelScale((mark.scale ?? 1) + (dx + dy) / 10) }
         : moveMark(mark, handle, dx * 8, dy * 8);
     void persist(next, handle);
@@ -400,7 +422,7 @@ export function MarkLayer({
   const items = marks.items.map((mark) => (moving?.id === mark.id ? moving : mark));
   const trash = (mark: BoardMark, label: string) => (
     <IconButton
-      className="mark-trash-button"
+      className="canvas-trash"
       icon="trash"
       iconSize={15}
       label={label}
@@ -417,7 +439,7 @@ export function MarkLayer({
           const selected = marks.selected === mark.id || moving?.id === mark.id;
           const grouped = group.includes(mark.id);
           return (
-            <g key={mark.id} data-kind={mark.kind}>
+            <g key={mark.id} data-kind={mark.kind} data-active={selected || undefined}>
               <MarkStroke
                 sketch={mark}
                 className={`mark-stroke ${grouped ? 'mark-grouped' : ''}`}
@@ -451,30 +473,29 @@ export function MarkLayer({
               >
                 {trash(mark, sketchTrash[mark.kind])}
               </foreignObject>
-              {selected &&
-                (['at', 'end'] as const).map((handle) => (
-                  <rect
-                    key={handle}
-                    className="mark-endpoint"
-                    role="button"
-                    tabIndex={0}
-                    aria-label={
-                      mark.kind === 'line'
-                        ? handle === 'at'
-                          ? 'Начало линии разметки'
-                          : 'Конец линии разметки'
-                        : handle === 'at'
-                          ? 'Первый угол фигуры'
-                          : 'Противоположный угол фигуры'
-                    }
-                    x={mark[handle].x - 6}
-                    y={mark[handle].y - 6}
-                    width={12}
-                    height={12}
-                    rx={2}
-                    {...pointer(mark, handle)}
-                  />
-                ))}
+              {(['at', 'end'] as const).map((handle) => (
+                <rect
+                  key={handle}
+                  className="mark-endpoint"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={
+                    mark.kind === 'line'
+                      ? handle === 'at'
+                        ? 'Начало линии разметки'
+                        : 'Конец линии разметки'
+                      : handle === 'at'
+                        ? 'Первый угол фигуры'
+                        : 'Противоположный угол фигуры'
+                  }
+                  x={mark[handle].x - 6}
+                  y={mark[handle].y - 6}
+                  width={12}
+                  height={12}
+                  rx={2}
+                  {...pointer(mark, handle)}
+                />
+              ))}
             </g>
           );
         })}
@@ -501,14 +522,21 @@ export function MarkLayer({
                 {mark.text}
               </button>
               <div className="mark-trash">{trash(mark, `Удалить подпись «${mark.text}»`)}</div>
-              <button
-                type="button"
-                className="canvas-label-resize"
-                aria-label={`Изменить размер подписи «${mark.text}»`}
-                aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown"
-                disabled={busy || marks.locked}
-                {...pointer(mark, 'scale')}
-              />
+              {labelCorners.map((corner) => (
+                <button
+                  key={corner}
+                  type="button"
+                  className={`canvas-label-resize ${corner}`}
+                  aria-label={`Изменить размер подписи «${mark.text}»`}
+                  aria-hidden={corner === 'bottom-right' ? undefined : true}
+                  tabIndex={corner === 'bottom-right' ? 0 : -1}
+                  aria-keyshortcuts={
+                    corner === 'bottom-right' ? 'ArrowLeft ArrowRight ArrowUp ArrowDown' : undefined
+                  }
+                  disabled={busy || marks.locked}
+                  {...pointer(mark, corner)}
+                />
+              ))}
             </div>
           ),
       )}

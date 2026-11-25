@@ -57,7 +57,6 @@ export function CardEditor({
   const newSection = useRef<string | null>(null);
   const dialog = useRef<HTMLElement>(null);
   const sections = useMemo(() => recordSections(edit), [edit.document, edit.content]);
-  const editButton = useRef<HTMLButtonElement>(null);
   const copyKey = useRef(`draft-copy-${card.id}-${recovery?.savedAt ?? Date.now()}`);
   const savedCallback = useRef(saved);
   savedCallback.current = saved;
@@ -163,7 +162,12 @@ export function CardEditor({
   useEffect(() => {
     const previous = document.activeElement;
     const keydown = (event: KeyboardEvent) => {
-      if (event.target instanceof Element && event.target.closest('dialog[open]')) return;
+      if (
+        !(event.target instanceof Element) ||
+        !dialog.current?.contains(event.target) ||
+        event.target.closest('dialog[open]')
+      )
+        return;
       if (event.key === 'Escape') {
         event.preventDefault();
         closeRef.current();
@@ -171,24 +175,6 @@ export function CardEditor({
       if (event.code === 'KeyS' && (event.ctrlKey || event.metaKey) && !event.altKey) {
         event.preventDefault();
         void saveRef.current();
-      }
-      if (event.key !== 'Tab') return;
-      const elements = dialog.current?.querySelectorAll<HTMLElement>(
-        'button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[contenteditable="true"],a[href]',
-      );
-      const visible = elements
-        ? [...elements].filter(
-            (element) => element.offsetParent !== null && !element.closest('fieldset:disabled'),
-          )
-        : [];
-      const first = visible[0];
-      const last = visible.at(-1);
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
       }
     };
     document.addEventListener('keydown', keydown);
@@ -198,9 +184,10 @@ export function CardEditor({
     };
   }, []);
   useEffect(() => {
-    const preferred = editing ? heading.current : editButton.current;
-    if (preferred && !preferred.disabled) preferred.focus();
-    else dialog.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();
+    if (editing) {
+      if (heading.current && !heading.current.disabled) heading.current.focus();
+      else dialog.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();
+    }
   }, [editing]);
   const updateSections = (change: (current: RecordSection[]) => RecordSection[]) =>
     setEdit((current) => ({
@@ -253,19 +240,8 @@ export function CardEditor({
     });
   const locked = working || fieldPending > 0;
   return (
-    <div
-      className="editor-backdrop"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) closeEditor();
-      }}
-    >
-      <section
-        ref={dialog}
-        className="editor"
-        role="dialog"
-        aria-modal="true"
-        aria-label={editing ? 'Редактор записи' : edit.name}
-      >
+    <>
+      <section ref={dialog} className="editor" aria-label={editing ? 'Редактор записи' : edit.name}>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -311,7 +287,7 @@ export function CardEditor({
             <div className="editor-header-actions">
               {!editing && (
                 <IconButton
-                  ref={editButton}
+                  data-edit-record=""
                   icon="pencil"
                   label="Редактировать"
                   onClick={() => setEditing(true)}
@@ -540,6 +516,6 @@ export function CardEditor({
           }
         />
       )}
-    </div>
+    </>
   );
 }

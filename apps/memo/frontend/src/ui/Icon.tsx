@@ -17,6 +17,7 @@ export type IconName =
   | 'square'
   | 'circle'
   | 'keyboard'
+  | 'sidebar'
   | 'plus';
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'children' | 'name'> {
@@ -42,6 +43,7 @@ const paths: Record<IconName, string> = {
   square: 'M4 4h16v16H4Z',
   circle: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z',
   keyboard: 'M2 5h20v14H2ZM6 9h1m4 0h1m4 0h1M6 13h1m4 0h1m4 0h1M8 16h8',
+  sidebar: 'M3 5h18v14H3ZM9 5v14',
   plus: 'M12 5v14M5 12h14',
 };
 

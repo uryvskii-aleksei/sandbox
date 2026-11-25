@@ -118,6 +118,7 @@ export function LinkControl({
           />
           <IconButton
             label={`Удалить связь ${name}`}
+            className="canvas-trash"
             icon="trash"
             disabled={busy}
             onClick={() => void remove(link).catch(() => setError('Не удалось удалить связь.'))}

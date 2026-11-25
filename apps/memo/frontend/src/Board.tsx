@@ -225,6 +225,7 @@ export function Board({
   const [hoveredLink, setHoveredLink] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const root = useRef<HTMLElement>(null);
+  const viewport = useRef<{ width: number; height: number } | null>(null);
   const drag = useRef<Drag | null>(null);
   const markPointer = useRef<number | null>(null);
   const resizing = useRef<ResizeGesture | null>(null);
@@ -245,7 +246,10 @@ export function Board({
     marks.cancel();
     setGroup(emptySelection);
     if (card.kind === 'folder') enter(card);
-    else setSelectedId(card.id);
+    else {
+      setSelectedId(card.id);
+      open(card);
+    }
   };
   const point = (card: Card) =>
     resizePreview?.id === card.id
@@ -386,6 +390,37 @@ export function Board({
       }
     }
   }, [focusId]);
+  useEffect(() => {
+    const board = root.current;
+    if (!board) return;
+    const observer = new ResizeObserver(() => {
+      const width = board.clientWidth;
+      const height = board.clientHeight;
+      const before = viewport.current;
+      viewport.current = { width, height };
+      if (!before || (before.width === width && before.height === height)) return;
+      setCamera((current) => {
+        const x = current.x + (width - before.width) / 2;
+        const y = current.y + (height - before.height) / 2;
+        const card = cards.find((item) => item.id === selectedId);
+        if (!card) return { ...current, x, y };
+        const bounds = cardDimensions(card);
+        const cx = (card.coordinates.x + bounds.width / 2) * current.scale + x;
+        const cy = (card.coordinates.y + bounds.height / 2) * current.scale + y;
+        const inset = (center: number, span: number, extent: number) => {
+          const margin = Math.min(span / 2, (extent * current.scale) / 2 + 12);
+          return Math.max(margin, Math.min(span - margin, center)) - center;
+        };
+        return {
+          ...current,
+          x: x + inset(cx, width, bounds.width),
+          y: y + inset(cy, height, bounds.height),
+        };
+      });
+    });
+    observer.observe(board);
+    return () => observer.disconnect();
+  }, [cards, selectedId]);
   useEffect(() => {
     const element = root.current;
     if (!element) return;
@@ -1042,14 +1077,7 @@ export function Board({
               </button>
               <CardPreview text={isFolder ? 'Открыть полотно' : excerpt(card)} />
               <IconButton
-                className="card-properties"
-                icon="pencil"
-                label={`Свойства: ${card.name}`}
-                disabled={busy}
-                onClick={() => open(card)}
-              />
-              <IconButton
-                className="card-trash danger"
+                className="canvas-trash card-trash"
                 icon="trash"
                 label={`В корзину: ${card.name}`}
                 disabled={busy}

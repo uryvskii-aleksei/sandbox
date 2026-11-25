@@ -793,14 +793,6 @@ button {
   color: var(--muted);
   font-size: 14px;
 }
-.editor-backdrop {
-  position: fixed;
-  z-index: 10;
-  inset: 0;
-  background: #10274f60;
-  display: flex;
-  justify-content: flex-end;
-}
 .editor {
   width: min(680px, 100%);
   background: #fff;
@@ -1821,14 +1813,8 @@ kbd {
 .folder-card .card-title svg {
   flex: none;
 }
-.card-properties {
-  position: absolute;
-  top: 6px;
-  right: 7px;
-  color: var(--accent);
-}
 .mind-card .card-title {
-  padding-inline-end: 58px;
+  padding-inline-end: 26px;
 }
 .mind-card.related-card {
   border-color: #5378c2;
@@ -2023,6 +2009,7 @@ kbd {
   pointer-events: none;
 }
 .mark-endpoint {
+  visibility: hidden;
   fill: white;
   stroke: #7183a4;
   stroke-width: 2;
@@ -2032,6 +2019,11 @@ kbd {
 }
 .mark-lines g:has(.mark-hit:focus-visible) > .mark-stroke {
   stroke-dasharray: 5 4;
+}
+.mark-lines g:hover .mark-endpoint,
+.mark-lines g:focus-within .mark-endpoint,
+.mark-lines g[data-active] .mark-endpoint {
+  visibility: visible;
 }
 .mark-endpoint:focus-visible {
   fill: #dbe3ed;
@@ -2162,15 +2154,10 @@ kbd {
   position: absolute;
   z-index: 1;
   top: 6px;
-  right: 41px;
-  color: #b13954;
+  right: 7px;
 }
-.card-properties.icon-button,
 .card-actions {
   z-index: 1;
-}
-.card-trash:hover {
-  background: #fff0f2;
 }
 .mark-trash {
   visibility: hidden;
@@ -2183,7 +2170,7 @@ kbd {
   visibility: visible;
   pointer-events: auto;
 }
-.mark-trash-button.icon-button {
+.canvas-trash.icon-button {
   width: 27px;
   height: 27px;
   min-width: 27px;
@@ -2193,8 +2180,9 @@ kbd {
   background: white;
   color: var(--accent);
 }
-.mark-trash-button:hover {
+.canvas-trash.icon-button:hover {
   color: #b13954;
+  background: #fff0f2;
 }
 .canvas-label-item {
   position: absolute;
@@ -2205,8 +2193,9 @@ kbd {
 }
 .canvas-label-item > .mark-trash {
   position: absolute;
-  top: 0;
-  left: calc(100% - 2px);
+  bottom: calc(100% - 2px);
+  left: 50%;
+  transform: translateX(-50%);
 }
 select {
   appearance: none;
@@ -2390,8 +2379,6 @@ select {
 }
 .canvas-label-resize {
   position: absolute;
-  bottom: -3px;
-  right: -3px;
   width: 11px;
   height: 11px;
   padding: 0;
@@ -2402,8 +2389,28 @@ select {
   cursor: nwse-resize;
   touch-action: none;
 }
+.canvas-label-resize.top-left,
+.canvas-label-resize.top-right {
+  top: -3px;
+}
+.canvas-label-resize.bottom-left,
+.canvas-label-resize.bottom-right {
+  bottom: -3px;
+}
+.canvas-label-resize.top-left,
+.canvas-label-resize.bottom-left {
+  left: -3px;
+}
+.canvas-label-resize.top-right,
+.canvas-label-resize.bottom-right {
+  right: -3px;
+}
+.canvas-label-resize.bottom-left,
+.canvas-label-resize.top-right {
+  cursor: nesw-resize;
+}
 .canvas-label-item:hover .canvas-label-resize,
-.canvas-label-resize:focus-visible {
+.canvas-label-item:focus-within .canvas-label-resize {
   opacity: 1;
 }
 .connections .link-hit {
@@ -2411,4 +2418,167 @@ select {
 }
 .connections .link-hit:active {
   cursor: grabbing;
+}
+
+.application .sidebar {
+  width: var(--memo-sidebar-width);
+}
+.sidebar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+.sidebar-top .brand {
+  margin: 0;
+}
+.sidebar-toggle {
+  color: white;
+}
+.capture-button .sidebar-label {
+  flex: 1;
+}
+.project-dot > span {
+  display: none;
+}
+.application .sidebar-collapsed {
+  padding-inline: 8px;
+}
+.sidebar-collapsed .sidebar-top {
+  flex-direction: column-reverse;
+  margin-bottom: 16px;
+}
+.sidebar-collapsed .sidebar-label,
+.sidebar-collapsed .nav-section,
+.sidebar-collapsed kbd,
+.sidebar-collapsed .nav-item small,
+.sidebar-collapsed .sidebar-bottom > span:not(.avatar) {
+  display: none;
+}
+.sidebar-collapsed .main-navigation {
+  margin-block: 12px;
+}
+.sidebar-collapsed .nav-item,
+.sidebar-collapsed .capture-button {
+  min-height: 36px;
+  justify-content: center;
+  padding-inline: 4px;
+}
+.sidebar-collapsed .project-dot {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 5px;
+  color: white;
+  background: #ffffff29;
+  font-size: 11px;
+}
+.sidebar-collapsed .project-dot > span {
+  display: inline;
+}
+.sidebar-collapsed .sidebar-bottom {
+  flex-direction: column;
+}
+.sidebar-collapsed .sidebar-bottom button {
+  margin: 0;
+}
+.record-dock {
+  position: relative;
+  flex-shrink: 0;
+  width: min(var(--memo-record-width), max(270px, calc(100vw - var(--memo-sidebar-width) - 245px)));
+  min-width: 0;
+  height: 100dvh;
+  border-left: 1px solid var(--border);
+  background: #fff;
+}
+.record-dock .editor {
+  width: 100%;
+  height: 100%;
+  box-shadow: none;
+}
+.record-dock .editor-header {
+  background: white;
+  color: var(--accent);
+  border-bottom: 1px solid var(--border);
+  padding: 18px 18px 16px;
+}
+.record-dock .editor-title {
+  color: var(--accent);
+  font-size: 23px;
+}
+.record-dock .save-status {
+  color: var(--muted);
+}
+.record-dock .editor-body {
+  padding: 14px;
+}
+.record-dock .editor-footer {
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  gap: 6px;
+}
+.record-dock .editor-footer > button {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.panel-divider {
+  position: absolute;
+  z-index: 8;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.panel-divider-left {
+  right: 0;
+}
+.panel-divider-right {
+  left: 0;
+}
+.panel-divider:hover,
+.panel-divider:focus-visible {
+  background: #7491bd40;
+}
+@media (max-width: 760px) {
+  .application.has-record-dock {
+    flex-wrap: wrap;
+    height: auto;
+    overflow-y: auto;
+  }
+  .record-dock {
+    width: 100%;
+    height: max(340px, 55dvh);
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+  .panel-divider-right {
+    display: none;
+  }
+}
+@media (max-width: 620px) {
+  .application .sidebar {
+    width: 100%;
+    position: static;
+  }
+  .sidebar-top {
+    grid-column: 1;
+    grid-row: 1;
+    margin: 0;
+  }
+  .sidebar-collapsed .sidebar-top {
+    flex-direction: row;
+    margin: 0;
+  }
+  .sidebar-collapsed .main-navigation {
+    margin-block: 6px 0;
+  }
+  .sidebar-collapsed .sidebar-bottom {
+    flex-direction: row;
+  }
+  .panel-divider-left {
+    display: none;
+  }
 }

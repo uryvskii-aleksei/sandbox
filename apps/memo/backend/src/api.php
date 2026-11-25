@@ -5,6 +5,7 @@ namespace Memo;
 ini_set('display_errors', '0');
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/cards.php';
+require_once __DIR__ . '/workspace.php';
 require_once __DIR__ . '/preview.php';
 
 function route(): never
@@ -49,40 +50,129 @@ function route(): never
         respond(['user' => null, 'csrfToken' => $_SESSION['csrf']]);
     }
     $user = requireUser(); $owner = $user['id'];
+    if ($path === '/search' && $method === 'GET') respond(searchCards($owner));
+    if ($path === '/trash' && $method === 'GET') respond(trashContents($owner));
+    if ($path === '/capture' && $method === 'POST') respond(captureCard($owner, jsonBody()), 201);
+    if ($path === '/links') {
+        if ($method === 'GET') respond(linkRows($owner));
+        if ($method === 'PUT') {
+            $body = jsonBody(); respond(ownedTransaction($owner, static fn(): array => putLink($owner, $body)));
+        }
+        if ($method === 'PATCH') respond(rewireLink($owner, jsonBody()));
+        if ($method === 'DELETE') {
+            $body = jsonBody(); ownedTransaction($owner, static fn() => deleteLink($owner, $body)); respond(null);
+        }
+    }
     if ($path === '/projects' && $method === 'GET') {
-        $rows = query('SELECT p.id,p.name,COUNT(c.id) AS cards FROM projects p LEFT JOIN cards c ON c.project_id=p.id WHERE p.owner_id=? GROUP BY p.id,p.name ORDER BY p.id DESC', [$owner])->fetchAll();
-        respond(array_map(static fn(array $row): array => ['id' => (int) $row['id'], 'name' => $row['name'], 'cards' => (int) $row['cards']], $rows));
+        respond(projectList($owner));
     }
     if ($path === '/projects' && $method === 'POST') {
-        $body = jsonBody(); query('INSERT INTO projects(owner_id,name) VALUES(?,?)', [$owner, text($body['name'] ?? '')]);
-        respond(project((int) database()->lastInsertId(), $owner) + ['cards' => 0], 201);
+        $body = jsonBody();
+        respond(templateProject($owner, text($body['name'] ?? ''), text($body['template'] ?? 'blank', 16)), 201);
+    }
+    if (preg_match('~^/projects/(\d+)/(restore|export)$~', $path, $match)) {
+        $id = positiveId($match[1]);
+        if ($match[2] === 'export' && $method === 'GET') respond(exportProject($id, $owner));
+        if ($match[2] === 'restore' && $method === 'POST') {
+            respond(ownedTransaction($owner, static function () use ($id, $owner): array {
+                if (!query('SELECT id FROM projects WHERE id=? AND owner_id=?', [$id, $owner])->fetch()) fail(404, 'Проект не найден.');
+                query('UPDATE project_details SET deleted_at=NULL WHERE project_id=?', [$id]);
+                return project($id, $owner);
+            }));
+        }
     }
     if (preg_match('~^/projects/(\d+)$~', $path, $match)) {
         $id = positiveId($match[1]); project($id, $owner);
         if ($method === 'PATCH') { $body = jsonBody(); query('UPDATE projects SET name=? WHERE id=? AND owner_id=?', [text($body['name'] ?? ''), $id, $owner]); respond(project($id, $owner)); }
-        if ($method === 'DELETE') { query('DELETE FROM projects WHERE id=? AND owner_id=?', [$id, $owner]); respond(null); }
+        if ($method === 'DELETE') {
+            ownedTransaction($owner, static function () use ($id, $owner): void {
+                $current = project($id, $owner);
+                if ($current['inbox']) fail(422, 'Входящие нельзя удалить. Переместите или удалите отдельные записи.');
+                query('INSERT INTO project_details(project_id,deleted_at) VALUES(?,CURRENT_TIMESTAMP) ON DUPLICATE KEY UPDATE deleted_at=CURRENT_TIMESTAMP', [$id]);
+            }); respond(null);
+        }
         if ($method === 'GET') respond(project($id, $owner));
+    }
+    if ($method === 'GET' && preg_match('~^/projects/(\d+)/folders$~', $path, $match)) {
+        $id = positiveId($match[1]); project($id, $owner);
+        respond(projectFolders($id));
+    }
+    if (preg_match('~^/projects/(\d+)/marks$~', $path, $match)) {
+        $id = positiveId($match[1]); project($id, $owner);
+        if ($method === 'POST') respond(createBoardMark($id, $owner, jsonBody()), 201);
+        if ($method === 'GET') {
+            $folder = ($_GET['folder'] ?? 'root') === 'root' ? null : folderId($_GET['folder']);
+            validateFolder($folder, $id, $owner);
+            respond(array_map(__NAMESPACE__ . '\\boardMarkOutput', query('SELECT * FROM board_marks WHERE project_id=? AND folder_id <=> ? ORDER BY id', [$id, $folder])->fetchAll()));
+        }
+    }
+    if ($method === 'POST' && preg_match('~^/projects/(\d+)/trash-selection$~', $path, $match)) {
+        trashBoardSelection(positiveId($match[1]), $owner, jsonBody());
+        respond(null);
+    }
+    if (preg_match('~^/marks/(\d+)$~', $path, $match) && in_array($method, ['PATCH', 'DELETE'], true)) {
+        respond(changeBoardMark(positiveId($match[1]), $owner, $method === 'PATCH' ? jsonBody() : null));
     }
     if (preg_match('~^/projects/(\d+)/cards$~', $path, $match)) {
         $id = positiveId($match[1]); project($id, $owner);
-        if ($method === 'GET') respond(array_map(__NAMESPACE__ . '\\cardOutput', query('SELECT * FROM cards WHERE project_id=? ORDER BY id', [$id])->fetchAll()));
+        if ($method === 'GET') {
+            $filter = ''; $params = [$id];
+            if (isset($_GET['folder'])) {
+                $folder = $_GET['folder'] === 'root' ? null : folderId($_GET['folder']);
+                validateFolder($folder, $id, $owner);
+                $filter = ' AND c.folder_id <=> ?';
+                $params[] = $folder;
+            }
+            respond(array_map(__NAMESPACE__ . '\\cardOutput', query('SELECT c.* FROM cards c LEFT JOIN card_details d ON d.card_id=c.id WHERE c.project_id=? AND d.deleted_at IS NULL' . $filter . ' ORDER BY c.id', $params)->fetchAll()));
+        }
         if ($method === 'POST') {
             $body = jsonBody(); $point = coordinates($body['coordinates'] ?? ['x' => 80, 'y' => 80]);
             $parent = empty($body['parent']) ? null : positiveId($body['parent']);
-            database()->beginTransaction();
-            try {
+            $created = ownedTransaction($owner, static function () use ($id, $owner, $parent, $point, $body): array {
                 project($id, $owner, true); validateParent($parent, $id, null);
                 query('INSERT INTO cards(project_id,parent_id,name,x,y) VALUES(?,?,?,?,?)', [$id, $parent, text($body['name'] ?? 'Без имени'), $point['x'], $point['y']]);
-                $cardId = (int) database()->lastInsertId(); database()->commit();
-            } catch (\Throwable $error) { if (database()->inTransaction()) database()->rollBack(); throw $error; }
-            respond(cardOutput(cardRow($cardId, $owner)), 201);
+                $cardId = (int) database()->lastInsertId();
+                if ($parent !== null) putLink($owner, ['source' => $parent, 'target' => $cardId]);
+                touchCard($cardId);
+                return cardOutput(cardRow($cardId, $owner));
+            });
+            respond($created, 201);
+        }
+    }
+    if (preg_match('~^/cards/(\d+)/(restore|metadata|visit|move)$~', $path, $match)) {
+        $id = positiveId($match[1]); $operation = $match[2];
+        if ($method === 'POST') {
+            $body = jsonBody();
+            respond(ownedTransaction($owner, static function () use ($id, $owner, $operation, $body): array {
+                $row = cardRow($id, $owner, $operation === 'restore');
+                project((int) $row['project_id'], $owner);
+                if ($operation === 'restore') {
+                    validateFolder(folderId($row['folder_id']), (int) $row['project_id'], $owner);
+                    query('UPDATE card_details SET deleted_at=NULL WHERE card_id=?', [$id]);
+                }
+                if ($operation === 'metadata') {
+                    if (!is_bool($body['pinned'] ?? null)) fail(422, 'Укажите состояние закрепления.');
+                    query('INSERT INTO card_details(card_id,pinned) VALUES(?,?) ON DUPLICATE KEY UPDATE pinned=VALUES(pinned)', [$id, (int) $body['pinned']]);
+                }
+                if ($operation === 'visit') query('INSERT INTO card_details(card_id,opened_at) VALUES(?,CURRENT_TIMESTAMP(6)) ON DUPLICATE KEY UPDATE opened_at=CURRENT_TIMESTAMP(6)', [$id]);
+                if ($operation === 'move') moveCardToBoard($row, $owner, $body);
+                return cardOutput(cardRow($id, $owner));
+            }));
         }
     }
     if (preg_match('~^/cards/(\d+)(/position)?$~', $path, $match)) {
-        $id = positiveId($match[1]); cardRow($id, $owner);
+        $id = positiveId($match[1]);
+        $includeDeleted = $method === 'GET' && empty($match[2]) && ($_GET['includeDeleted'] ?? '') === '1';
+        $row = cardRow($id, $owner, $includeDeleted);
+        if ($method === 'GET' && empty($match[2])) respond(cardOutput($row));
         if ($method === 'PUT' && empty($match[2])) respond(saveCard($id, $owner, jsonBody()));
         if ($method === 'PATCH' && !empty($match[2])) respond(saveCard($id, $owner, jsonBody(), true));
-        if ($method === 'DELETE' && empty($match[2])) { query('DELETE FROM cards WHERE id=?', [$id]); respond(null); }
+        if ($method === 'DELETE' && empty($match[2])) {
+            ownedTransaction($owner, static function () use ($id, $owner): void {
+                $card = cardRow($id, $owner);
+                trashCard($card);
+            }); respond(null);
+        }
     }
     if ($method === 'POST' && $path === '/preview') respond(preview(text(jsonBody()['url'] ?? '', 2048)));
     if ($method === 'POST' && $path === '/media') {

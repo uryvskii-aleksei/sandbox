@@ -66,7 +66,7 @@ def allowed_path(target, name):
     if name not in target["ownedFiles"] and not (len(parts) > 1 and parts[0] in target["ownedDirectories"]):
         raise SiteError("Artifact path is outside the selected application's ownership: " + name)
     if name.endswith(".php"):
-        if target["app"] != "purpur" or name not in {"order.php", "cdek-points.php", "purpur/v1/order.php", "purpur/v1/cdek-points.php"}:
+        if target["app"] != "purpur" or name not in {"order.php", "cdek-points.php", "v1/order.php", "v1/cdek-points.php"}:
             raise SiteError("Unexpected PHP entry point in the artifact.")
     elif parts[-1] != ".htaccess" and PurePosixPath(name).suffix.lower() not in EXTENSIONS:
         raise SiteError("Unsupported artifact file type.")
@@ -82,19 +82,17 @@ def validate_target(target, home=None):
     if not isinstance(target["sshHost"], str) or not re.fullmatch(r"[a-z][a-z0-9_-]*", target["sshHost"]):
         raise SiteError("Invalid SSH alias.")
     account = Path(home) if home is not None else Path("/home") / target["user"][0] / target["user"]
-    public = account / "public_html"
-    if app == "stonehaus":
-        public /= "stonehaus"
+    public = account / "public_html" / app
     if target["publicPath"] != str(public) or account.name != target["user"]:
         raise SiteError("The destination is not this application's configured account directory.")
     url = urlparse(target["url"])
-    if url.scheme != "https" or not url.hostname or url.username or url.password or url.port or url.query or url.fragment or url.path != ("/" if app == "purpur" else "/stonehaus/"):
+    if url.scheme != "https" or url.hostname != f"{target['user']}.tw1.ru" or url.username or url.password or url.port or url.query or url.fragment or url.path != f"/{app}/":
         raise SiteError("Expected the selected application's HTTPS base URL.")
     for key in ("ownedFiles", "ownedDirectories", "requiredFiles"):
         if not isinstance(target[key], list) or not all(isinstance(name, str) for name in target[key]) or len(target[key]) != len(set(target[key])):
             raise SiteError("Invalid or duplicate file ownership entries.")
-    permitted = {"assets", "concept", "purpur"} if app == "purpur" else {"v1", "v2", "v3"}
-    if not set(target["ownedDirectories"]).issubset(permitted) or (app == "stonehaus" and target["ownedFiles"]):
+    permitted = {"assets", "concept", "v1", "v2", "v3"} if app == "purpur" else {"v1", "v2", "v3"}
+    if not set(target["ownedDirectories"]).issubset(permitted) or (app == "stonehaus" and not set(target["ownedFiles"]).issubset({"index.html", "styles.css"})):
         raise SiteError("The site cannot own sibling applications or the common document root.")
     for name in target["ownedFiles"]:
         if len(normal_path(name)) != 1:
@@ -311,8 +309,8 @@ class Deployment:
             return response.code, body
 
     def verify_neighbours(self, commit):
-        # Общий .htaccess может сломать маршруты соседей, не изменяя их файлов.
-        status, body = self.request("mind-assistant/api/health", commit, common=True)
+        # Проверяем маршруты соседей и байты их главных страниц независимо от файлов поставки.
+        status, body = self.request("memo/api/health", commit, common=True)
         try:
             healthy = json.loads(body)
         except (ValueError, UnicodeError):
@@ -320,7 +318,8 @@ class Deployment:
         data = healthy.get("data") if isinstance(healthy, dict) else None
         if status != 200 or not isinstance(healthy, dict) or healthy.get("ok") is not True or not isinstance(data, dict) or data.get("status") != "ready":
             raise SiteError("A protected neighbouring application (Memo) failed its HTTPS health check.")
-        relatives = ["stonehaus/v1/", "stonehaus/v2/", "stonehaus/v3/"] if self.app == "purpur" else [""]
+        neighbour = "stonehaus" if self.app == "purpur" else "purpur"
+        relatives = [f"{neighbour}/", *(f"{neighbour}/{version}/" for version in ("v1", "v2", "v3"))]
         for relative in relatives:
             expected = self.home / "public_html" / relative / "index.html"
             status, body = self.request(relative, commit, common=True)

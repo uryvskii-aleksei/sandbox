@@ -19,7 +19,7 @@
   let businessPrepared = false;
 
   function asset(path) {
-    return typeof path === 'string' && /^assets\/[a-zA-Z0-9._/-]+$/.test(path) && !path.includes('..') ? path : '';
+    return typeof path === 'string' && /^assets\/[a-zA-Z0-9._/-]+$/.test(path) && !path.includes('..') ? `/purpur/v1/${path}` : '';
   }
 
   function sourceUrl(value) {
@@ -235,7 +235,7 @@
 
   async function sendApplication(kind, text) {
     try {
-      const response = await fetch('/order.php', {
+      const response = await fetch('/purpur/order.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ kind, text }),
@@ -291,8 +291,8 @@
     note.textContent = 'Загружаем пункты СДЭК…';
     cdekLayer.clearLayers();
     const url = query.code
-      ? `/cdek-points.php?code=${encodeURIComponent(query.code)}`
-      : `/cdek-points.php?city=${encodeURIComponent(query.city || '')}`;
+      ? `/purpur/cdek-points.php?code=${encodeURIComponent(query.code)}`
+      : `/purpur/cdek-points.php?city=${encodeURIComponent(query.city || '')}`;
     const response = await fetch(url, { headers: { Accept: 'application/json' } });
     const data = await response.json();
     const points = Array.isArray(data.points) ? data.points : [];

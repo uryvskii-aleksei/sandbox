@@ -4,7 +4,7 @@
 
 Используем обычный виртуальный хостинг Timeweb через SSH/SFTP. Cloud API и MCP Timeweb Cloud к этому виду хостинга не относятся.
 
-Технический домен — [cj999935.tw1.ru](https://cj999935.tw1.ru/). Сервер — `vh460.timeweb.ru`, основной пользователь — `cj999935`, каталог сайта — `/home/c/cj999935/public_html`. На этом компьютере настроен alias `timeweb-sandbox` с отдельным ключом `~/.ssh/sandbox_timeweb_ed25519`. Проверены вход по ключу, SFTP и передача через rsync со сверкой SHA-256 вне публичного сайта.
+Публикация использует технический домен [cj999935.tw1.ru](https://cj999935.tw1.ru/) с действующим HTTPS. Пути поставки: Memo в `/memo/`, Purpur в `/purpur/`, Stonehaus в `/stonehaus/`. Для выпуска используются SSH и GitHub API. Сервер — `vh460.timeweb.ru`, основной пользователь — `cj999935`, каталог сайта — `/home/c/cj999935/public_html`. На этом компьютере настроен alias `timeweb-sandbox` с отдельным ключом `~/.ssh/sandbox_timeweb_ed25519`. Проверены вход по ключу, SFTP и передача через rsync со сверкой SHA-256 вне публичного сайта.
 
 [connection.json](connection.json) содержит несекретные настройки аккаунта для команды `npm run timeweb -- check`. Эта проверка работает и до появления первого приложения, ничего не загружая в корень сайта.
 
@@ -66,7 +66,7 @@ npm run deploy:sites -- plan stonehaus
 npm run deploy:sites -- publish stonehaus --apply
 ```
 
-[Purpur](../../apps/purpur/deployment.md) содержит PHP и занимает отдельные имена в общем document root. Receiver обновляет только эти имена, сохраняя Memo и Stonehaus. [Stonehaus](../../apps/stonehaus/deployment.md) публикует три варианта одной проверенной поставкой. Обе процедуры требуют успешного Harness для точного SHA, сверяют установленный receiver/назначение и проверяют реальные HTTPS-байты приложения и соседей. Ключ остаётся локальным. Поставка сайтов не запускается автоматически при push.
+[Purpur](../../apps/purpur/deployment.md) содержит PHP и занимает каталог `purpur/` общего document root. Receiver обновляет только имена внутри него, сохраняя Memo и Stonehaus. [Stonehaus](../../apps/stonehaus/deployment.md) публикует страницу выбора и три варианта одной проверенной поставкой. Обе процедуры требуют успешного Harness для точного SHA, сверяют установленный receiver/назначение и проверяют реальные HTTPS-байты приложения и соседей. Ключ остаётся локальным. Поставка сайтов не запускается автоматически при push.
 
 ### 3.1. Универсальный статический помощник
 

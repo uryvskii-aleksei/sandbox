@@ -67,9 +67,9 @@ test('a deployment target cannot escape the app or inject an SSH command/configu
     sshHost: 'timeweb-sandbox',
     host: 'vh460.timeweb.ru',
     user: 'cj999935',
-    url: 'https://cj999935.tw1.ru/mind-assistant/',
+    url: 'https://cj999935.tw1.ru/memo/',
     remoteRoot: '/home/c/cj999935/.sandbox/mind-assistant',
-    publicPath: '/home/c/cj999935/public_html/mind-assistant',
+    publicPath: '/home/c/cj999935/public_html/memo',
   };
   assert.equal(validateTarget(target), target);
   for (const change of [
@@ -79,9 +79,12 @@ test('a deployment target cannot escape the app or inject an SSH command/configu
     { remoteRoot: '/home/c/cj999935/.sandbox/other' },
     { remoteRoot: '/home/c/cj999935/.sandbox/mind-assistant;unsafe' },
     { publicPath: '/home/c/cj999935/public_html' },
+    { publicPath: '/home/c/cj999935/public_html/mind-assistant' },
+    { url: 'https://cj999935.tw1.ru/mind-assistant/' },
+    { url: 'https://another-account.tw1.ru/memo/' },
     { url: 'https://example.com/other/' },
-    { url: 'https://user:password@example.com/mind-assistant/' },
-    { url: 'http://example.com/mind-assistant/' },
+    { url: 'https://user:password@example.com/memo/' },
+    { url: 'http://example.com/memo/' },
   ])
     assert.throws(() => validateTarget({ ...target, ...change }));
 });

@@ -77,6 +77,12 @@ function verifyCoverage(counts, api) {
     media: 'checkedMedia',
   }))
     checkEqual(api[key], counts[table], `Restored ${table} API coverage is incomplete`);
+  if ('card_links' in counts)
+    checkEqual(
+      api.checkedLinks + api.hiddenLinks,
+      counts.card_links,
+      'Restored graph coverage is incomplete',
+    );
 }
 
 async function boundaryChecks() {
@@ -290,11 +296,12 @@ $broken=[];
 foreach([
 'projects'=>'SELECT COUNT(*) FROM projects p LEFT JOIN users u ON u.id=p.owner_id WHERE u.id IS NULL',
 'cards'=>'SELECT COUNT(*) FROM cards c LEFT JOIN projects p ON p.id=c.project_id WHERE p.id IS NULL',
-'parents'=>'SELECT COUNT(*) FROM cards c LEFT JOIN cards p ON p.id=c.parent_id WHERE c.parent_id IS NOT NULL AND (p.id IS NULL OR p.project_id<>c.project_id)',
+'parents'=>'SELECT COUNT(*) FROM cards c JOIN projects cp ON cp.id=c.project_id LEFT JOIN cards p ON p.id=c.parent_id LEFT JOIN projects pp ON pp.id=p.project_id WHERE c.parent_id IS NOT NULL AND (p.id IS NULL OR pp.owner_id<>cp.owner_id)',
 'groups'=>'SELECT COUNT(*) FROM field_groups g LEFT JOIN cards c ON c.id=g.card_id WHERE c.id IS NULL',
 'fields'=>'SELECT COUNT(*) FROM fields f LEFT JOIN field_groups g ON g.id=f.group_id WHERE g.id IS NULL',
 'media'=>'SELECT COUNT(*) FROM media m LEFT JOIN users u ON u.id=m.owner_id WHERE u.id IS NULL'
 ] as $name=>$sql){$broken[$name]=(int)\\Memo\\query($sql)->fetchColumn();}
+if(in_array('card_links',$tables,true))$broken['links']=(int)\\Memo\\query("SELECT COUNT(*) FROM card_links l JOIN cards s ON s.id=l.source_id JOIN cards t ON t.id=l.target_id JOIN projects sp ON sp.id=s.project_id JOIN projects tp ON tp.id=t.project_id WHERE sp.owner_id<>tp.owner_id OR s.id=t.id")->fetchColumn();
 echo json_encode(['counts'=>$counts,'brokenRelations'=>$broken,'digest'=>hash_final($hash)]);
 `),
       'Database snapshot',
@@ -324,7 +331,19 @@ echo json_encode(['counts'=>$counts,'brokenRelations'=>$broken,'digest'=>hash_fi
       'SQL restore',
       { input: frozenBackup.bytes },
     );
+    const original = snapshot();
+    run(
+      'docker',
+      [...compose, 'exec', '-T', 'api', 'php', 'database/migrate.php'],
+      'Restored schema migration',
+    );
     const restored = snapshot();
+    for (const table of ['users', 'projects', 'cards', 'field_groups', 'fields', 'media'])
+      checkEqual(
+        restored.counts[table],
+        original.counts[table],
+        'Migration changed restored record count',
+      );
     for (const count of Object.values(restored.brokenRelations))
       checkEqual(count, 0, 'Broken restored relationship');
     for (const table of ['users', 'projects', 'cards', 'field_groups', 'fields', 'media'])
@@ -367,6 +386,8 @@ echo json_encode(['counts'=>$counts,'brokenRelations'=>$broken,'digest'=>hash_fi
       checkedGroups: 0,
       checkedFields: 0,
       checkedMedia: 0,
+      checkedLinks: 0,
+      hiddenLinks: 0,
     };
     for (const owner of users) {
       const id = Number(owner.id);
@@ -381,13 +402,14 @@ $user=\\Memo\\query('SELECT id,email,password_hash FROM users WHERE id=?',[${id}
 if(!$user)throw new RuntimeException('Restored owner disappeared');
 if(file_put_contents('/tmp/sandbox-restore-password.json',json_encode(['id'=>$user['id'],'hash'=>$user['password_hash']]))===false)throw new RuntimeException('Password recovery file');chmod('/tmp/sandbox-restore-password.json',0600);
 \\Memo\\query('UPDATE users SET password_hash=? WHERE id=?',[password_hash('${password}',PASSWORD_DEFAULT),$user['id']]);
-$projects=\\Memo\\query('SELECT id,name FROM projects WHERE owner_id=? ORDER BY id',[$user['id']])->fetchAll();
-$cards=\\Memo\\query('SELECT c.* FROM cards c JOIN projects p ON p.id=c.project_id WHERE p.owner_id=? ORDER BY c.id',[$user['id']])->fetchAll();
+$projects=\\Memo\\query('SELECT p.id,p.name,d.deleted_at FROM projects p LEFT JOIN project_details d ON d.project_id=p.id WHERE p.owner_id=? ORDER BY p.id',[$user['id']])->fetchAll();
+$cards=\\Memo\\query('SELECT c.*,d.deleted_at,COALESCE(d.pinned,0) AS pinned,d.updated_at,d.opened_at,CASE WHEN pc.id IS NOT NULL AND pcd.deleted_at IS NULL AND ppd.deleted_at IS NULL THEN c.parent_id ELSE NULL END AS visible_parent FROM cards c JOIN projects p ON p.id=c.project_id LEFT JOIN card_details d ON d.card_id=c.id LEFT JOIN cards pc ON pc.id=c.parent_id LEFT JOIN card_details pcd ON pcd.card_id=pc.id LEFT JOIN project_details ppd ON ppd.project_id=pc.project_id WHERE p.owner_id=? ORDER BY c.id',[$user['id']])->fetchAll();
 $groups=\\Memo\\query('SELECT g.* FROM field_groups g JOIN cards c ON c.id=g.card_id JOIN projects p ON p.id=c.project_id WHERE p.owner_id=? ORDER BY g.sort_order,g.id',[$user['id']])->fetchAll();
 $fields=\\Memo\\query('SELECT f.* FROM fields f JOIN field_groups g ON g.id=f.group_id JOIN cards c ON c.id=g.card_id JOIN projects p ON p.id=c.project_id WHERE p.owner_id=? ORDER BY f.sort_order,f.id',[$user['id']])->fetchAll();
 foreach($fields as &$field){$values=json_decode($field['values_json'],true,64,JSON_THROW_ON_ERROR);if(!is_array($values)||!array_is_list($values))throw new RuntimeException('Invalid field values');foreach($values as $value)if(!is_string($value))throw new RuntimeException('Invalid field value type');$field['valueHashes']=array_map(fn($value)=>hash('sha256',$value),$values);unset($field['values_json']);}unset($field);
 $media=\\Memo\\query('SELECT id,SHA2(content,256) AS digest FROM media WHERE owner_id=? ORDER BY id',[$user['id']])->fetchAll();
-echo json_encode(['user'=>['id'=>(int)$user['id'],'email'=>$user['email']],'projects'=>$projects,'cards'=>$cards,'groups'=>$groups,'fields'=>$fields,'media'=>$media]);
+$links=\\Memo\\query('SELECT l.source_id,l.target_id,l.label FROM card_links l JOIN cards c ON c.id=l.source_id JOIN projects p ON p.id=c.project_id WHERE p.owner_id=? ORDER BY l.source_id,l.target_id',[$user['id']])->fetchAll();
+echo json_encode(['user'=>['id'=>(int)$user['id'],'email'=>$user['email']],'projects'=>$projects,'cards'=>$cards,'groups'=>$groups,'fields'=>$fields,'media'=>$media,'links'=>$links]);
 `),
         'Restored owner fixture',
       );
@@ -397,7 +419,9 @@ echo json_encode(['user'=>['id'=>(int)$user['id'],'email'=>$user['email']],'proj
       });
       checkEqual(identity.user.id, id, 'Restored account authentication returned another owner');
       apiCoverage.checkedUsers++;
-      const projects = await request('/projects');
+      const activeProjects = await request('/projects');
+      const trash = await request('/trash');
+      const projects = [...activeProjects, ...trash.projects];
       checkEqual(
         projects.map((item) => item.id).sort((a, b) => a - b),
         fixture.projects.map((item) => Number(item.id)),
@@ -409,10 +433,18 @@ echo json_encode(['user'=>['id'=>(int)$user['id'],'email'=>$user['email']],'proj
           expectedProject.name,
           'Restored project name mismatch',
         );
-        const cards = await request(`/projects/${expectedProject.id}/cards`);
+        const visibleCards = expectedProject.deleted_at
+          ? []
+          : await request(`/projects/${expectedProject.id}/cards`);
         const expectedCards = fixture.cards.filter(
           (item) => Number(item.project_id) === Number(expectedProject.id),
         );
+        const hiddenCards = await Promise.all(
+          expectedCards
+            .filter((item) => expectedProject.deleted_at || item.deleted_at)
+            .map((item) => request(`/cards/${item.id}?includeDeleted=1`)),
+        );
+        const cards = [...visibleCards, ...hiddenCards];
         checkEqual(
           cards.map((item) => item.id).sort((a, b) => a - b),
           expectedCards.map((item) => Number(item.id)),
@@ -420,16 +452,22 @@ echo json_encode(['user'=>['id'=>(int)$user['id'],'email'=>$user['email']],'proj
         );
         checkEqual(
           projects.find((item) => item.id === Number(expectedProject.id)).cards,
-          expectedCards.length,
+          expectedCards.filter((item) => !item.deleted_at).length,
           'Restored dashboard card count mismatch',
         );
         apiCoverage.checkedProjects++;
         for (const expected of expectedCards) {
           const card = cards.find((item) => item.id === Number(expected.id));
           checkEqual(card.name, expected.name, 'Restored card name mismatch');
+          checkEqual(card.kind, expected.kind, 'Restored card kind mismatch');
+          checkEqual(
+            card.folder,
+            expected.folder_id === null ? null : Number(expected.folder_id),
+            'Restored folder membership mismatch',
+          );
           checkEqual(
             card.parent,
-            expected.parent_id === null ? null : Number(expected.parent_id),
+            expected.visible_parent === null ? null : Number(expected.visible_parent),
             'Restored parent mapping mismatch',
           );
           checkEqual(
@@ -438,6 +476,10 @@ echo json_encode(['user'=>['id'=>(int)$user['id'],'email'=>$user['email']],'proj
             'Restored coordinates mismatch',
           );
           checkEqual(card.version, Number(expected.version), 'Restored card version mismatch');
+          checkEqual(card.pinned, Boolean(Number(expected.pinned)), 'Restored pin mismatch');
+          checkEqual(card.deletedAt, expected.deleted_at, 'Restored trash state mismatch');
+          checkEqual(card.updatedAt, expected.updated_at, 'Restored update timestamp mismatch');
+          checkEqual(card.openedAt, expected.opened_at, 'Restored visit timestamp mismatch');
           const expectedGroups = fixture.groups.filter((item) => Number(item.card_id) === card.id);
           checkEqual(
             card.content.map((item) => item.id),
@@ -486,6 +528,34 @@ echo json_encode(['user'=>['id'=>(int)$user['id'],'email'=>$user['email']],'proj
           apiCoverage.checkedCards++;
         }
       }
+      const visibleIds = new Set(
+        fixture.cards
+          .filter(
+            (item) =>
+              !item.deleted_at &&
+              !fixture.projects.find((project) => Number(project.id) === Number(item.project_id))
+                .deleted_at,
+          )
+          .map((item) => Number(item.id)),
+      );
+      const expectedLinks = fixture.links
+        .filter(
+          (item) =>
+            visibleIds.has(Number(item.source_id)) && visibleIds.has(Number(item.target_id)),
+        )
+        .map((item) => ({
+          source: Number(item.source_id),
+          target: Number(item.target_id),
+          label: item.label,
+        }));
+      const links = await request('/links');
+      checkEqual(
+        links.map(({ source, target, label }) => ({ source, target, label })),
+        expectedLinks,
+        'Restored visible links mismatch',
+      );
+      apiCoverage.checkedLinks += links.length;
+      apiCoverage.hiddenLinks += fixture.links.length - links.length;
       for (const media of fixture.media) {
         const bytes = await request(`/media/${media.id}`);
         checkEqual(

@@ -60,6 +60,14 @@ try {
   ]);
   run('docker', [...compose, 'exec', '-T', 'api', 'php', 'database/migrate.php']);
   run('docker', [...compose, 'exec', '-T', 'api', 'php', 'database/migrate.php']);
+  const migration = spawnSync('docker', [...compose, 'exec', '-T', 'api', 'php'], {
+    cwd: app,
+    input: fs.readFileSync(path.join(app, 'tests/migration.test.php')),
+    stdio: ['pipe', 'inherit', 'inherit'],
+    timeout: 30000,
+  });
+  if (migration.error || migration.status !== 0)
+    throw new Error('Не прошла проверка миграции связей.');
   run(process.execPath, ['--test', 'tests/api.test.mjs'], {
     ...process.env,
     MEMO_TEST_URL: `http://127.0.0.1:${port}/api`,
@@ -81,7 +89,7 @@ try {
     '--env',
     'APP_ENV=development',
     '--volume',
-    `${path.join(app, 'dist')}:/var/www/memo/public/mind-assistant:ro`,
+    `${path.join(app, 'dist')}:/var/www/memo/public/memo:ro`,
     `${project}-api`,
   ]);
   artifactStarted = true;
@@ -89,7 +97,7 @@ try {
   const artifactPort = mapping.stdout?.trim().match(/^127\.0\.0\.1:(\d+)$/)?.[1];
   if (mapping.status !== 0 || !artifactPort)
     throw new Error('Не найден порт собранного приложения.');
-  const base = `http://127.0.0.1:${artifactPort}/mind-assistant`;
+  const base = `http://127.0.0.1:${artifactPort}/memo`;
   let ready = false;
   for (let attempt = 0; attempt < 30; attempt++) {
     try {
@@ -117,7 +125,7 @@ try {
   const deepPage = await fetch(`${base}/workplace/123`);
   assert.equal(await deepPage.text(), index, 'SPA-маршрут должен обновляться.');
   assert.match(deepPage.headers.get('cache-control') ?? '', /no-cache/);
-  for (const match of index.matchAll(/(?:src|href)="(\/mind-assistant\/assets\/[^\"]+)"/g)) {
+  for (const match of index.matchAll(/(?:src|href)="(\/memo\/assets\/[^\"]+)"/g)) {
     assert.equal((await fetch(`http://127.0.0.1:${artifactPort}${match[1]}`)).status, 200);
   }
   for (const privatePath of [
@@ -127,11 +135,29 @@ try {
   ]) {
     assert.equal((await fetch(`${base}/${privatePath}`)).status, 403, privatePath);
   }
-  run('docker', ['exec', artifactName, 'php', 'public/mind-assistant/database/migrate.php']);
+  run('docker', ['exec', artifactName, 'php', 'public/memo/database/migrate.php']);
   run(process.execPath, ['--test', 'tests/api.test.mjs'], {
     ...process.env,
     MEMO_TEST_URL: `${base}/api`,
   });
+  const backup = path.join(temporary, 'synthetic-workspace.sql');
+  const dump = spawnSync(
+    'docker',
+    [
+      ...compose,
+      'exec',
+      '-T',
+      'db',
+      'sh',
+      '-c',
+      'MYSQL_PWD="$MYSQL_PASSWORD" exec mysqldump --single-transaction --skip-lock-tables --no-tablespaces --user="$MYSQL_USER" "$MYSQL_DATABASE"',
+    ],
+    { cwd: app, maxBuffer: 16 * 1024 * 1024 },
+  );
+  if (dump.error || dump.status !== 0)
+    throw new Error('Не удалось подготовить синтетическую копию для проверки восстановления.');
+  fs.writeFileSync(backup, dump.stdout, { mode: 0o600 });
+  run(process.execPath, ['scripts/verify-backup.mjs', '--backup', backup, '--require-populated']);
   console.log('Собранный React/PHP: ресурсы, SPA, закрытые файлы и полный API проверены.');
 } catch (error) {
   console.error(error.message);

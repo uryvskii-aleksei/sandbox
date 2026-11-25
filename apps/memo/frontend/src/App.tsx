@@ -1,18 +1,118 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-
 import { api } from './api';
 import { Board } from './Board';
-import { FieldEditor } from './FieldEditor';
-import { fieldTypes, labels, moveItem } from './types';
-import type { Card, Field, FieldGroup, Project, User } from './types';
+import { CardEditor } from './CardEditor';
+import { childPosition, excerpt } from './graph';
+import { QuickCapture } from './QuickCapture';
+import { isTextInput, shortcutHelp } from './shortcuts';
+import { draftKey, listDrafts, removeLocal } from './storage';
+import { folderTrail } from './types';
+import type {
+  BoardSelection,
+  Card,
+  CardLink,
+  Folder,
+  Project,
+  Template,
+  Trash,
+  User,
+} from './types';
+import { IconButton } from './ui';
 
-function projectFromPath(): number | null {
-  const match = location.pathname.match(/\/workplace\/(\d+)\/?$/);
-  return match ? Number(match[1]) : null;
+type BlockKind = 'record' | 'folder';
+
+type View = 'dashboard' | 'project' | 'inbox' | 'recent' | 'search' | 'trash' | 'drafts';
+interface Route {
+  view: View;
+  project?: number;
+  folder?: number;
 }
-const message = (reason: unknown) =>
+function currentRoute(): Route {
+  const project = location.pathname.match(/\/workplace\/(\d+)(?:\/folder\/(\d+))?\/?$/);
+  if (project)
+    return {
+      view: 'project',
+      project: Number(project[1]),
+      folder: project[2] ? Number(project[2]) : undefined,
+    };
+  const view = location.pathname.split('/').filter(Boolean).at(-1);
+  return {
+    view:
+      view === 'inbox' ||
+      view === 'recent' ||
+      view === 'search' ||
+      view === 'trash' ||
+      view === 'drafts'
+        ? view
+        : 'dashboard',
+  };
+}
+const routeUrl = (route: Route) =>
+  `${import.meta.env.BASE_URL}${route.view === 'project' ? `workplace/${route.project}${route.folder ? `/folder/${route.folder}` : ''}` : route.view}`;
+const reasonText = (reason: unknown) =>
   reason instanceof Error ? reason.message : 'Не удалось выполнить действие.';
+const names: Record<View, string> = {
+  dashboard: 'Мои проекты',
+  project: 'Проект',
+  inbox: 'Входящие',
+  recent: 'Недавние записи',
+  search: 'Поиск по Memo',
+  trash: 'Корзина',
+  drafts: 'Черновики на устройстве',
+};
+const navigation: { view: View; icon: string; label: string }[] = [
+  { view: 'dashboard', icon: '▦', label: 'Мои проекты' },
+  { view: 'inbox', icon: '↓', label: 'Входящие' },
+  { view: 'recent', icon: '◷', label: 'Недавние' },
+  { view: 'drafts', icon: '✎', label: 'Черновики' },
+  { view: 'trash', icon: '⌫', label: 'Корзина' },
+];
+
+function CardList({
+  cards,
+  projects,
+  query = '',
+  open,
+  locate,
+}: {
+  cards: Card[];
+  projects: Project[];
+  query?: string;
+  open: (card: Card) => void;
+  locate: (card: Card) => void;
+}) {
+  return (
+    <div className="record-list">
+      {cards.map((card) => {
+        const text = excerpt(card);
+        const match = query
+          ? text.toLocaleLowerCase('ru').indexOf(query.toLocaleLowerCase('ru'))
+          : 0;
+        const start = Math.max(0, match - 60);
+        const summary = `${start ? '…' : ''}${text.slice(start, start + 220)}`;
+        return (
+          <article className="record-row" key={card.id}>
+            <button className="record-open" onClick={() => open(card)}>
+              <span className="record-project">
+                {projects.find((project) => project.id === card.project)?.name ?? 'Проект'}
+              </span>
+              <h3>{card.name}</h3>
+              <p>{card.kind === 'folder' ? 'Папка' : summary || 'Пока без содержания'}</p>
+            </button>
+            <button
+              className="text-button locate-button"
+              onClick={() => locate(card)}
+              aria-label={`Показать на полотне ${card.name}`}
+            >
+              На полотне ↗
+            </button>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
 
 export function App() {
   const [ready, setReady] = useState(false);
@@ -21,36 +121,67 @@ export function App() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selected, setSelected] = useState<number | null>(projectFromPath);
+  const [route, setRoute] = useState<Route>(currentRoute);
   const [cards, setCards] = useState<Card[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [rediscover, setRediscover] = useState<Card[]>([]);
+  const [links, setLinks] = useState<CardLink[]>([]);
+  const [trash, setTrash] = useState<Trash>({ cards: [], projects: [] });
   const [loading, setLoading] = useState(false);
-  const [edit, setEdit] = useState<Card | null>(null);
-  const [fieldPending, setFieldPending] = useState(0);
-  const editorRef = useRef<HTMLElement>(null);
-  const editorBusy = busy || fieldPending > 0;
+  const [loaded, setLoaded] = useState(false);
+  const [loadedKey, setLoadedKey] = useState('');
+  const [editing, setEditing] = useState<Card | null>(null);
+  const [openForEditing, setOpenForEditing] = useState(false);
+  const [capturing, setCapturing] = useState(false);
   const [projectName, setProjectName] = useState('');
   const [newProject, setNewProject] = useState('');
-  const temporaryId = useRef(-1);
-  const editorHeading = useRef<HTMLInputElement>(null);
+  const [template, setTemplate] = useState<Template>('blank');
+  const [query, setQuery] = useState('');
+  const [hasMore, setHasMore] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const [focusId, setFocusId] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
+  const pendingBlock = useRef<Partial<Record<BlockKind, string>>>({});
+  const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [deletedItem, setDeletedItem] = useState<{ id: number; type: 'card' | 'project' } | null>(
+    null,
+  );
+  const searchInput = useRef<HTMLInputElement>(null);
+  const shortcutsButton = useRef<HTMLButtonElement>(null);
+  const searchArea = useRef<HTMLDivElement>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [markToolsSlot, setMarkToolsSlot] = useState<HTMLSpanElement | null>(null);
+  useEffect(() => {
+    if (!shortcutsOpen) return;
+    const dismiss = (event: PointerEvent) => {
+      if (event.target instanceof Node && !searchArea.current?.contains(event.target))
+        setShortcutsOpen(false);
+    };
+    document.addEventListener('pointerdown', dismiss);
+    return () => document.removeEventListener('pointerdown', dismiss);
+  }, [shortcutsOpen]);
+  const modal = editing !== null || capturing;
+  const selected = route.view === 'project' ? route.project : undefined;
+  const folder = route.view === 'project' ? (route.folder ?? null) : null;
+  const loadKey = `${route.view}:${selected ?? ''}:${folder ?? ''}:${route.view === 'search' ? query : ''}`;
   const active = projects.find((project) => project.id === selected);
-  const dirty =
-    edit !== null &&
-    JSON.stringify(edit) !== JSON.stringify(cards.find((card) => card.id === edit.id));
+  const trail = loadedKey === loadKey ? folderTrail(folders, folder) : [];
+  const activeFolder = trail.at(-1);
+  const drafts = user ? listDrafts(user.id) : [];
+
   useEffect(() => {
     let live = true;
     void api
       .session()
       .then((session) => {
-        if (live) {
-          setUser(session.user);
-          setReady(true);
-        }
+        if (live) setUser(session.user);
       })
       .catch((reason: unknown) => {
-        if (live) {
-          setError(message(reason));
-          setReady(true);
-        }
+        if (live) setError(reasonText(reason));
+      })
+      .finally(() => {
+        if (live) setReady(true);
       });
     return () => {
       live = false;
@@ -59,195 +190,337 @@ export function App() {
   useEffect(() => {
     if (!user) return;
     const controller = new AbortController();
-    void api
-      .projects(controller.signal)
-      .then(setProjects)
-      .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(message(reason));
-      });
-    return () => controller.abort();
-  }, [user]);
-  useEffect(() => {
-    if (!user || selected === null) {
-      setCards([]);
-      return;
-    }
-    const controller = new AbortController();
-    setLoading(true);
-    setError('');
-    void api
-      .cards(selected, controller.signal)
-      .then(setCards)
-      .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(message(reason));
+    void Promise.all([api.projects(controller.signal), api.links(controller.signal)])
+      .then(([items, edges]) => {
+        if (!controller.signal.aborted) {
+          setProjects(items);
+          setLinks(edges);
+        }
       })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) setError(reasonText(reason));
       });
     return () => controller.abort();
-  }, [user, selected]);
+  }, [user, revision]);
   useEffect(() => setProjectName(active?.name ?? ''), [active?.id, active?.name]);
   useEffect(() => {
+    setProjectSettingsOpen(false);
+    pendingBlock.current = {};
+  }, [route.view, selected, folder]);
+  useEffect(() => {
+    if (!user) return;
+    const controller = new AbortController();
+    setLoading(true);
+    setLoaded(false);
+    setError('');
+    setHasMore(false);
+    setCards([]);
+    const timer = window.setTimeout(
+      () => {
+        const load = async () => {
+          if (route.view === 'project' && selected !== undefined) {
+            const tree = await api.folders(selected, controller.signal);
+            if (!controller.signal.aborted) setFolders(tree);
+            const result = await api.cards(selected, folder, controller.signal);
+            if (!controller.signal.aborted) setCards(result);
+          } else if (route.view === 'trash') {
+            const result = await api.trash();
+            if (!controller.signal.aborted) setTrash(result);
+          } else if (route.view !== 'drafts') {
+            const filter =
+              route.view === 'dashboard'
+                ? 'recent'
+                : route.view === 'inbox' || route.view === 'recent'
+                  ? route.view
+                  : 'all';
+            const result = await api.search(
+              route.view === 'search' ? query : '',
+              filter,
+              controller.signal,
+            );
+            if (!controller.signal.aborted) {
+              setCards(result.cards);
+              setHasMore(result.hasMore);
+            }
+            if (route.view === 'dashboard') {
+              const old = await api.search('', 'rediscover', controller.signal);
+              if (!controller.signal.aborted) setRediscover(old.cards);
+            }
+          }
+          if (!controller.signal.aborted) setLoaded(true);
+        };
+        void load()
+          .catch((reason: unknown) => {
+            if (!controller.signal.aborted) setError(reasonText(reason));
+          })
+          .finally(() => {
+            if (!controller.signal.aborted) {
+              setLoading(false);
+              setLoadedKey(loadKey);
+            }
+          });
+      },
+      route.view === 'search' ? 250 : 0,
+    );
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [user, route.view, selected, folder, query, revision]);
+  useEffect(() => {
     const update = () => {
-      if (editorBusy || (dirty && !window.confirm('Закрыть карточку без сохранения?'))) {
-        history.pushState(
-          null,
-          '',
-          `${import.meta.env.BASE_URL}${selected ? `workplace/${selected}` : 'dashboard'}`,
-        );
-        return;
+      if (modal) {
+        const closeButton = document.getElementById(editing ? 'close-editor' : 'close-capture');
+        if (closeButton instanceof HTMLButtonElement && closeButton.disabled) {
+          history.pushState(null, '', routeUrl(route));
+          return;
+        }
+        closeButton?.click();
       }
-      setSelected(projectFromPath());
-      setEdit(null);
+      setRoute(currentRoute());
+      setFocusId(null);
     };
     window.addEventListener('popstate', update);
     return () => window.removeEventListener('popstate', update);
-  }, [dirty, editorBusy, selected]);
-  useEffect(() => {
-    if (!edit) return;
-    const previous = document.activeElement;
-    editorHeading.current?.focus();
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        document.getElementById('close-editor')?.click();
-      }
-      if (event.key !== 'Tab') return;
-      const elements = editorRef.current?.querySelectorAll<HTMLElement>(
-        'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]',
-      );
-      const visible = elements
-        ? [...elements].filter(
-            (element) => element.offsetParent !== null && !element.closest('fieldset:disabled'),
-          )
-        : [];
-      const first = visible[0];
-      const last = visible.at(-1);
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    };
-    document.addEventListener('keydown', keydown);
-    return () => {
-      document.removeEventListener('keydown', keydown);
-      if (previous instanceof HTMLElement) previous.focus();
-    };
-  }, [edit?.id]);
-  useEffect(() => {
-    if (!dirty) return;
-    const protect = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener('beforeunload', protect);
-    return () => window.removeEventListener('beforeunload', protect);
-  }, [dirty]);
-
-  const navigate = (id: number | null) => {
-    if (editorBusy) return;
-    if (dirty && !window.confirm('Закрыть карточку без сохранения?')) return;
-    history.pushState(
-      null,
-      '',
-      `${import.meta.env.BASE_URL}${id ? `workplace/${id}` : 'dashboard'}`,
-    );
-    setSelected(id);
-    setEdit(null);
+  }, [modal, editing, route]);
+  const navigate = (next: Route, focus: number | null = null) => {
+    history.pushState(null, '', routeUrl(next));
+    setRoute(next);
+    setFocusId(focus);
     setError('');
   };
-  const action = async (work: () => Promise<void>) => {
+  const perform = async (work: () => Promise<void>) => {
     setBusy(true);
     setError('');
     try {
       await work();
     } catch (reason) {
-      setError(message(reason));
+      setError(reasonText(reason));
+      throw reason;
     } finally {
       setBusy(false);
     }
   };
+  const run = (work: () => Promise<void>) => {
+    void perform(work).catch(() => {});
+  };
+  const refreshLinks = async () => setLinks(await api.links());
+  const refresh = () => setRevision((value) => value + 1);
+  const replaceCard = (card: Card) => {
+    setCards((items) => items.map((item) => (item.id === card.id ? card : item)));
+    setLinks((items) =>
+      items.map((link) => ({
+        ...link,
+        ...(link.source === card.id ? { sourceName: card.name, sourceProject: card.project } : {}),
+        ...(link.target === card.id ? { targetName: card.name, targetProject: card.project } : {}),
+      })),
+    );
+  };
+  const openId = (id: number, edit = false) =>
+    run(async () => {
+      const result = await api.visit(id);
+      setOpenForEditing(edit);
+      setEditing(result);
+    });
+  const locate = (card: Card) => {
+    setViewMode('board');
+    navigate({ view: 'project', project: card.project, folder: card.folder ?? undefined }, card.id);
+  };
+  const enterFolder = (id: number, project: number) => {
+    setViewMode('board');
+    navigate({ view: 'project', project, folder: id });
+  };
+  const openFromList = (card: Card) => {
+    if (card.kind === 'folder') enterFolder(card.id, card.project);
+    else openId(card.id);
+  };
   const authenticate = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
-    void action(async () => {
-      const session = await api.auth(mode, String(data.get('email')), String(data.get('password')));
-      setUser(session.user);
+    run(async () => {
+      const identifier = String(data.get('email'));
+      const email =
+        import.meta.env.DEV && mode === 'login' && identifier.trim().toLowerCase() === 'admin'
+          ? 'admin@memo.local'
+          : identifier;
+      const result = await api.auth(mode, email, String(data.get('password')));
+      setUser(result.user);
     });
   };
   const createProject = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    void action(async () => {
-      const project = await api.createProject(newProject);
-      setProjects((items) => [project, ...items]);
+    run(async () => {
+      const result = await api.createProject(newProject, template);
+      setProjects((items) => [result, ...items]);
       setNewProject('');
-      navigate(project.id);
+      navigate({ view: 'project', project: result.id });
+      await refreshLinks();
     });
   };
-  const createCard = (parent: Card | null = null) => {
-    if (!selected) return;
-    void action(async () => {
-      const coordinates = parent
-        ? { x: parent.coordinates.x + 40, y: parent.coordinates.y + 170 }
-        : { x: 70 + (cards.length % 3) * 290, y: 70 + Math.floor(cards.length / 3) * 170 };
-      const card = await api.createCard(selected, parent?.id ?? null, coordinates);
-      setCards((items) => [...items, card]);
-      setEdit(structuredClone(card));
-      setProjects(await api.projects());
-    });
-  };
-  const updatePosition = async (card: Card) =>
-    action(async () => {
-      const result = await api.position(card);
-      setCards((items) => items.map((item) => (item.id === result.id ? result : item)));
-    });
-  const save = (event: FormEvent) => {
-    event.preventDefault();
-    if (!edit || editorBusy) return;
-    void action(async () => {
-      const saved = await api.saveCard(edit);
-      setCards((items) => items.map((item) => (item.id === saved.id ? saved : item)));
-      setEdit(null);
-    });
-  };
-  const closeEditor = () => {
-    if (editorBusy) return;
-    if (!dirty || window.confirm('Закрыть карточку без сохранения?')) setEdit(null);
-  };
-  const changeGroup = (index: number, group: FieldGroup) => {
-    if (edit)
-      setEdit({
-        ...edit,
-        content: edit.content.map((item, position) => (position === index ? group : item)),
+  const createBlock = (kind: BlockKind) => {
+    if (!active || busy || !loaded || loadedKey !== loadKey) return;
+    const pending = pendingBlock.current;
+    const requestId = pending[kind] ?? crypto.randomUUID();
+    pending[kind] = requestId;
+    setProjectSettingsOpen(false);
+    run(async () => {
+      const created = await api.capture({
+        requestId,
+        project: active.id,
+        folder: folder ?? undefined,
+        kind,
+        content: [],
       });
+      delete pending[kind];
+      setFocusId(created.id);
+      refresh();
+    });
   };
-  const changeField = (groupId: number, fieldId: number, field: Field) => {
-    setEdit((current) =>
-      current
-        ? {
-            ...current,
-            content: current.content.map((group) =>
-              group.id === groupId
-                ? {
-                    ...group,
-                    fields: group.fields.map((item) => (item.id === fieldId ? field : item)),
-                  }
-                : group,
-            ),
-          }
-        : null,
-    );
+  useEffect(() => {
+    const keyboard = (event: KeyboardEvent) => {
+      if (!user || modal || event.defaultPrevented || event.isComposing) return;
+      if (event.target instanceof Element && event.target.closest('dialog[open]')) return;
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        !event.altKey &&
+        !event.shiftKey &&
+        event.code === 'KeyK'
+      ) {
+        event.preventDefault();
+        setShortcutsOpen(false);
+        searchInput.current?.focus();
+        return;
+      }
+      if (event.key === 'Escape' && shortcutsOpen) {
+        event.preventDefault();
+        setShortcutsOpen(false);
+        shortcutsButton.current?.focus();
+        return;
+      }
+      if (!event.altKey || event.ctrlKey || event.metaKey || event.repeat || isTextInput(event))
+        return;
+      if (event.shiftKey && event.code === 'KeyH') {
+        event.preventDefault();
+        setShortcutsOpen((open) => !open);
+        shortcutsButton.current?.focus();
+      } else if (event.code === 'KeyN' && !event.shiftKey && !busy) {
+        event.preventDefault();
+        setShortcutsOpen(false);
+        setCapturing(true);
+      } else if (
+        event.shiftKey &&
+        route.view === 'project' &&
+        (event.code === 'KeyN' || event.code === 'KeyF')
+      ) {
+        event.preventDefault();
+        setShortcutsOpen(false);
+        createBlock(event.code === 'KeyN' ? 'record' : 'folder');
+      } else if (
+        event.shiftKey &&
+        route.view === 'project' &&
+        (event.code === 'KeyB' || event.code === 'KeyV')
+      ) {
+        event.preventDefault();
+        setShortcutsOpen(false);
+        setViewMode(event.code === 'KeyB' ? 'board' : 'list');
+      }
+    };
+    window.addEventListener('keydown', keyboard);
+    return () => window.removeEventListener('keydown', keyboard);
+  });
+  const createChild = (parent: Card) =>
+    run(async () => {
+      const withText = await api.capture({
+        requestId: crypto.randomUUID(),
+        project: parent.project,
+        folder: parent.folder ?? undefined,
+        parent: parent.id,
+        coordinates: childPosition(cards, parent),
+        name: 'Новая запись',
+        text: '',
+      });
+      setCards((items) => [...items, withText]);
+      setFocusId(withText.id);
+      await refreshLinks();
+    });
+  const updatePosition = (card: Card) =>
+    perform(async () => {
+      replaceCard(await api.position(card));
+    });
+  const moveInto = (card: Card, folder: Card) =>
+    perform(async () => {
+      await api.move(card, folder.project, folder.id);
+      setCards((items) => items.filter((item) => item.id !== card.id));
+      setFocusId(null);
+      setDeletedItem(null);
+      setNotice(`«${card.name}» перемещено в «${folder.name}».`);
+    });
+  const removeSelection = (selection: BoardSelection, requestId: string) =>
+    perform(async () => {
+      if (selected === undefined) return;
+      await api.trashSelection(selected, folder, selection.cards, selection.marks, requestId);
+      setCards((items) => items.filter((item) => !selection.cards.includes(item.id)));
+      setFocusId(null);
+      setDeletedItem(null);
+      setNotice('Выбранные элементы удалены.');
+      refresh();
+    });
+  const connect = (source: number, target: number, label = '') =>
+    perform(async () => {
+      await api.connect(source, target, label);
+      await refreshLinks();
+      replaceCard(await api.card(target));
+    });
+  const disconnect = (link: CardLink) =>
+    perform(async () => {
+      await api.disconnect(link);
+      await refreshLinks();
+      replaceCard(await api.card(link.target));
+    });
+  const reconnect = (link: CardLink, newSource: number, newTarget: number) =>
+    perform(async () => {
+      try {
+        await api.reconnectLink(link, newSource, newTarget);
+        setDeletedItem(null);
+        setNotice('Связь изменена.');
+      } finally {
+        refresh();
+      }
+    });
+  const remove = (card: Card) =>
+    perform(async () => {
+      await api.deleteCard(card.id);
+      setDeletedItem({ id: card.id, type: 'card' });
+      setNotice(
+        card.kind === 'folder' ? 'Папка перемещена в корзину.' : 'Запись перемещена в корзину.',
+      );
+      refresh();
+    });
+  const exportActive = () => {
+    if (!active) return;
+    run(async () => {
+      const result = await api.exportProject(active.id);
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' }),
+      );
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `memo-project-${active.id}.json`;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setNotice('Проект экспортирован вместе с загруженными файлами.');
+    });
   };
-  const fieldActivity = (pending: boolean) =>
-    setFieldPending((count) => Math.max(0, count + (pending ? 1 : -1)));
-  const reorderGroup = (index: number, offset: number) => {
-    if (edit) setEdit({ ...edit, content: moveItem(edit.content, index, offset) });
-  };
-  const reorderField = (groupIndex: number, index: number, offset: number) => {
-    if (!edit) return;
-    const group = edit.content[groupIndex];
-    changeGroup(groupIndex, { ...group, fields: moveItem(group.fields, index, offset) });
-  };
+  const restore = (id: number, type: 'card' | 'project') =>
+    run(async () => {
+      if (type === 'card') await api.restoreCard(id);
+      else await api.restoreProject(id);
+      setDeletedItem(null);
+      setNotice(
+        type === 'card' ? 'Запись восстановлена вместе со связями.' : 'Проект восстановлен.',
+      );
+      refresh();
+    });
 
   if (!ready) return <main className="loading-screen">Загружаем пространство…</main>;
   if (!user)
@@ -261,10 +534,7 @@ export function App() {
             <br />
             своё пространство.
           </h1>
-          <p>
-            Соединяйте идеи, собирайте материалы и превращайте разрозненные заметки в понятную
-            картину.
-          </p>
+          <p>Собирайте заметки, стройте семейное дерево, связывайте темы и находите новые идеи.</p>
           <div className="auth-illustration" aria-hidden="true">
             <span>Первая идея</span>
             <i />
@@ -278,7 +548,7 @@ export function App() {
           <h2>{mode === 'login' ? 'С возвращением' : 'Начнём с аккаунта'}</h2>
           <p>
             {mode === 'login'
-              ? 'Войдите, чтобы продолжить работу с идеями.'
+              ? 'Войдите, чтобы продолжить работу с записями.'
               : 'Все проекты и материалы будут доступны только вам.'}
           </p>
           {error && (
@@ -289,8 +559,14 @@ export function App() {
           )}
           <form onSubmit={authenticate}>
             <label>
-              Email
-              <input name="email" type="email" autoComplete="email" required maxLength={254} />
+              {import.meta.env.DEV && mode === 'login' ? 'Email или логин' : 'Email'}
+              <input
+                name="email"
+                type={import.meta.env.DEV && mode === 'login' ? 'text' : 'email'}
+                autoComplete={mode === 'login' ? 'username' : 'email'}
+                required
+                maxLength={254}
+              />
             </label>
             <label>
               Пароль
@@ -322,440 +598,607 @@ export function App() {
     );
 
   return (
-    <div className="application">
-      <aside className="sidebar">
-        <a
-          className="brand"
-          href={`${import.meta.env.BASE_URL}dashboard`}
-          onClick={(event) => {
-            event.preventDefault();
-            navigate(null);
-          }}
-        >
-          <span className="brand-mark">m.</span>Memo
-        </a>
-        <p className="nav-section">ЛИЧНОЕ ПРОСТРАНСТВО</p>
-        <button
-          className={`nav-item ${selected === null ? 'selected' : ''}`}
-          onClick={() => navigate(null)}
-        >
-          ▦ <span>Мои проекты</span>
-          <small>{projects.length}</small>
-        </button>
-        <p className="nav-section">ПРОЕКТЫ</p>
-        <nav aria-label="Проекты">
-          {projects.map((project) => (
-            <button
-              disabled={busy}
-              className={`nav-item ${selected === project.id ? 'selected' : ''}`}
-              key={project.id}
-              onClick={() => navigate(project.id)}
-            >
-              <span className="project-dot" />
-              <span>{project.name}</span>
-              <small>{project.cards ?? 0}</small>
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <span className="avatar">{user.email[0].toUpperCase()}</span>
-          <span title={user.email}>{user.email}</span>
-          <button
-            className="icon-button"
-            disabled={busy}
-            aria-label="Выйти"
-            onClick={() =>
-              void action(async () => {
-                await api.logout();
-                setUser(null);
-                setProjects([]);
-                setCards([]);
-                setEdit(null);
-              })
-            }
+    <>
+      <div className="application" inert={modal}>
+        <aside className="sidebar">
+          <a
+            className="brand"
+            href={routeUrl({ view: 'dashboard' })}
+            onClick={(event) => {
+              event.preventDefault();
+              navigate({ view: 'dashboard' });
+            }}
           >
-            ↪
+            <span className="brand-mark">m.</span>Memo
+          </a>
+          <button
+            className="capture-button"
+            aria-keyshortcuts="Alt+N"
+            disabled={busy}
+            onClick={() => setCapturing(true)}
+          >
+            ＋ Быстрая запись <kbd>Alt+N</kbd>
           </button>
-        </div>
-      </aside>
-      <main className="workspace">
-        <header className="workspace-header">
-          <div>
-            <p className="eyebrow">
-              {selected ? 'ПРОЕКТ / ПРОСТРАНСТВО МЫСЛЕЙ' : 'ВАШЕ ПРОСТРАНСТВО'}
-            </p>
-            <h1>{active?.name ?? (selected ? 'Загрузка проекта…' : 'Мои проекты')}</h1>
-          </div>
-          {active && (
-            <button className="primary" disabled={busy || !!edit} onClick={() => createCard()}>
-              ＋ Добавить мысль
-            </button>
-          )}
-        </header>
-        {error && (
-          <div className="alert workspace-alert" role="alert">
-            {error}
-            <button onClick={() => setError('')} aria-label="Скрыть ошибку">
-              ×
-            </button>
-          </div>
-        )}
-        {selected === null ? (
-          <section className="dashboard">
-            <p className="lead">
-              Каждому замыслу — своё место. Выберите проект или создайте новый.
-            </p>
-            <form className="new-project" onSubmit={createProject}>
-              <label className="sr-only" htmlFor="new-project">
-                Название нового проекта
-              </label>
-              <input
-                id="new-project"
-                required
-                maxLength={128}
-                placeholder="Название нового проекта"
-                value={newProject}
-                onChange={(event) => setNewProject(event.target.value)}
-              />
-              <button className="primary" disabled={busy || !newProject.trim()}>
-                Создать проект
+          <p className="nav-section">ЛИЧНОЕ ПРОСТРАНСТВО</p>
+          <nav className="main-navigation" aria-label="Личное пространство">
+            {navigation.map((item) => (
+              <button
+                key={item.view}
+                className={`nav-item ${route.view === item.view ? 'selected' : ''}`}
+                disabled={busy}
+                onClick={() => navigate({ view: item.view })}
+                aria-current={route.view === item.view ? 'page' : undefined}
+              >
+                <span aria-hidden="true">{item.icon}</span>
+                <span>{item.label}</span>
+                {item.view === 'drafts' && drafts.length > 0 && <small>{drafts.length}</small>}
               </button>
-            </form>
-            <div className="project-grid">
-              {projects.map((project) => (
+            ))}
+          </nav>
+          <p className="nav-section">ПРОЕКТЫ</p>
+          <nav className="project-navigation" aria-label="Проекты">
+            {projects
+              .filter((project) => !project.inbox)
+              .map((project) => (
                 <button
-                  className="project-tile"
                   key={project.id}
-                  onClick={() => navigate(project.id)}
+                  className={`nav-item ${selected === project.id ? 'selected' : ''}`}
+                  disabled={busy}
+                  onClick={() => navigate({ view: 'project', project: project.id })}
                 >
-                  <span className="tile-symbol">⌘</span>
-                  <h2>{project.name}</h2>
-                  <p>{project.cards ?? 0} карточек</p>
-                  <span className="tile-arrow">↗</span>
+                  <span className="project-dot" />
+                  <span>{project.name}</span>
+                  <small>{project.cards ?? 0}</small>
                 </button>
               ))}
-            </div>
-            {!projects.length && (
-              <div className="empty-projects">
-                <span>✧</span>
-                <h2>Большие идеи начинаются с малого</h2>
-                <p>
-                  Создайте первый проект, чтобы собрать мысли, ссылки и материалы на одном полотне.
-                </p>
-              </div>
-            )}
-          </section>
-        ) : (
-          <>
-            {active && (
-              <div className="project-toolbar">
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void action(async () => {
-                      const updated = await api.renameProject(active.id, projectName);
-                      setProjects((items) =>
-                        items.map((item) =>
-                          item.id === updated.id ? { ...item, ...updated } : item,
-                        ),
-                      );
-                    });
-                  }}
-                >
-                  <label className="sr-only" htmlFor="project-name">
-                    Название проекта
-                  </label>
-                  <input
-                    id="project-name"
-                    value={projectName}
-                    maxLength={128}
-                    onChange={(event) => setProjectName(event.target.value)}
-                  />
-                  <button
-                    className="text-button"
-                    disabled={busy || !projectName.trim() || projectName === active.name}
-                  >
-                    Переименовать
-                  </button>
-                </form>
-                <span>{cards.length} карточек</span>
-                <button
-                  className="danger text-button"
-                  disabled={busy}
-                  onClick={() => {
-                    if (window.confirm('Удалить проект и все его карточки?'))
-                      void action(async () => {
-                        await api.deleteProject(active.id);
-                        setProjects((items) => items.filter((item) => item.id !== active.id));
-                        navigate(null);
-                      });
-                  }}
-                >
-                  Удалить проект
-                </button>
-              </div>
-            )}
-            {loading ? (
-              <div className="loading-screen">Загружаем мысли…</div>
-            ) : (
-              <Board
-                cards={cards}
-                busy={busy || !!edit}
-                open={(card) => setEdit(structuredClone(card))}
-                child={(card) => createCard(card)}
-                position={updatePosition}
+          </nav>
+          <div className="sidebar-bottom">
+            <span className="avatar">{user.email[0].toUpperCase()}</span>
+            <span title={user.email}>{user.email}</span>
+            <button
+              className="icon-button"
+              disabled={busy}
+              aria-label="Выйти"
+              onClick={() =>
+                run(async () => {
+                  await api.logout();
+                  setUser(null);
+                  setProjects([]);
+                  setCards([]);
+                  setLinks([]);
+                  setRediscover([]);
+                  setTrash({ cards: [], projects: [] });
+                  setQuery('');
+                  setDeletedItem(null);
+                  setNotice('');
+                  setEditing(null);
+                  setCapturing(false);
+                })
+              }
+            >
+              ↪
+            </button>
+          </div>
+        </aside>
+        <main className="workspace">
+          <div className="global-search" ref={searchArea}>
+            <label className="search-label">
+              <span aria-hidden="true">⌕</span>
+              <input
+                ref={searchInput}
+                type="search"
+                maxLength={128}
+                aria-label="Поиск по всем записям"
+                aria-keyshortcuts="Meta+K Control+K"
+                placeholder="Найти"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  if (route.view !== 'search') navigate({ view: 'search' });
+                }}
               />
-            )}
-          </>
-        )}
-      </main>
-      {edit && (
-        <div className="editor-backdrop">
-          <section
-            ref={editorRef}
-            className="editor"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Редактор карточки"
-          >
-            <form onSubmit={save}>
-              <header className="editor-header">
-                <div>
-                  <p className="eyebrow">КАРТОЧКА / {dirty ? 'ЕСТЬ ИЗМЕНЕНИЯ' : 'СОХРАНЕНО'}</p>
+            </label>
+            <kbd>⌘ / Ctrl K</kbd>
+            <IconButton
+              ref={shortcutsButton}
+              icon="keyboard"
+              label="Сочетания клавиш"
+              aria-keyshortcuts="Alt+Shift+H"
+              aria-expanded={shortcutsOpen}
+              aria-controls="keyboard-shortcuts"
+              onClick={() => setShortcutsOpen((open) => !open)}
+            />
+            <section
+              className="shortcut-panel"
+              id="keyboard-shortcuts"
+              aria-label="Сочетания клавиш"
+              hidden={!shortcutsOpen}
+            >
+              <dl>
+                {shortcutHelp.map(([action, keys]) => (
+                  <div key={action}>
+                    <dt>{action}</dt>
+                    <dd>
+                      <kbd>{keys}</kbd>
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          </div>
+          <header className="workspace-header">
+            <div>
+              <p className="eyebrow">ЛИЧНАЯ ПАМЯТЬ · СВЯЗАННЫЕ ЗАПИСИ</p>
+              <h1>{activeFolder?.name ?? active?.name ?? names[route.view]}</h1>
+              {folder !== null && active && (
+                <nav className="board-breadcrumbs" aria-label="Путь к папке">
+                  <button onClick={() => navigate({ view: 'project', project: active.id })}>
+                    {active.name}
+                  </button>
+                  {trail.map((item) => (
+                    <span key={item.id}>
+                      <span aria-hidden="true">/</span>
+                      {item.id === folder ? (
+                        <span aria-current="page">{item.name}</span>
+                      ) : (
+                        <button onClick={() => enterFolder(item.id, active.id)}>{item.name}</button>
+                      )}
+                    </span>
+                  ))}
+                </nav>
+              )}
+            </div>
+          </header>
+          {error && (
+            <div className="alert workspace-alert" role="alert">
+              {error}
+              <button
+                onClick={() => {
+                  setError('');
+                  refresh();
+                }}
+              >
+                Повторить
+              </button>
+            </div>
+          )}
+          {notice && (
+            <div className="notice" role="status">
+              <span>{notice}</span>
+              {deletedItem && (
+                <button
+                  className="text-button"
+                  disabled={busy}
+                  onClick={() => restore(deletedItem.id, deletedItem.type)}
+                >
+                  Отменить удаление
+                </button>
+              )}
+              <button
+                className="icon-button"
+                aria-label="Скрыть уведомление"
+                onClick={() => {
+                  setNotice('');
+                  setDeletedItem(null);
+                }}
+              >
+                ×
+              </button>
+            </div>
+          )}
+          {route.view === 'project' && active && (
+            <div className="project-toolbar">
+              <div className="board-add" role="group" aria-label="Добавить на полотно">
+                <IconButton
+                  className="primary"
+                  icon="record"
+                  label="Добавить запись"
+                  tooltip="Добавить запись · Alt+Shift+N"
+                  aria-keyshortcuts="Alt+Shift+N"
+                  disabled={busy || !loaded || loadedKey !== loadKey}
+                  onClick={() => createBlock('record')}
+                />
+                <IconButton
+                  className="primary"
+                  icon="folder"
+                  label="Добавить папку"
+                  tooltip="Добавить папку · Alt+Shift+F"
+                  aria-keyshortcuts="Alt+Shift+F"
+                  disabled={busy || !loaded || loadedKey !== loadKey}
+                  onClick={() => createBlock('folder')}
+                />
+                {viewMode === 'board' && (
+                  <span className="mark-tools-slot" ref={setMarkToolsSlot} />
+                )}
+              </div>
+              <div className="view-switch" role="group" aria-label="Вид проекта">
+                <IconButton
+                  label="Полотно"
+                  tooltip="Полотно · Alt+Shift+B"
+                  aria-keyshortcuts="Alt+Shift+B"
+                  icon="board"
+                  aria-pressed={viewMode === 'board'}
+                  onClick={() => setViewMode('board')}
+                />
+                <IconButton
+                  label="Список"
+                  tooltip="Список · Alt+Shift+V"
+                  aria-keyshortcuts="Alt+Shift+V"
+                  icon="list"
+                  aria-pressed={viewMode === 'list'}
+                  onClick={() => setViewMode('list')}
+                />
+              </div>
+              <div className="project-settings">
+                <IconButton
+                  icon="settings"
+                  label="Настройки проекта"
+                  tooltip="Настройки проекта"
+                  aria-expanded={projectSettingsOpen}
+                  aria-controls="project-settings-panel"
+                  onClick={() => setProjectSettingsOpen((open) => !open)}
+                />
+                <div
+                  id="project-settings-panel"
+                  className="project-settings-panel"
+                  hidden={!projectSettingsOpen}
+                >
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      run(async () => {
+                        const result = await api.renameProject(active.id, projectName);
+                        setProjects((items) =>
+                          items.map((item) =>
+                            item.id === result.id ? { ...item, ...result } : item,
+                          ),
+                        );
+                      });
+                    }}
+                  >
+                    <label className="sr-only" htmlFor="project-name">
+                      Название проекта
+                    </label>
+                    <input
+                      id="project-name"
+                      required
+                      value={projectName}
+                      maxLength={128}
+                      onChange={(event) => setProjectName(event.target.value)}
+                    />
+                    <button
+                      className="text-button"
+                      disabled={busy || !projectName.trim() || projectName === active.name}
+                    >
+                      Переименовать
+                    </button>
+                  </form>
+                  <button className="text-button" disabled={busy} onClick={exportActive}>
+                    Экспорт
+                  </button>
+                  <button
+                    className="danger text-button"
+                    disabled={busy || active.inbox}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          'Переместить проект в корзину? Его записи и связи можно восстановить.',
+                        )
+                      )
+                        run(async () => {
+                          await api.deleteProject(active.id);
+                          setDeletedItem({ id: active.id, type: 'project' });
+                          setNotice('Проект перемещён в корзину.');
+                          navigate({ view: 'dashboard' });
+                          refresh();
+                        });
+                    }}
+                  >
+                    В корзину
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          {loading || loadedKey !== loadKey ? (
+            <div className="loading-screen" role="status">
+              Загружаем записи…
+            </div>
+          ) : !loaded ? (
+            <div className="loading-screen">
+              <p>Не удалось загрузить записи.</p>
+              <button className="secondary" onClick={refresh}>
+                Повторить загрузку
+              </button>
+            </div>
+          ) : route.view === 'project' ? (
+            viewMode === 'board' ? (
+              <Board
+                key={`${user.id}:${selected}:${folder ?? 'root'}`}
+                cards={cards}
+                links={links}
+                projectId={selected ?? 0}
+                folderId={folder}
+                markToolsSlot={markToolsSlot}
+                locate={locate}
+                busy={busy || modal}
+                keyboardDisabled={shortcutsOpen}
+                storageKey={`memo:${user.id}:camera:${selected}${folder === null ? '' : `:${folder}`}`}
+                focusId={focusId}
+                open={(card, edit) => openId(card.id, edit)}
+                enter={(card) => enterFolder(card.id, card.project)}
+                moveInto={moveInto}
+                removeSelection={removeSelection}
+                child={createChild}
+                position={updatePosition}
+                connect={connect}
+                disconnect={disconnect}
+                reconnect={reconnect}
+                remove={remove}
+              />
+            ) : (
+              <section className="library-panel">
+                <CardList cards={cards} projects={projects} open={openFromList} locate={locate} />
+                {!cards.length && <p className="empty-message">Здесь пока нет записей и папок.</p>}
+              </section>
+            )
+          ) : route.view === 'dashboard' ? (
+            <section className="dashboard">
+              <p className="lead">
+                Сохраняйте мысли сразу. Объединяйте людей, темы и идеи в понятную картину.
+              </p>
+              <form className="new-project" onSubmit={createProject}>
+                <label>
+                  Название проекта
                   <input
-                    ref={editorHeading}
-                    disabled={editorBusy}
-                    className="editor-title"
-                    aria-label="Название карточки"
                     required
                     maxLength={128}
-                    value={edit.name}
-                    onChange={(event) => setEdit({ ...edit, name: event.target.value })}
+                    placeholder="Например: Семья, Учёба, Ретро ноября"
+                    value={newProject}
+                    onChange={(event) => setNewProject(event.target.value)}
                   />
-                </div>
-                <button
-                  className="icon-button"
-                  type="button"
-                  id="close-editor"
-                  aria-label="Закрыть редактор"
-                  disabled={editorBusy}
-                  onClick={closeEditor}
-                >
-                  ×
-                </button>
-              </header>
-              <fieldset className="editor-body" disabled={editorBusy}>
+                </label>
                 <label>
-                  Связать с карточкой
+                  Начать с шаблона
                   <select
-                    value={edit.parent ?? ''}
-                    onChange={(event) =>
-                      setEdit({
-                        ...edit,
-                        parent: event.target.value ? Number(event.target.value) : null,
-                      })
-                    }
+                    value={template}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setTemplate(
+                        value === 'family' ||
+                          value === 'outline' ||
+                          value === 'retro' ||
+                          value === 'tasks'
+                          ? value
+                          : 'blank',
+                      );
+                    }}
                   >
-                    <option value="">Без родителя</option>
-                    {cards
-                      .filter((card) => card.id !== edit.id)
-                      .map((card) => (
-                        <option value={card.id} key={card.id}>
-                          {card.name}
-                        </option>
-                      ))}
+                    <option value="blank">Пустой проект</option>
+                    <option value="family">Семейное дерево</option>
+                    <option value="outline">Конспект по теме</option>
+                    <option value="retro">Ретроспектива</option>
+                    <option value="tasks">Трекер задач</option>
                   </select>
                 </label>
-                {edit.content.map((group, groupIndex) => (
-                  <section className="field-group" key={group.id}>
-                    <header>
-                      <button
-                        type="button"
-                        className="icon-button"
-                        aria-label={group.collapsed ? 'Развернуть группу' : 'Свернуть группу'}
-                        onClick={() =>
-                          changeGroup(groupIndex, { ...group, collapsed: !group.collapsed })
-                        }
-                      >
-                        {group.collapsed ? '▸' : '▾'}
-                      </button>
-                      <input
-                        aria-label="Название группы"
-                        placeholder="Группа материалов"
-                        maxLength={128}
-                        value={group.name}
-                        onChange={(event) =>
-                          changeGroup(groupIndex, { ...group, name: event.target.value })
-                        }
-                      />
-                      <button
-                        type="button"
-                        className="icon-button"
-                        aria-label="Поднять группу"
-                        disabled={groupIndex === 0}
-                        onClick={() => reorderGroup(groupIndex, -1)}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        className="icon-button"
-                        aria-label="Опустить группу"
-                        disabled={groupIndex === edit.content.length - 1}
-                        onClick={() => reorderGroup(groupIndex, 1)}
-                      >
-                        ↓
-                      </button>
-                      <button
-                        type="button"
-                        className="icon-button danger"
-                        aria-label="Удалить группу"
-                        onClick={() =>
-                          setEdit({
-                            ...edit,
-                            content: edit.content.filter((_, index) => index !== groupIndex),
-                          })
-                        }
-                      >
-                        ×
-                      </button>
-                    </header>
-                    {!group.collapsed && (
-                      <div className="group-fields">
-                        {group.fields.map((field, fieldIndex) => (
-                          <div className="field" key={field.id}>
-                            <div className="field-bar">
-                              <span>{labels[field.type]}</span>
-                              <button
-                                type="button"
-                                className="icon-button"
-                                aria-label="Поднять поле"
-                                disabled={fieldIndex === 0}
-                                onClick={() => reorderField(groupIndex, fieldIndex, -1)}
-                              >
-                                ↑
-                              </button>
-                              <button
-                                type="button"
-                                className="icon-button"
-                                aria-label="Опустить поле"
-                                disabled={fieldIndex === group.fields.length - 1}
-                                onClick={() => reorderField(groupIndex, fieldIndex, 1)}
-                              >
-                                ↓
-                              </button>
-                              <button
-                                type="button"
-                                className="icon-button danger"
-                                aria-label="Удалить поле"
-                                onClick={() =>
-                                  changeGroup(groupIndex, {
-                                    ...group,
-                                    fields: group.fields.filter((_, index) => index !== fieldIndex),
-                                  })
-                                }
-                              >
-                                ×
-                              </button>
-                            </div>
-                            <FieldEditor
-                              field={field}
-                              change={(next) => changeField(group.id, field.id, next)}
-                              error={setError}
-                              pending={fieldActivity}
-                            />
-                          </div>
-                        ))}
-                        <div className="add-fields">
-                          {fieldTypes.map((type) => (
-                            <button
-                              type="button"
-                              className="text-button"
-                              key={type}
-                              onClick={() =>
-                                changeGroup(groupIndex, {
-                                  ...group,
-                                  fields: [
-                                    ...group.fields,
-                                    {
-                                      id: temporaryId.current--,
-                                      type,
-                                      title: '',
-                                      order: group.fields.length,
-                                      value: [''],
-                                    },
-                                  ],
-                                })
-                              }
-                            >
-                              + {labels[type]}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </section>
-                ))}
-                <button
-                  type="button"
-                  className="secondary add-group"
-                  onClick={() =>
-                    setEdit({
-                      ...edit,
-                      content: [
-                        ...edit.content,
-                        {
-                          id: temporaryId.current--,
-                          name: '',
-                          order: edit.content.length,
-                          collapsed: false,
-                          fields: [],
-                        },
-                      ],
-                    })
-                  }
-                >
-                  ＋ Добавить группу полей
+                <button className="primary" disabled={busy || !newProject.trim()}>
+                  Создать проект
                 </button>
-              </fieldset>
-              {error && (
-                <div className="alert" role="alert">
-                  {error}
+              </form>
+              <div className="project-grid">
+                {projects
+                  .filter((project) => !project.inbox)
+                  .map((project) => (
+                    <button
+                      className="project-tile"
+                      key={project.id}
+                      onClick={() => navigate({ view: 'project', project: project.id })}
+                    >
+                      <span className="tile-symbol">⌘</span>
+                      <h2>{project.name}</h2>
+                      <p>{project.cards ?? 0} записей</p>
+                      <span className="tile-arrow">↗</span>
+                    </button>
+                  ))}
+              </div>
+              {!projects.some((project) => !project.inbox) && (
+                <div className="empty-projects">
+                  <span>✧</span>
+                  <h2>Какую историю соберём?</h2>
+                  <p>Выберите шаблон для ретро, семейного дерева, конспекта или трекера задач.</p>
                 </div>
               )}
-              <footer className="editor-footer" aria-busy={editorBusy}>
-                <button
-                  type="button"
-                  className="text-button danger"
-                  disabled={editorBusy}
-                  onClick={() => {
-                    if (window.confirm('Удалить карточку? Дочерние карточки останутся на полотне.'))
-                      void action(async () => {
-                        await api.deleteCard(edit.id);
-                        setEdit(null);
-                        if (selected) setCards(await api.cards(selected));
-                        setProjects(await api.projects());
-                      });
-                  }}
-                >
-                  Удалить
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={editorBusy}
-                  onClick={closeEditor}
-                >
-                  Отмена
-                </button>
-                <button className="primary" disabled={editorBusy}>
-                  {busy ? 'Сохраняем…' : 'Сохранить'}
-                </button>
-              </footer>
-            </form>
-          </section>
-        </div>
+              {cards.length > 0 && (
+                <section className="dashboard-section">
+                  <div className="section-heading">
+                    <h2>Продолжить работу</h2>
+                    <button className="text-button" onClick={() => navigate({ view: 'recent' })}>
+                      Все недавние
+                    </button>
+                  </div>
+                  <CardList
+                    cards={cards.slice(0, 5)}
+                    projects={projects}
+                    open={openFromList}
+                    locate={locate}
+                  />
+                </section>
+              )}
+              {rediscover.length > 0 && (
+                <section className="dashboard-section">
+                  <h2>Вернуться к записям</h2>
+                  <p className="help-text">
+                    То, что вы давно не открывали. Возможно, сейчас появится новая связь.
+                  </p>
+                  <CardList
+                    cards={rediscover.slice(0, 3)}
+                    projects={projects}
+                    open={openFromList}
+                    locate={locate}
+                  />
+                </section>
+              )}
+            </section>
+          ) : route.view === 'trash' ? (
+            <section className="library-panel">
+              <p className="lead">
+                Записи и проекты остаются здесь до восстановления. Связи сохраняются, потомки не
+                удаляются.
+              </p>
+              {trash.projects.map((project) => (
+                <article className="trash-row" key={`p:${project.id}`}>
+                  <div>
+                    <span className="record-project">ПРОЕКТ</span>
+                    <h2>{project.name}</h2>
+                    <p>{project.cards ?? 0} записей</p>
+                  </div>
+                  <button
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() => restore(project.id, 'project')}
+                  >
+                    Восстановить проект
+                  </button>
+                </article>
+              ))}
+              {trash.cards.map((card) => (
+                <article className="trash-row" key={`c:${card.id}`}>
+                  <div>
+                    <span className="record-project">
+                      {card.kind === 'folder' ? 'ПАПКА' : 'ЗАПИСЬ'}
+                    </span>
+                    <h2>{card.name}</h2>
+                    <p>{excerpt(card).slice(0, 180)}</p>
+                  </div>
+                  <button
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() => restore(card.id, 'card')}
+                  >
+                    {card.kind === 'folder' ? 'Восстановить папку' : 'Восстановить запись'}
+                  </button>
+                </article>
+              ))}
+              {!trash.cards.length && !trash.projects.length && (
+                <p className="empty-message">Корзина пуста.</p>
+              )}
+            </section>
+          ) : route.view === 'drafts' ? (
+            <section className="library-panel">
+              <p className="lead">
+                Несохранённый ввод на этом устройстве. При открытии Memo предложит восстановить его
+                или сохранить отдельной записью.
+              </p>
+              {drafts.map((draft) => (
+                <article className="trash-row" key={draft.card.id}>
+                  <div>
+                    <h2>{draft.card.name}</h2>
+                    <p>{excerpt(draft.card).slice(0, 160)}</p>
+                  </div>
+                  <div className="button-row">
+                    <button className="secondary" onClick={() => openId(draft.card.id, true)}>
+                      Открыть черновик
+                    </button>
+                    <button
+                      className="text-button danger"
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            'Удалить только черновик с этого устройства? Серверная запись останется.',
+                          )
+                        ) {
+                          removeLocal(draftKey(user.id, draft.card.id));
+                          refresh();
+                        }
+                      }}
+                    >
+                      Удалить черновик
+                    </button>
+                  </div>
+                </article>
+              ))}
+              {!drafts.length && <p className="empty-message">Несохранённых черновиков нет.</p>}
+            </section>
+          ) : (
+            <section className="library-panel">
+              <p className="lead">
+                {route.view === 'inbox'
+                  ? 'Здесь хранятся быстрые записи из входящих.'
+                  : route.view === 'search'
+                    ? query
+                      ? `Результаты по запросу «${query}»`
+                      : 'Поиск по названиям, тексту и ссылкам во всех проектах.'
+                    : 'Недавно открытые и новые записи.'}
+              </p>
+              <CardList
+                cards={cards}
+                projects={projects}
+                query={query}
+                open={openFromList}
+                locate={locate}
+              />
+              {!cards.length && (
+                <div className="empty-message">
+                  <p>
+                    {route.view === 'search'
+                      ? 'Ничего не найдено. Попробуйте другое слово.'
+                      : 'Здесь пока нет записей.'}
+                  </p>
+                  {route.view === 'inbox' && (
+                    <button className="primary" onClick={() => setCapturing(true)}>
+                      Записать первую мысль
+                    </button>
+                  )}
+                </div>
+              )}
+              {hasMore && (
+                <p className="help-text">Показаны первые 100 записей. Уточните запрос в поиске.</p>
+              )}
+            </section>
+          )}
+        </main>
+      </div>
+      {capturing && (
+        <QuickCapture
+          userId={user.id}
+          projects={projects}
+          close={() => setCapturing(false)}
+          saved={(card) => {
+            setCapturing(false);
+            setNotice('Запись сохранена.');
+            if (selected === card.project && folder === (card.folder ?? null)) setFocusId(card.id);
+            refresh();
+          }}
+        />
       )}
-    </div>
+      {editing && (
+        <CardEditor
+          key={`${user.id}:${editing.id}`}
+          card={editing}
+          userId={user.id}
+          initiallyEditing={openForEditing}
+          close={() => {
+            setEditing(null);
+            refresh();
+          }}
+          saved={replaceCard}
+          deleted={(card) => {
+            setEditing(null);
+            setDeletedItem({ id: card.id, type: 'card' });
+            setNotice(
+              card.kind === 'folder'
+                ? 'Папка перемещена в корзину.'
+                : 'Запись перемещена в корзину.',
+            );
+            refresh();
+          }}
+          copied={(card) => {
+            setOpenForEditing(true);
+            setEditing(card);
+            refresh();
+          }}
+        />
+      )}
+    </>
   );
 }

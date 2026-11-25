@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { api } from './api';
+import { api, resolveMediaUrl } from './api';
 import { labels, safeUrl } from './types';
 import type { Field, LinkPreview } from './types';
 
@@ -9,9 +9,10 @@ interface Props {
   change: (field: Field) => void;
   error: (message: string) => void;
   pending: (value: boolean) => void;
+  uploadDisabled?: boolean;
 }
 
-export function FieldEditor({ field, change, error, pending }: Props) {
+export function FieldEditor({ field, change, error, pending, uploadDisabled = false }: Props) {
   const [preview, setPreview] = useState<LinkPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const current = useRef(field.value[0] ?? '');
@@ -54,7 +55,7 @@ export function FieldEditor({ field, change, error, pending }: Props) {
       pending(false);
     }
   };
-  const media = safeUrl(field.value[0] ?? '');
+  const media = safeUrl(resolveMediaUrl(field.value[0] ?? ''));
   return (
     <div className="field-content">
       <input
@@ -143,7 +144,7 @@ export function FieldEditor({ field, change, error, pending }: Props) {
                 {loading ? 'Загрузка…' : 'Загрузить файл до 5 МБ'}
                 <input
                   type="file"
-                  disabled={loading}
+                  disabled={loading || uploadDisabled}
                   accept={`${field.type}/*`}
                   onChange={(event) => void upload(event.target.files?.[0])}
                 />

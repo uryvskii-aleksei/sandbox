@@ -29,7 +29,7 @@ class FakeDeployment(receiver.Deployment):
         return {}
 
     def target_url(self):
-        return "https://example.test/mind-assistant/"
+        return "https://example.test/memo/"
 
     def backup(self, config, commit):
         self.calls.append("backup")
@@ -50,7 +50,7 @@ class DeploymentTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="sandbox-deploy-test-")
         self.root = Path(self.temporary.name)
-        self.home = self.root / "home"
+        self.home = self.root / "cj999935"
         (self.home / "public_html").mkdir(parents=True)
         (self.home / "public_html" / "existing-site.txt").write_text("Keep this website")
         self.deployment = FakeDeployment(self.home)
@@ -87,6 +87,29 @@ class DeploymentTests(unittest.TestCase):
 
     def installed(self):
         self.stage(OTHER).rename(self.deployment.public)
+
+    def test_target_uses_memo_mount_and_preserves_legacy_private_storage(self):
+        deployment = receiver.Deployment(self.home)
+        target = {
+            "version": 1,
+            "remoteRoot": str(deployment.root),
+            "publicPath": str(deployment.public),
+            "url": "https://cj999935.tw1.ru/memo/",
+        }
+        manifest = deployment.root / "target.json"
+        manifest.write_text(json.dumps(target))
+        self.assertEqual(deployment.target_url(), target["url"])
+        self.assertEqual(deployment.root, self.home.resolve() / ".sandbox" / "mind-assistant")
+        self.assertEqual(deployment.public, self.home.resolve() / "public_html" / "memo")
+        for change in [
+            {"url": "https://another-account.tw1.ru/memo/"},
+            {"url": "https://cj999935.tw1.ru/mind-assistant/"},
+            {"publicPath": str(self.home / "public_html" / "mind-assistant")},
+            {"remoteRoot": str(self.home / ".sandbox" / "memo")},
+        ]:
+            manifest.write_text(json.dumps({**target, **change}))
+            with self.subTest(change=change), self.assertRaises(receiver.DeployError):
+                deployment.target_url()
 
     def test_deterministic_package_and_verified_extraction(self):
         source = self.source()
@@ -144,10 +167,14 @@ class DeploymentTests(unittest.TestCase):
             receiver.extract_artifact(archive, target, COMMIT, digest)
 
     def test_publish_preserves_previous_release_and_sibling_site(self):
+        legacy = self.home / "public_html" / "mind-assistant"
+        legacy.mkdir()
+        (legacy / "index.html").write_text("Preserve the previous public installation")
         self.installed()
         result = self.deployment.publish(self.stage(), COMMIT, DIGEST)
         self.assertEqual(result["status"], "published")
         self.assertEqual(self.deployment.calls, ["backup", "migrate", "verify"])
+        self.assertEqual((legacy / "index.html").read_text(), "Preserve the previous public installation")
         self.assertEqual((self.deployment.public / "index.html").read_text(), COMMIT)
         previous = list((self.deployment.root / "releases").glob("previous-*"))
         self.assertEqual((previous[0] / "index.html").read_text(), OTHER)

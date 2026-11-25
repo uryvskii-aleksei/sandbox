@@ -17,6 +17,8 @@ Use representative real or clearly synthetic content: long labels, missing value
 
 For a consequential layout or journey choice, compare credible alternatives using the same content and tasks. Explain differences in hierarchy, reading order, primary-action visibility and attention. A small change within an accepted layout needs a focused assessment, not a mandatory alternatives exercise. Separate aesthetic preference from demonstrated task performance.
 
+For a new page or a substantial visual redesign, check that the visual direction reflects the subject and the content the audience needs. Review the rendered page for decorative elements that add no meaning or draw attention away from the primary task.
+
 Cover applicable default, loading, empty, validation, error, success and recovery states. For each transition, specify the initiating action, feedback, retained input and next available action. Use the [integration contract](../integration-design/SKILL.md) when completion depends on an external operation. Do not describe an unknown result as a confirmed failure or success.
 
 For forms and dialogs, define labels, initial focus, keyboard order, dismissal/cancellation, focus return and error placement. Include async waiting, retry and unsaved changes where relevant. Account for responsive reading order, content wrapping, touch targets, contrast, enlarged text, screen-keyboard obstruction and reduced motion. Media controls and alternatives should match the content's role.

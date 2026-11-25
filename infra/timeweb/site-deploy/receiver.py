@@ -319,7 +319,7 @@ class Deployment:
             healthy = {}
         data = healthy.get("data") if isinstance(healthy, dict) else None
         if status != 200 or not isinstance(healthy, dict) or healthy.get("ok") is not True or not isinstance(data, dict) or data.get("status") != "ready":
-            raise SiteError("A protected neighbouring application (MindAssistant) failed its HTTPS health check.")
+            raise SiteError("A protected neighbouring application (Memo) failed its HTTPS health check.")
         relatives = ["stonehaus/v1/", "stonehaus/v2/", "stonehaus/v3/"] if self.app == "purpur" else [""]
         for relative in relatives:
             expected = self.home / "public_html" / relative / "index.html"

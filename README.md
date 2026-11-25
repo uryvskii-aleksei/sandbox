@@ -13,7 +13,7 @@
 | [docs/](docs/README.md)                   | Документация разработки и принятые технические решения        |
 | [.github/](.github/README.md)             | GitHub Actions и шаблоны задач и PR                           |
 
-В репозитории находятся Purpur, Stone Haus и MindAssistant. Исходники сайтов, история и документы перенесены из прежних проектов. [Состав и команды приложений](apps/README.md), [происхождение импорта](docs/imports/README.md).
+В репозитории находятся Purpur, Stone Haus и Memo. Исходники сайтов, история и документы перенесены из прежних проектов. [Состав и команды приложений](apps/README.md), [происхождение импорта](docs/imports/README.md).
 
 ## 2. Локальная подготовка
 
@@ -25,7 +25,7 @@ npm run check
 npm run doctor
 ```
 
-`check` проверяет обвязку, синтаксис сайтов, перенесённые тесты, типы React и форматирование. `npm run build:sites` и `npm run build:mind-assistant` создают сборки. Для MindAssistant на macOS запустите Docker Desktop и `npm run dev:mind-assistant`. Интеграционные проверки PHP/MySQL: `npm run test:mind-assistant`.
+`check` проверяет обвязку, синтаксис сайтов, перенесённые тесты, типы React и форматирование. `npm run build:sites` и `npm run build:memo` создают сборки. Для Memo на macOS запустите Docker Desktop и `npm run dev:memo`. Интеграционные проверки PHP/MySQL: `npm run test:memo`.
 
 ## 3. Агентская обвязка
 
@@ -46,6 +46,6 @@ Skills не создают разрешение на внешние действ
 
 Основная ветка — `main`. Рабочий порядок: задача → ветка → реализация → проверки → PR → публикация выбранного приложения. Для небольшого локального изменения issue и PR не обязательны. Подробнее — [правила разработки](docs/development.md).
 
-Timeweb — обычный виртуальный хостинг с SSH/SFTP. Текущий технический домен и подключение записаны в [инструкции Timeweb](infra/timeweb/README.md). SSH, SFTP и передача через rsync проверены. Команда `npm run timeweb -- check` проверяет доступ к хостингу. [Реестр статических целей](infra/timeweb/targets.json) содержит три варианта Stonehaus. Для общей публикации Purpur и Stonehaus используются `npm run deploy:sites -- plan <purpur|stonehaus>` и `npm run deploy:sites -- publish <purpur|stonehaus> --apply`: они проверяют текущий main/CI, сохраняют прежние файлы и проверяют HTTPS. MindAssistant имеет отдельную [процедуру PHP/MySQL](apps/mind-assistant/deployment.md).
+Timeweb — обычный виртуальный хостинг с SSH/SFTP. Текущий технический домен и подключение записаны в [инструкции Timeweb](infra/timeweb/README.md). SSH, SFTP и передача через rsync проверены. Команда `npm run timeweb -- check` проверяет доступ к хостингу. [Реестр статических целей](infra/timeweb/targets.json) содержит три варианта Stonehaus. Для общей публикации Purpur и Stonehaus используются `npm run deploy:sites -- plan <purpur|stonehaus>` и `npm run deploy:sites -- publish <purpur|stonehaus> --apply`: они проверяют текущий main/CI, сохраняют прежние файлы и проверяют HTTPS. Memo имеет отдельную [процедуру PHP/MySQL](apps/memo/deployment.md).
 
-GitHub Actions проверяет обвязку, сайты и MindAssistant, включая PHP 8.2/8.4 с MySQL. Проверенный коммит `main` выпускается на [MindAssistant](https://cj999935.tw1.ru/mind-assistant/) командой `npm run release:mind-assistant`. Workflow публикует артефакт, задание Timeweb забирает его по HTTPS и подтверждает результат. Обычный push в `main` выполняет только проверки. SSH-ключи и пароль MySQL остаются вне GitHub.
+GitHub Actions проверяет обвязку, сайты и Memo, включая PHP 8.2/8.4 с MySQL. Проверенный коммит `main` выпускается на [Memo](https://cj999935.tw1.ru/mind-assistant/) командой `npm run release:memo`. Workflow публикует артефакт, задание Timeweb забирает его по HTTPS и подтверждает результат. Обычный push в `main` выполняет только проверки. SSH-ключи и пароль MySQL остаются вне GitHub.

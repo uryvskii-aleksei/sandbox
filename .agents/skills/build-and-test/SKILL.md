@@ -5,7 +5,7 @@ description: Build, lint and test affected applications or agent tooling, diagno
 
 # Build and test
 
-Read the owning README, manifest and CI configuration. Do not assume a language, test runner, Storybook or universal build command. Root `npm run check` covers the harness, imported site tests, React types and formatting. MindAssistant PHP/MySQL integration checks run separately through `npm run test:mind-assistant` with Docker. For a JavaScript workspace use its actual script, for example `npm run build --workspace=apps/<name>`.
+Read the owning README, manifest and CI configuration. Do not assume a language, test runner, Storybook or universal build command. Root `npm run check` covers the harness, imported site tests, React types and formatting. Memo PHP/MySQL integration checks run separately through `npm run test:memo` with Docker. For a JavaScript workspace use its actual script, for example `npm run build --workspace=apps/<name>`.
 
 Select checks for the changed boundary: formatting/lint, types, meaningful regression tests, build, affected consumers and browser scenarios as needed. Reuse still-valid evidence. Do not repeat unrelated suites after success without a new reason.
 

@@ -32,8 +32,8 @@ gh repo view uryvskii-aleksei/sandbox
 
 ## 4. CI
 
-[Harness](../.github/workflows/harness.yml) проверяет обвязку и приложения на push в `main` и на PR, собирает сайты и MindAssistant. API и собранный артефакт MindAssistant проверяются с MySQL на PHP 8.2 и 8.4. Проверки не получают ключи Timeweb.
+[Harness](../.github/workflows/harness.yml) проверяет обвязку и приложения на push в `main` и на PR, собирает сайты и Memo. API и собранный артефакт Memo проверяются с MySQL на PHP 8.2 и 8.4. Проверки не получают ключи Timeweb.
 
-Проверенный коммит `main` выпускается командой `npm run release:mind-assistant`. [Deploy MindAssistant](../.github/workflows/deploy-mind-assistant.yml) публикует артефакт со встроенным временным `GITHUB_TOKEN`, задание Timeweb забирает его по HTTPS и выполняет backup, миграцию и проверку релиза. SSH-ключи и пароль MySQL в GitHub не хранятся. Обычный push в `main` не запускает деплой. Настройка и восстановление — в [инструкции приложения](../apps/mind-assistant/deployment.md).
+Проверенный коммит `main` выпускается командой `npm run release:memo`. [Deploy Memo](../.github/workflows/deploy-memo.yml) публикует артефакт со встроенным временным `GITHUB_TOKEN`, задание Timeweb забирает его по HTTPS и выполняет backup, миграцию и проверку релиза. SSH-ключи и пароль MySQL в GitHub не хранятся. Обычный push в `main` не запускает деплой. Настройка и восстановление — в [инструкции приложения](../apps/memo/deployment.md).
 
 Доступность правил GitHub Environment зависит от тарифа и видимости репозитория. Наличие `environment` в YAML не доказывает включённую защиту: [документация GitHub](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments).

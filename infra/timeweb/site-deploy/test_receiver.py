@@ -37,7 +37,7 @@ class SiteDeliveryTests(unittest.TestCase):
             "index.html": "Original homepage",
             "styles.css": "Original CSS",
             "old-file.txt": "Keep stale files",
-            "mind-assistant/index.html": "Keep MindAssistant",
+            "mind-assistant/index.html": "Keep Memo",
             "mind-assistant/config.local.php": "Synthetic unrelated config",
             "stonehaus/v1/index.html": "Keep Stonehaus",
             "stonehaus/v2/index.html": "Keep Stonehaus v2",

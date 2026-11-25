@@ -40,7 +40,7 @@ function walk(directory) {
     const absolute = path.join(directory, entry.name);
     if (
       entry.isSymbolicLink() ||
-      /^(?:apps\/mind-assistant\/legacy|apps\/(?:purpur|stonehaus)\/archive)(?:\/|$)/.test(
+      /^(?:apps\/memo\/legacy|apps\/(?:purpur|stonehaus)\/archive)(?:\/|$)/.test(
         path.relative(root, absolute).split(path.sep).join('/'),
       ) ||
       ignored.has(entry.name) ||

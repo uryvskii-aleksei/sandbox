@@ -32,9 +32,7 @@ Support a finding with a concrete trigger, file location, conflicting instructio
 - `npm run format:check` checks formatting. Use [build-and-test](../build-and-test/SKILL.md) for changed executable behavior and affected consumers.
 - `npm run doctor` checks local environment prerequisites. Its network mode and `npm run timeweb -- check` are connection diagnostics, not skill-quality certificates or deployment requests.
 
-For a changed activation or authority boundary, choose a matching request, a nearby nonmatching request and a relevant scope transition, such as research to implementation or verification to publication. State the expected decision before comparing it with the skill. Use existing [evaluation scenarios](../../../docs/designs/agent-harness.md#6-сценарии-оценки) when they fit.
-
-Run only the permitted case and tools. Use temporary fixtures outside the repository for experiments. If actual agent execution or independent evaluation is unavailable, label the result as an author review of scenarios, not a passed behavioral run. A written scenario, valid YAML and an independent review are different evidence.
+For a changed activation or authority boundary, or to measure whether a skill improves the outcome, use [behavioral evaluation](references/behavioral-evaluation.md). Match each claim to the available evidence: structural validation, runtime discovery, observed activation or observed task behavior.
 
 ## Repair and report
 

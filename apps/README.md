@@ -2,17 +2,17 @@
 
 ## 1. Состав
 
-| Приложение                                | Стек и команды                                     |
-| ----------------------------------------- | -------------------------------------------------- |
-| [Purpur](purpur/README.md)                | HTML/CSS/JS + PHP-обработчики. `npm run dev:sites` |
-| [Stone Haus](stonehaus/README.md)         | Три статические концепции. `npm run dev:sites`     |
-| [MindAssistant](mind-assistant/README.md) | React + PHP + MySQL. `npm run dev:mind-assistant`  |
+| Приложение                        | Стек и команды                                     |
+| --------------------------------- | -------------------------------------------------- |
+| [Purpur](purpur/README.md)        | HTML/CSS/JS + PHP-обработчики. `npm run dev:sites` |
+| [Stone Haus](stonehaus/README.md) | Три статические концепции. `npm run dev:sites`     |
+| [Memo](memo/README.md)            | React + PHP + MySQL. `npm run dev:memo`            |
 
 ## 2. Границы
 
 Каждое приложение находится в `apps/<имя>` и владеет своим стеком, README, тестами и сборкой. Имя папки — короткое английское название в kebab-case. Приложения не импортируют приватный код друг друга.
 
-Для JavaScript используется корневой npm workspace и единый `package-lock.json`. Старые исходники MindAssistant изолированы в `legacy/` и не устанавливаются вместе с современным приложением. Для других языков используйте собственный инструмент и lockfile.
+Для JavaScript используется корневой npm workspace и единый `package-lock.json`. Старые исходники Memo изолированы в `legacy/` и не устанавливаются вместе с современным приложением. Для других языков используйте собственный инструмент и lockfile.
 
 ## 3. Новое приложение
 

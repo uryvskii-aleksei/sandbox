@@ -2,7 +2,7 @@
 
 The `npm run timeweb` publication helper accepts static artifacts only. A PHP/database application follows its own deployment procedure. Do not feed PHP into the static helper or make a speculative hosting change to reuse it.
 
-MindAssistant's concrete procedure is [deployment.md](../../../../apps/mind-assistant/deployment.md). Other apps own their own artifact layout, PHP extensions and data migrations. Do not impose MindAssistant's routes or stack on them.
+Memo's concrete procedure is [deployment.md](../../../../apps/memo/deployment.md). Other apps own their own artifact layout, PHP extensions and data migrations. Do not impose Memo's routes or stack on them.
 
 For a requested PHP deployment:
 

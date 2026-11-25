@@ -15,7 +15,7 @@ Read the application's README, manifests and existing provider client. Preserve 
 Use the official SDK for the owning server's language when it fits the task. Verify package names, supported runtime and APIs in the installed version and current official documentation. Use documented HTTP when explicitly requested or when the SDK cannot run in the target environment. Do not infer one language's method signatures from another SDK.
 
 - TypeScript/Node applications: install dependencies in their workspace. A React browser bundle calls the application's server, which owns credentials and rate limits.
-- MindAssistant: the production server is PHP on Timeweb shared hosting. Node is frontend tooling only. Read [repository constraints](references/repository.md) before proposing a server integration.
+- Memo: the production server is PHP on Timeweb shared hosting. Node is frontend tooling only. Read [repository constraints](references/repository.md) before proposing a server integration.
 - Other applications: follow their actual runtime. Do not introduce a new backend solely to reuse a sample.
 
 ## Implement the requested behavior

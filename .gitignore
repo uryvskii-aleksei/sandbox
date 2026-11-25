@@ -27,6 +27,6 @@ id_ed25519*
 .imports/
 *.log
 **/config.local.php
-apps/mind-assistant/.env
+apps/memo/.env
 playwright-report/
 test-results/

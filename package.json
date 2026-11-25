@@ -8,17 +8,17 @@
   },
   "workspaces": [
     "apps/*",
-    "apps/mind-assistant/frontend",
+    "apps/memo/frontend",
     "packages/*"
   ],
   "scripts": {
-    "check": "npm run check:harness && npm run check:sites && npm run check --workspace=@sandbox/mind-assistant && npm test && npm run test:sites && npm run test:deploy:mind-assistant && npm run format:check",
+    "check": "npm run check:harness && npm run check:sites && npm run check --workspace=@sandbox/memo && npm test && npm run test:sites && npm run test:deploy:memo && npm run format:check",
     "check:sites": "node scripts/build-sites.mjs --check",
     "build:sites": "node scripts/build-sites.mjs",
     "dev:sites": "node scripts/preview-sites.mjs",
-    "dev:mind-assistant": "npm run dev --workspace=@sandbox/mind-assistant",
-    "build:mind-assistant": "npm run build --workspace=@sandbox/mind-assistant",
-    "test:mind-assistant": "npm run test --workspace=@sandbox/mind-assistant",
+    "dev:memo": "npm run dev --workspace=@sandbox/memo",
+    "build:memo": "npm run build --workspace=@sandbox/memo",
+    "test:memo": "npm run test --workspace=@sandbox/memo",
     "check:harness": "node scripts/check-harness.mjs",
     "test": "node --test scripts/*.test.mjs .agents/hooks/scripts/*.test.cjs",
     "format": "prettier --write .",
@@ -26,12 +26,12 @@
     "doctor": "node scripts/doctor.mjs",
     "timeweb": "node scripts/timeweb.mjs",
     "test:sites": "npm test --workspace=@sandbox/purpur && npm test --workspace=@sandbox/stonehaus",
-    "deploy:mind-assistant": "node apps/mind-assistant/scripts/deploy.mjs",
-    "test:deploy:mind-assistant": "npm run test:deploy --workspace=@sandbox/mind-assistant",
-    "release:mind-assistant": "node apps/mind-assistant/scripts/request-release.mjs",
+    "deploy:memo": "node apps/memo/scripts/deploy.mjs",
+    "test:deploy:memo": "npm run test:deploy --workspace=@sandbox/memo",
+    "release:memo": "node apps/memo/scripts/request-release.mjs",
     "deploy:sites": "node scripts/deploy-sites.mjs",
-    "test:legacy:mind-assistant": "npm run test:legacy --workspace=@sandbox/mind-assistant",
-    "test:restore:mind-assistant": "node apps/mind-assistant/scripts/verify-backup.mjs"
+    "test:legacy:memo": "npm run test:legacy --workspace=@sandbox/memo",
+    "test:restore:memo": "node apps/memo/scripts/verify-backup.mjs"
   },
   "devDependencies": {
     "prettier": "3.10.1"

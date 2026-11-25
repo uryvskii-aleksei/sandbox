@@ -9,7 +9,7 @@ coverage/
 # Исходники импортированы без переформатирования.
 apps/purpur/site/
 apps/stonehaus/site/
-apps/mind-assistant/legacy/
+apps/memo/legacy/
 .env*
 .mcp.json
 .cursor/mcp.json

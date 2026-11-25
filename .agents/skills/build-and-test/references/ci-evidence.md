@@ -4,4 +4,4 @@ Read PR source/base identity and required checks. Match each Actions run and job
 
 Report local checks separately from Actions, human review, policy satisfaction and hosting publication. A build only proves the checks it executed. Do not claim all applications were tested by the harness workflow.
 
-Create an authorized PR before waiting for PR-triggered CI. Follow the requested run to completion when asked. Otherwise take a bounded status snapshot and link unfinished checks. Re-read source identity before reporting. Do not rerun, cancel or edit workflows without authority for that operation.
+Follow PR CI to completion when it gates delivery to `main`. For other runs, follow to completion when asked or take a bounded status snapshot and link unfinished checks. Re-read source identity before reporting. Do not rerun, cancel or edit workflows without authority for that operation.

@@ -19,7 +19,7 @@ Start with the affected canonical skill, its references and direct callers. Expa
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Activation              | Does the name/description identify a real task? Compare a realistic matching request with a nearby request that should not activate it. Check collisions with neighboring skills.                                                 |
 | Rule ownership          | Keep common policy in AGENTS, procedures in skills and responsibility in roles. Find conflicting copies and stale references to another project's services, brand or task process.                                                |
-| Task authority          | Preserve the requested outcome and already granted permission. Watch for research silently becoming implementation, local work becoming publication, or generic rules blocking an explicitly authorized step.                     |
+| Task authority          | Preserve the requested outcome and already granted permission. Watch for research becoming implementation, explicitly local work being pushed, or generic rules blocking an authorized delivery step.                             |
 | Runtime and adapters    | Compare canonical names, frontmatter, pointers and optional UI metadata. A role file does not prove isolation, model inheritance, delegation permission or a working hook. Preserve personal model/tool settings.                 |
 | Executable procedure    | Follow a claimed command to the actual manifest, script or workflow. Check the owning app's stack, hosting, destination and recovery contract. Do not assume every app uses the same backend or deployment helper.                |
 | Context and maintenance | Keep decision-changing guidance in the entrypoint. Move conditional detail to linked references, remove proven duplication and preserve required attribution/licenses. Do not split files or add roles merely to meet a template. |
@@ -32,9 +32,7 @@ Support a finding with a concrete trigger, file location, conflicting instructio
 - `npm run format:check` checks formatting. Use [build-and-test](../build-and-test/SKILL.md) for changed executable behavior and affected consumers.
 - `npm run doctor` checks local environment prerequisites. Its network mode and `npm run timeweb -- check` are connection diagnostics, not skill-quality certificates or deployment requests.
 
-For a changed activation or authority boundary, choose a matching request, a nearby nonmatching request and a relevant scope transition, such as research to implementation or verification to publication. State the expected decision before comparing it with the skill. Use existing [evaluation scenarios](../../../docs/designs/agent-harness.md#6-сценарии-оценки) when they fit.
-
-Run only the permitted case and tools. Use temporary fixtures outside the repository for experiments. If actual agent execution or independent evaluation is unavailable, label the result as an author review of scenarios, not a passed behavioral run. A written scenario, valid YAML and an independent review are different evidence.
+For a changed activation or authority boundary, or to measure whether a skill improves the outcome, use [behavioral evaluation](references/behavioral-evaluation.md). Match each claim to the available evidence: structural validation, runtime discovery, observed activation or observed task behavior.
 
 ## Repair and report
 

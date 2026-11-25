@@ -51,20 +51,19 @@ export function validateSiteTarget(target, app) {
     throw new Error('Некорректные реквизиты SSH назначения.');
   }
   const home = `/home/${target.user[0]}/${target.user}`;
-  const suffix = app === 'purpur' ? '' : '/stonehaus';
-  if (target.publicPath !== `${home}/public_html${suffix}`) {
+  if (target.publicPath !== `${home}/public_html/${app}`) {
     throw new Error('Сайт может обновлять только свой настроенный каталог.');
   }
   const url = new URL(target.url);
   if (
     url.protocol !== 'https:' ||
-    !url.hostname ||
+    url.hostname !== `${target.user}.tw1.ru` ||
     url.port ||
     url.username ||
     url.password ||
     url.search ||
     url.hash ||
-    url.pathname !== (app === 'purpur' ? '/' : '/stonehaus/')
+    url.pathname !== `/${app}/`
   ) {
     throw new Error('Нужен HTTPS-адрес выбранного сайта без учётных данных и параметров.');
   }
@@ -77,7 +76,7 @@ export function validateSiteTarget(target, app) {
       throw new Error('Некорректный список файлов и каталогов сайта.');
     }
   }
-  const permitted = app === 'purpur' ? ['assets', 'concept', 'purpur'] : ['v1', 'v2', 'v3'];
+  const permitted = app === 'purpur' ? ['assets', 'concept', 'v1', 'v2', 'v3'] : ['v1', 'v2', 'v3'];
   if (
     target.ownedFiles.some(
       (name) =>
@@ -87,7 +86,8 @@ export function validateSiteTarget(target, app) {
         ),
     ) ||
     target.ownedDirectories.some((name) => !permitted.includes(name)) ||
-    (app === 'stonehaus' && target.ownedFiles.length)
+    (app === 'stonehaus' &&
+      target.ownedFiles.some((name) => !['index.html', 'styles.css'].includes(name)))
   ) {
     throw new Error('Назначение не может владеть соседними приложениями или приватными файлами.');
   }

@@ -20,7 +20,7 @@ MAX_FILE = 12 * 1024 * 1024
 MAX_FILES = 512
 REQUIRED = {
     "index.html", "api.php", ".htaccess", "release.json", "backend/.htaccess",
-    "backend/api.php", "backend/bootstrap.php", "backend/cards.php", "backend/preview.php",
+    "backend/api.php", "backend/bootstrap.php", "backend/cards.php", "backend/preview.php", "backend/workspace.php",
     "database/.htaccess", "database/migrate.php", "database/schema.sql",
 }
 
@@ -103,7 +103,7 @@ class Deployment:
     def __init__(self, home):
         self.home = Path(home).resolve()
         self.root = self.home / ".sandbox" / "mind-assistant"
-        self.public = self.home / "public_html" / "mind-assistant"
+        self.public = self.home / "public_html" / "memo"
         self.config = self.root / "config.php"
 
     def initialize(self):
@@ -141,7 +141,7 @@ class Deployment:
         url = urlparse(target["url"])
         if target.get("version") != 1 or target.get("remoteRoot") != str(self.root) or target.get("publicPath") != str(self.public):
             raise DeployError("Server destination mapping does not match this account/application.")
-        if url.scheme != "https" or not url.hostname or url.username or url.password or url.query or url.fragment or url.path != "/mind-assistant/":
+        if url.scheme != "https" or url.hostname != f"{self.home.name}.tw1.ru" or url.username or url.password or url.port or url.query or url.fragment or url.path != "/memo/":
             raise DeployError("Invalid public application URL.")
         return target["url"]
 

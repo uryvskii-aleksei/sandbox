@@ -15,7 +15,23 @@ export function buildSite(appDirectory) {
     }
   }
   fs.rmSync(output, { recursive: true, force: true });
-  fs.cpSync(source, output, { recursive: true, preserveTimestamps: true });
+  fs.mkdirSync(output, { recursive: true });
+  const nestedVersions = path.basename(appDirectory) === 'purpur' ? 'purpur' : null;
+  for (const entry of fs.readdirSync(source)) {
+    if (entry === nestedVersions) continue;
+    fs.cpSync(path.join(source, entry), path.join(output, entry), {
+      recursive: true,
+      preserveTimestamps: true,
+    });
+  }
+  if (nestedVersions) {
+    for (const version of ['v1', 'v2', 'v3']) {
+      fs.cpSync(path.join(source, nestedVersions, version), path.join(output, version), {
+        recursive: true,
+        preserveTimestamps: true,
+      });
+    }
+  }
   return output;
 }
 

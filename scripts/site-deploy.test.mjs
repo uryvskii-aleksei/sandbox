@@ -35,19 +35,30 @@ test('site publication has an explicit app/action and cannot silently apply a pl
 });
 
 test('site destinations preserve ownership and prohibit credential/command/URL escapes', () => {
-  for (const app of ['purpur', 'stonehaus'])
-    assert.equal(validateSiteTarget(manifest(app), app).app, app);
+  for (const app of ['purpur', 'stonehaus']) {
+    const target = validateSiteTarget(manifest(app), app);
+    assert.equal(target.app, app);
+    assert.equal(target.publicPath, `/home/c/cj999935/public_html/${app}`);
+    assert.equal(target.url, `https://cj999935.tw1.ru/${app}/`);
+  }
   const purpur = manifest();
   assert.equal(siteRemoteRoot(purpur), '/home/c/cj999935/.sandbox/site-deploy/purpur');
   for (const change of [
     { sshHost: '-oProxyCommand=unsafe' },
     { user: 'name;unsafe' },
-    { publicPath: '/home/c/cj999935/public_html/mind-assistant' },
-    { ownedDirectories: ['assets', 'mind-assistant'] },
+    { publicPath: '/home/c/cj999935/public_html' },
+    { publicPath: '/home/c/cj999935/public_html/memo' },
+    { publicPath: '/home/c/cj999935/public_html/stonehaus' },
+    { ownedDirectories: ['assets', 'memo'] },
+    { ownedDirectories: ['assets', 'purpur'] },
     { ownedFiles: ['config.local.php'] },
     { ownedFiles: ['../index.html'] },
     { url: 'https://user:password@example.test/' },
     { url: 'https://example.test/other/' },
+    { url: 'https://example.test/purpur/' },
+    { url: 'https://amodu.ru/purpur/' },
+    { url: 'https://cj999935.tw1.ru/' },
+    { url: 'https://cj999935.tw1.ru/purpur/purpur/' },
     { url: 'http://example.test/' },
     { checks: [{ path: 'https://other.test/', status: 200 }] },
   ])
@@ -58,6 +69,23 @@ test('site destinations preserve ownership and prohibit credential/command/URL e
       'stonehaus',
     ),
   );
+  for (const file of ['app.js', '.htaccess', 'order.php', 'config.local.php']) {
+    const target = manifest('stonehaus');
+    assert.throws(() =>
+      validateSiteTarget({ ...target, ownedFiles: [...target.ownedFiles, file] }, 'stonehaus'),
+    );
+  }
+});
+
+test('site HTTPS checks resolve the selector and legacy versions inside each app mount', () => {
+  for (const app of ['purpur', 'stonehaus']) {
+    const target = manifest(app);
+    for (const page of ['', 'v1/', 'v2/', 'v3/']) {
+      const check = target.checks.find((item) => item.path === page);
+      assert.deepEqual(check, { path: page, status: 200, file: `${page}index.html` });
+      assert.equal(new URL(check.path, target.url).href, `https://cj999935.tw1.ru/${app}/${page}`);
+    }
+  }
 });
 
 test('dirty or stale source and unverified CI fail before build, SSH or data transfer', async () => {

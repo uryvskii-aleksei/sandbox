@@ -1,6 +1,6 @@
 RewriteEngine On
 RewriteCond %{HTTP:X-Forwarded-Proto} !https
 RewriteCond %{HTTPS} !=on
-RewriteRule ^ https://cj999935.tw1.ru%{REQUEST_URI} [R=301,L]
-RewriteRule ^concept/?$ https://cj999935.tw1.ru/ [R=301,L]
-RewriteRule ^concept/index\.html$ https://cj999935.tw1.ru/ [R=301,L]
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+RewriteRule ^concept/?$ /purpur/ [R=301,L]
+RewriteRule ^concept/index\.html$ /purpur/ [R=301,L]

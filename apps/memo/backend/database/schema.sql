@@ -17,12 +17,39 @@ CREATE TABLE IF NOT EXISTS cards (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   project_id INT UNSIGNED NOT NULL,
   parent_id INT UNSIGNED NULL,
+  kind ENUM('record','folder') NOT NULL DEFAULT 'record',
+  folder_id INT UNSIGNED NULL,
   name VARCHAR(128) NOT NULL,
   x DOUBLE NOT NULL DEFAULT 80,
   y DOUBLE NOT NULL DEFAULT 80,
+  width SMALLINT UNSIGNED NOT NULL DEFAULT 240,
+  height SMALLINT UNSIGNED NOT NULL DEFAULT 190,
   version INT UNSIGNED NOT NULL DEFAULT 1,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  INDEX card_board (project_id, folder_id),
   FOREIGN KEY (parent_id) REFERENCES cards(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS card_documents (
+  card_id INT UNSIGNED PRIMARY KEY,
+  document JSON NOT NULL,
+  search_text MEDIUMTEXT NOT NULL,
+  FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS board_marks (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  project_id INT UNSIGNED NOT NULL,
+  folder_id INT UNSIGNED NULL,
+  kind ENUM('label','line','square','circle') NOT NULL,
+  label VARCHAR(128) NOT NULL DEFAULT '',
+  label_scale DOUBLE NOT NULL DEFAULT 1,
+  x DOUBLE NOT NULL,
+  y DOUBLE NOT NULL,
+  end_x DOUBLE NULL,
+  end_y DOUBLE NULL,
+  INDEX marks_board (project_id,folder_id),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS field_groups (
@@ -51,4 +78,45 @@ CREATE TABLE IF NOT EXISTS media (
   mime VARCHAR(64) NOT NULL,
   content LONGBLOB NOT NULL,
   FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS project_details (
+  project_id INT UNSIGNED PRIMARY KEY,
+  inbox BOOLEAN NOT NULL DEFAULT FALSE,
+  deleted_at DATETIME NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS card_details (
+  card_id INT UNSIGNED PRIMARY KEY,
+  pinned BOOLEAN NOT NULL DEFAULT FALSE,
+  deleted_at DATETIME NULL,
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  opened_at DATETIME(6) NULL,
+  FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS card_links (
+  source_id INT UNSIGNED NOT NULL,
+  target_id INT UNSIGNED NOT NULL,
+  label VARCHAR(128) NOT NULL DEFAULT '',
+  PRIMARY KEY (source_id, target_id),
+  INDEX (target_id),
+  FOREIGN KEY (source_id) REFERENCES cards(id) ON DELETE CASCADE,
+  FOREIGN KEY (target_id) REFERENCES cards(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS request_receipts (
+  owner_id INT UNSIGNED NOT NULL,
+  request_id VARCHAR(64) NOT NULL,
+  operation VARCHAR(64) NOT NULL,
+  payload_hash CHAR(64) NOT NULL,
+  response_json JSON NOT NULL,
+  PRIMARY KEY (owner_id, request_id),
+  INDEX (owner_id, operation),
+  FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  name VARCHAR(64) PRIMARY KEY
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -34,7 +34,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => client.kill
 client.on('exit', (code) => {
   process.exitCode = code ?? 0;
 });
-console.log('React: http://127.0.0.1:5173/mind-assistant/');
+console.log('React: http://127.0.0.1:5173/memo/');
 console.log(
   'PHP/MySQL останутся запущены. Остановка: npm run services:down --workspace=@sandbox/memo',
 );

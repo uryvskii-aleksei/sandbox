@@ -22,11 +22,15 @@ const contentTypes = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
-/** Сохраняет исходные URL обоих сайтов без копирования их файлов в общий каталог. */
+/** Показывает оба сайта под их публичными путями без копирования исходников. */
 export function createPreviewServer(
   mounts = [
+    ...['v1', 'v2', 'v3'].map((version) => ({
+      prefix: `/purpur/${version}/`,
+      root: path.join(repo, 'apps/purpur/site/purpur', version),
+    })),
+    { prefix: '/purpur/', root: path.join(repo, 'apps/purpur/site') },
     { prefix: '/stonehaus/', root: path.join(repo, 'apps/stonehaus/site') },
-    { prefix: '/', root: path.join(repo, 'apps/purpur/site') },
   ],
 ) {
   const resolved = mounts
@@ -90,8 +94,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const port = Number(process.env.PORT || 4173);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Некорректный PORT.');
   createPreviewServer().listen(port, '127.0.0.1', () => {
-    console.log(`Пурпур: http://127.0.0.1:${port}/purpur/v3/`);
-    console.log(`Stone Haus: http://127.0.0.1:${port}/stonehaus/v3/`);
+    console.log(`Пурпур: http://127.0.0.1:${port}/purpur/`);
+    console.log(`Stone Haus: http://127.0.0.1:${port}/stonehaus/`);
     console.log('Все исходные варианты доступны по прежним путям. PHP здесь не выполняется.');
   });
 }

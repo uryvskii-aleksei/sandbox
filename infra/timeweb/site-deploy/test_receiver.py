@@ -7,7 +7,7 @@ import tarfile
 import tempfile
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import receiver
 from package import package
@@ -30,29 +30,42 @@ class SiteDeliveryTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix="sandbox-sites-receiver-")
         self.root = Path(self.temporary.name).resolve()
         self.home = self.root / "cj999935"
-        self.public = self.home / "public_html"
-        self.public.mkdir(parents=True, mode=0o700)
-        self.public.chmod(0o700)
+        self.common = self.home / "public_html"
+        self.public = self.common / "purpur"
+        self.common.mkdir(parents=True, mode=0o700)
+        self.common.chmod(0o700)
         for path, data in {
-            "index.html": "Original homepage",
-            "styles.css": "Original CSS",
+            "index.html": "Keep old root Purpur homepage",
+            ".htaccess": "Keep old root rewrite rules",
+            "styles.css": "Keep old root Purpur CSS",
+            "assets/legacy.js": "Keep old root Purpur asset",
+            "concept/index.html": "Keep old root Purpur concept",
             "old-file.txt": "Keep stale files",
-            "mind-assistant/index.html": "Keep Memo",
-            "mind-assistant/config.local.php": "Synthetic unrelated config",
+            "purpur/index.html": "Original homepage",
+            "purpur/styles.css": "Original CSS",
+            "purpur/v1/index.html": "Keep Purpur v1",
+            "purpur/v2/index.html": "Keep Purpur v2",
+            "purpur/v3/index.html": "Keep Purpur v3",
+            "purpur/old-file.txt": "Keep stale app file",
+            "memo/index.html": "Keep Memo",
+            "memo/config.local.php": "Synthetic unrelated config",
+            "stonehaus/index.html": "Keep Stonehaus selector",
+            "stonehaus/styles.css": "Keep Stonehaus selector CSS",
             "stonehaus/v1/index.html": "Keep Stonehaus",
             "stonehaus/v2/index.html": "Keep Stonehaus v2",
             "stonehaus/v3/index.html": "Keep Stonehaus v3",
         }.items():
-            destination = self.public / path
+            destination = self.common / path
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(data)
+        self.public.chmod(0o700)
 
     def tearDown(self):
         self.temporary.cleanup()
 
     def deployment(self, app="purpur"):
         target = template(app)
-        target["publicPath"] = str(self.public if app == "purpur" else self.public / "stonehaus")
+        target["publicPath"] = str(self.common / app)
         deployment = receiver.Deployment(self.home, target)
         deployment.initialize()
         deployment.verify = lambda manifest, digest: None
@@ -90,18 +103,35 @@ class SiteDeliveryTests(unittest.TestCase):
             self.assertEqual(receiver.validate_target(template(app))["app"], app)
         for change in [
             {"publicPath": "/home/c/cj999935"},
-            {"publicPath": "/home/c/cj999935/public_html/mind-assistant"},
+            {"publicPath": "/home/c/cj999935/public_html"},
+            {"publicPath": "/home/c/cj999935/public_html/memo"},
+            {"publicPath": "/home/c/cj999935/public_html/stonehaus"},
             {"sshHost": "-oProxyCommand=unsafe"},
             {"user": "name;unsafe"},
-            {"ownedDirectories": ["assets", "mind-assistant"]},
+            {"ownedDirectories": ["assets", "memo"]},
+            {"ownedDirectories": ["assets", "purpur"]},
             {"ownedFiles": ["config.local.php"]},
             {"url": "https://user:password@example.test/"},
             {"url": "https://example.test/other/"},
+            {"url": "https://example.test/purpur/"},
+            {"url": "https://amodu.ru/purpur/"},
+            {"url": "https://cj999935.tw1.ru/"},
+            {"url": "https://cj999935.tw1.ru/purpur/purpur/"},
         ]:
             with self.subTest(change=change), self.assertRaises((receiver.SiteError, ValueError)):
                 receiver.validate_target({**template(), **change})
         with self.assertRaises(receiver.SiteError):
             receiver.validate_target({**template("stonehaus"), "publicPath": "/home/c/cj999935/public_html"})
+        for name in ["app.js", ".htaccess", "order.php", "config.local.php"]:
+            with self.subTest(file=name), self.assertRaises(receiver.SiteError):
+                receiver.validate_target({**template("stonehaus"), "ownedFiles": ["index.html", "styles.css", name]})
+
+    def test_flattened_php_entry_points_keep_a_narrow_allowlist(self):
+        for name in ["order.php", "cdek-points.php", "v1/order.php", "v1/cdek-points.php"]:
+            self.assertEqual(receiver.allowed_path(template(), name), name)
+        for name in ["purpur/v1/order.php", "v2/order.php", "v3/cdek-points.php", "v1/unsafe.php"]:
+            with self.subTest(path=name), self.assertRaises(receiver.SiteError):
+                receiver.allowed_path(template(), name)
 
     def test_packaging_is_deterministic_and_extraction_checks_every_file(self):
         source, archive, metadata, stage, manifest = self.prepared()
@@ -113,7 +143,7 @@ class SiteDeliveryTests(unittest.TestCase):
         self.assertEqual(set(manifest["files"]), set(snapshot(source)))
 
     def test_private_paths_traversal_and_symlinks_are_rejected_before_publication(self):
-        for name in ["../outside", "/index.html", "assets/../outside", "assets/.env", "assets/config.local.php", "assets/private.key", "mind-assistant/index.html", "stonehaus/v1/index.html", "release-purpur.json", "assets/unsafe.php"]:
+        for name in ["../outside", "/index.html", "assets/../outside", "assets/.env", "assets/config.local.php", "assets/private.key", "memo/index.html", "stonehaus/v1/index.html", "purpur/v1/index.html", "release-purpur.json", "assets/unsafe.php"]:
             with self.subTest(path=name), self.assertRaises(receiver.SiteError):
                 receiver.allowed_path(template(), name)
         source, _, _, _, _ = self.prepared()
@@ -157,12 +187,14 @@ class SiteDeliveryTests(unittest.TestCase):
     def test_success_only_updates_owned_files_and_retains_real_common_root(self):
         deployment = self.deployment()
         _, _, metadata, stage, manifest = self.prepared()
-        unrelated = {name: (self.public / name).read_bytes() for name in ["old-file.txt", "mind-assistant/index.html", "mind-assistant/config.local.php", "stonehaus/v1/index.html"]}
+        unrelated = {name: data for name, data in snapshot(self.common).items() if not name.startswith("purpur/")}
         result = deployment.publish(stage, manifest, metadata["sha256"])
         self.assertEqual(result["status"], "published")
         self.assertEqual((self.public / "index.html").read_bytes(), (stage / "index.html").read_bytes())
         for name, data in unrelated.items():
-            self.assertEqual((self.public / name).read_bytes(), data)
+            self.assertEqual((self.common / name).read_bytes(), data)
+        self.assertEqual((self.public / "old-file.txt").read_text(), "Keep stale app file")
+        self.assertEqual(self.common.stat().st_mode & 0o777, 0o700)
         self.assertEqual(self.public.stat().st_mode & 0o777, 0o700)
         self.assertFalse(self.public.is_symlink())
         self.assertEqual(deployment.current()["deploymentStatus"], "ready")
@@ -170,17 +202,21 @@ class SiteDeliveryTests(unittest.TestCase):
         self.assertEqual(backup.stat().st_mode & 0o777, 0o600)
         with tarfile.open(backup, "r:gz") as archive:
             self.assertEqual(archive.extractfile("index.html").read(), b"Original homepage")
-            self.assertNotIn("mind-assistant/index.html", archive.getnames())
+            self.assertNotIn("memo/index.html", archive.getnames())
             self.assertNotIn("stonehaus/v1/index.html", archive.getnames())
 
-    def test_stonehaus_cannot_change_purpur_or_mind_assistant(self):
+    def test_stonehaus_cannot_change_purpur_memo_or_the_legacy_root(self):
         deployment = self.deployment("stonehaus")
         _, _, metadata, stage, manifest = self.prepared("stonehaus")
-        homepage = (self.public / "index.html").read_bytes()
-        mind = snapshot(self.public / "mind-assistant")
+        homepage = (self.common / "index.html").read_bytes()
+        purpur = snapshot(self.public)
+        memo = snapshot(self.common / "memo")
         deployment.publish(stage, manifest, metadata["sha256"])
-        self.assertEqual((self.public / "index.html").read_bytes(), homepage)
-        self.assertEqual(snapshot(self.public / "mind-assistant"), mind)
+        self.assertEqual((self.common / "index.html").read_bytes(), homepage)
+        self.assertEqual(snapshot(self.public), purpur)
+        self.assertEqual(snapshot(self.common / "memo"), memo)
+        self.assertEqual((deployment.public / "index.html").read_bytes(), (stage / "index.html").read_bytes())
+        self.assertEqual((deployment.public / "styles.css").read_bytes(), (stage / "styles.css").read_bytes())
         self.assertEqual((deployment.public / "v3/index.html").read_bytes(), (stage / "v3/index.html").read_bytes())
 
     def test_backup_failure_stops_before_any_public_write(self):
@@ -276,6 +312,69 @@ class SiteDeliveryTests(unittest.TestCase):
         self.assertEqual(snapshot(self.public), {**before, deployment.marker: manual})
         self.assertEqual(json.loads((self.public / deployment.marker).read_text())["deploymentStatus"], "verifying")
 
+    def test_https_requests_use_the_selected_app_mount_or_the_common_origin(self):
+        for app in ["purpur", "stonehaus"]:
+            deployment = self.deployment(app)
+            requested = []
+            response = MagicMock()
+            response.__enter__.return_value = response
+            response.code = 200
+            response.read.return_value = b"Verified response"
+            def open_request(request, timeout):
+                requested.append(request.full_url)
+                response.geturl.return_value = request.full_url
+                return response
+            with patch.object(receiver.urllib.request, "urlopen", side_effect=open_request):
+                deployment.request("v1/", COMMIT)
+                deployment.request("memo/api/health", COMMIT, common=True)
+            self.assertEqual([receiver.urlparse(url).path for url in requested], [f"/{app}/v1/", "/memo/api/health"])
+            for url in requested:
+                parsed = receiver.urlparse(url)
+                self.assertEqual((parsed.scheme, parsed.netloc), ("https", "cj999935.tw1.ru"))
+                self.assertIn("release=" + COMMIT, parsed.query)
+            response.geturl.return_value = "https://other.test/"
+            with patch.object(receiver.urllib.request, "urlopen", return_value=response), self.assertRaisesRegex(receiver.SiteError, "outside"):
+                deployment.request("", COMMIT)
+
+    def test_neighbour_checks_include_memo_and_the_other_site_selector_and_versions(self):
+        for app, neighbour in [("purpur", "stonehaus"), ("stonehaus", "purpur")]:
+            deployment = self.deployment(app)
+            paths = ["memo/api/health", f"{neighbour}/", *(f"{neighbour}/{version}/" for version in ["v1", "v2", "v3"])]
+            calls = []
+            def response(path, commit, common=False):
+                self.assertTrue(common)
+                self.assertEqual(commit, COMMIT)
+                calls.append(path)
+                if path == "memo/api/health":
+                    return 200, b'{"ok":true,"data":{"status":"ready"}}'
+                return 200, (self.common / path / "index.html").read_bytes()
+            with patch.object(deployment, "request", side_effect=response):
+                deployment.verify_neighbours(COMMIT)
+            self.assertEqual(calls, paths)
+            for broken in paths[1:]:
+                def changed(path, commit, common=False):
+                    return (200, b"Wrong application HTML") if path == broken else response(path, commit, common)
+                with self.subTest(app=app, broken=broken), patch.object(deployment, "request", side_effect=changed), self.assertRaisesRegex(receiver.SiteError, "neighbouring site"):
+                    deployment.verify_neighbours(COMMIT)
+
+    def test_missing_neighbour_selector_blocks_checks_until_the_explicit_bootstrap(self):
+        deployment = self.deployment()
+        selector = self.common / "stonehaus/index.html"
+        selector.unlink()
+        before = snapshot(self.common)
+        def response(path, commit, common=False):
+            self.assertTrue(common)
+            if path == "memo/api/health":
+                return 200, b'{"ok":true,"data":{"status":"ready"}}'
+            page = self.common / path / "index.html"
+            return (200, page.read_bytes()) if page.is_file() else (404, b"Not installed")
+        with patch.object(deployment, "request", side_effect=response):
+            with self.assertRaisesRegex(receiver.SiteError, "neighbouring site"):
+                deployment.verify_neighbours(COMMIT)
+            self.assertEqual(snapshot(self.common), before)
+            selector.write_bytes(b"Explicitly prepared Stonehaus selector")
+            deployment.verify_neighbours(COMMIT)
+
     def test_https_verification_requires_actual_bytes_and_exact_marker(self):
         deployment = receiver.Deployment(self.home, {**template(), "publicPath": str(self.public)})
         _, _, metadata, stage, manifest = self.prepared()
@@ -285,9 +384,9 @@ class SiteDeliveryTests(unittest.TestCase):
         def response(path, commit, common=False):
             calls.append(path)
             if common:
-                if path == "mind-assistant/api/health":
+                if path == "memo/api/health":
                     return 200, b'{"ok":true,"data":{"status":"ready"}}'
-                return 200, (self.public / path / "index.html").read_bytes()
+                return 200, (self.common / path / "index.html").read_bytes()
             if path == deployment.marker:
                 return 200, json.dumps(marker).encode()
             check = checks[path]
@@ -299,7 +398,7 @@ class SiteDeliveryTests(unittest.TestCase):
         with patch.object(deployment, "request", return_value=(200, b"Cached old HTML")), self.assertRaisesRegex(receiver.SiteError, "checksum mismatch"):
             deployment.verify(manifest, metadata["sha256"])
         def broken_neighbour(path, commit, common=False):
-            if common and path == "mind-assistant/api/health":
+            if common and path == "memo/api/health":
                 return 200, b"Incorrectly rewritten to the homepage"
             return response(path, commit, common)
         with patch.object(deployment, "request", side_effect=broken_neighbour), self.assertRaisesRegex(receiver.SiteError, "neighbouring application"):

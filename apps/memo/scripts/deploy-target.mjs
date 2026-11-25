@@ -19,19 +19,20 @@ export function validateTarget(target) {
   const home = `/home/${target.user[0]}/${target.user}`;
   if (
     target.remoteRoot !== `${home}/.sandbox/mind-assistant` ||
-    target.publicPath !== `${home}/public_html/mind-assistant`
+    target.publicPath !== `${home}/public_html/memo`
   ) {
     throw new Error('Назначение должно указывать только на каталоги Memo этого аккаунта.');
   }
   const url = new URL(target.url);
   if (
     url.protocol !== 'https:' ||
+    url.hostname !== `${target.user}.tw1.ru` ||
     url.username ||
     url.password ||
     url.search ||
     url.hash ||
     url.port ||
-    url.pathname !== '/mind-assistant/'
+    url.pathname !== '/memo/'
   ) {
     throw new Error('Нужен HTTPS-адрес Memo без учётных данных и дополнительных параметров.');
   }

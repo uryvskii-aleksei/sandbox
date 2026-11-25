@@ -189,7 +189,10 @@ function importLegacy(PDO $pdo, array $input, string $email, string $orphanPolic
             }
         }
         foreach ($normalized['content']['cards'] as $card) {
-            if ($card['parent'] !== null) execute($pdo, 'UPDATE cards SET parent_id=? WHERE id=?', [$cards[$card['parent']], $cards[$card['legacyId']]]);
+            if ($card['parent'] !== null) {
+                execute($pdo, 'UPDATE cards SET parent_id=? WHERE id=?', [$cards[$card['parent']], $cards[$card['legacyId']]]);
+                execute($pdo, "INSERT INTO card_links(source_id,target_id) VALUES(?,?)", [$cards[$card['parent']], $cards[$card['legacyId']]]);
+            }
             verifyCard($pdo, $cards[$card['legacyId']], $projects[$card['projectKey']], $card['parent'] === null ? null : $cards[$card['parent']], $card);
         }
         execute($pdo, 'INSERT INTO legacy_imports(source_sha256,payload_sha256,owner_id,project_ids_json,card_ids_json) VALUES(?,?,?,?,?)', [$normalized['sourceSha256'], $normalized['payloadSha256'], $owner, json_encode($projects, JSON_THROW_ON_ERROR), json_encode($cards, JSON_THROW_ON_ERROR)]);

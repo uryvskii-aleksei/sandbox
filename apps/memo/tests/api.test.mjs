@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
 
 const base = process.env.MEMO_TEST_URL ?? process.env.MIND_ASSISTANT_TEST_URL;
-if (!base || !/^http:\/\/127\.0\.0\.1:\d+(?:\/mind-assistant)?\/api$/.test(base)) {
+if (!base || !/^http:\/\/127\.0\.0\.1:\d+(?:\/memo|\/mind-assistant)?\/api$/.test(base)) {
   throw new Error('Тестам нужен отдельный локальный API. Запустите npm run test:memo.');
 }
 
@@ -32,6 +32,214 @@ function client() {
     return result.data ?? result.error;
   };
 }
+
+test('folders scope nested boards without changing the directed graph or old records', async () => {
+  const owner = client();
+  const outsider = client();
+  for (const signIn of [owner, outsider]) {
+    await signIn('/session');
+    await signIn('/auth/register', 'POST', {
+      email: `folders-${randomUUID()}@example.test`,
+      password: 'Synthetic-password-2026',
+    });
+  }
+  const project = await owner('/projects', 'POST', { name: 'Схема с папками' }, 201);
+  const other = await owner('/projects', 'POST', { name: 'Другое полотно' }, 201);
+  const cards = `/projects/${project.id}/cards`;
+  const capture = (body, expected = 201) =>
+    owner('/capture', 'POST', { project: project.id, requestId: randomUUID(), ...body }, expected);
+  const record = await owner(cards, 'POST', { name: 'Существующая запись' }, 201);
+  assert.equal(record.kind, 'record');
+  assert.equal(record.folder, null);
+  const folder = await capture({ kind: 'folder', name: 'Команда' });
+  const nested = await capture({ kind: 'folder', name: 'Ретро', folder: folder.id });
+  const note = await capture({ name: 'План встречи', text: 'Сверить решения', folder: nested.id });
+  await capture({ name: 'Не папка', folder: record.id }, 422);
+  await capture({ name: 'Папка другого проекта', folder: folder.id, project: other.id }, 422);
+  await outsider(cards + `?folder=${folder.id}`, 'GET', undefined, 404);
+  await outsider(`/projects/${project.id}/folders`, 'GET', undefined, 404);
+  await outsider('/capture', 'POST', { name: 'Чужая папка', folder: folder.id }, 404);
+  const ids = async (scope) => (await owner(cards + '?folder=' + scope)).map((item) => item.id);
+  assert.deepEqual(await ids('root'), [record.id, folder.id]);
+  assert.deepEqual(await ids(folder.id), [nested.id]);
+  assert.deepEqual(await ids(nested.id), [note.id]);
+  await owner('/links', 'PUT', { source: folder.id, target: nested.id });
+  await owner('/links', 'PUT', { source: nested.id, target: record.id, label: 'Решение' });
+  await owner('/links', 'PUT', { source: record.id, target: folder.id }, 422);
+  const move = async (id, folder, expected = 200) => {
+    const current = await owner(`/cards/${id}`);
+    return owner(
+      `/cards/${id}/move`,
+      'POST',
+      { project: project.id, folder, version: current.version },
+      expected,
+    );
+  };
+  await move(folder.id, nested.id, 422);
+  await move(record.id, folder.id);
+  assert.deepEqual(await ids('root'), [folder.id]);
+  assert.deepEqual(await ids(folder.id), [record.id, nested.id]);
+  assert.equal((await owner('/links')).find((link) => link.target === record.id).label, 'Решение');
+  await owner(`/cards/${folder.id}`, 'DELETE', undefined, 409);
+  const exported = await owner(`/projects/${project.id}/export`);
+  assert.equal(exported.cards.find((item) => item.id === note.id).folder, nested.id);
+  assert.equal(exported.cards.find((item) => item.id === nested.id).kind, 'folder');
+  assert.equal((await owner('/search?q=Сверить')).cards[0].id, note.id);
+  await owner(`/cards/${note.id}`, 'DELETE', undefined, 200);
+  await owner(`/cards/${nested.id}`, 'DELETE', undefined, 200);
+  await owner(`/cards/${note.id}/restore`, 'POST', {}, 404);
+  await owner(`/cards/${nested.id}/restore`, 'POST', {});
+  await owner(`/cards/${note.id}/restore`, 'POST', {});
+  assert.deepEqual(await ids(nested.id), [note.id]);
+});
+
+test('visual documents preserve archived fields and board marks persist independently by folder', async () => {
+  const owner = client();
+  const outsider = client();
+  for (const signIn of [owner, outsider]) {
+    await signIn('/session');
+    await signIn('/auth/register', 'POST', {
+      email: `board-${randomUUID()}@example.test`,
+      password: 'Synthetic-password-2026',
+    });
+  }
+  const project = await owner('/projects', 'POST', { name: 'Доска проверки' }, 201);
+  const board = `/projects/${project.id}`;
+  const card = await owner(
+    '/capture',
+    'POST',
+    {
+      project: project.id,
+      name: 'Запись с архивом',
+      text: 'Архивный маркер',
+    },
+    201,
+  );
+  const folder = await owner(
+    '/capture',
+    'POST',
+    {
+      project: project.id,
+      kind: 'folder',
+    },
+    201,
+  );
+  const route = `/cards/${card.id}`;
+  const name = 'Визуальный маркер';
+  const document = {
+    type: 'doc',
+    content: [
+      { type: 'paragraph', content: [{ type: 'text', text: name, marks: [{ type: 'bold' }] }] },
+      {
+        type: 'memoMedia',
+        attrs: { kind: 'image', src: 'https://example.test/memo.png', title: 'Фото' },
+      },
+    ],
+  };
+  const edited = await owner(route, 'PUT', { ...card, document });
+  assert.deepEqual(edited.document, document);
+  assert.deepEqual(edited.content, card.content);
+  assert.deepEqual(
+    (await owner('/search?q=' + encodeURIComponent(name))).cards.map((item) => item.id),
+    [card.id],
+  );
+  assert.deepEqual((await owner('/search?q=' + encodeURIComponent('Архивный маркер'))).cards, []);
+  const invalid = structuredClone(document);
+  invalid.content[1].attrs.src = 'javascript:alert(1)';
+  await owner(route, 'PUT', { ...edited, document: invalid }, 422);
+  const size = { width: 480, height: 256 };
+  await owner(route + '/position', 'PATCH', { ...edited, size: { ...size, width: 1 } }, 422);
+  const resized = await owner(route + '/position', 'PATCH', { ...edited, size });
+  assert.deepEqual(resized.size, size);
+  assert.deepEqual(resized.document, document);
+  const at = { x: 40, y: 80 };
+  const end = { x: 40, y: 600 };
+  const proposal = { kind: 'label', at, text: 'Хорошо', requestId: randomUUID() };
+  const label = await owner(board + '/marks', 'POST', proposal, 201);
+  assert.deepEqual(await owner(board + '/marks', 'POST', proposal, 201), label);
+  const line = await owner(
+    board + '/marks',
+    'POST',
+    { kind: 'line', at, end, folder: folder.id },
+    201,
+  );
+  await outsider(board + '/marks', 'GET', undefined, 404);
+  await outsider(`/marks/${line.id}`, 'PATCH', { at }, 404);
+  const labelAt = { x: -44, y: 98 };
+  const newEnd = { x: 100, y: 620 };
+  const updatedLabel = await owner(`/marks/${label.id}`, 'PATCH', {
+    at: labelAt,
+    text: 'Отлично',
+    scale: 1.65,
+  });
+  const updatedLine = await owner(`/marks/${line.id}`, 'PATCH', { end: newEnd });
+  await owner(`/marks/${line.id}`, 'PATCH', { end: at }, 422);
+  assert.deepEqual(updatedLabel, { ...label, at: labelAt, text: 'Отлично', scale: 1.65 });
+  assert.deepEqual(updatedLine, { ...line, end: newEnd });
+  assert.deepEqual(await owner(board + '/marks'), [updatedLabel]);
+  assert.deepEqual(await owner(board + `/marks?folder=${folder.id}`), [updatedLine]);
+  const exported = await owner(board + '/export');
+  assert.deepEqual(exported.marks, [
+    { ...updatedLabel, folder: null },
+    { ...updatedLine, folder: folder.id },
+  ]);
+  assert.deepEqual(exported.cards.find((item) => item.id === card.id).document, document);
+  const sections = {
+    type: 'doc',
+    content: [
+      {
+        type: 'memoSection',
+        attrs: { id: 'intro', title: 'Новый заголовок' },
+        content: document.content,
+      },
+      { type: 'memoSection', attrs: { id: 'next', title: '' }, content: [{ type: 'paragraph' }] },
+    ],
+  };
+  const withSections = await owner(route, 'PUT', { ...resized, document: sections });
+  assert.deepEqual(withSections.document, sections);
+  assert.deepEqual(
+    (await owner('/search?q=' + encodeURIComponent('Новый заголовок'))).cards.map(
+      (item) => item.id,
+    ),
+    [card.id],
+  );
+  const duplicate = structuredClone(sections);
+  duplicate.content[1].attrs.id = 'intro';
+  await owner(route, 'PUT', { ...withSections, document: duplicate }, 422);
+  await owner(`/marks/${line.id}`, 'DELETE');
+  assert.deepEqual(await owner(board + `/marks?folder=${folder.id}`), []);
+  for (const kind of ['square', 'circle']) {
+    await owner(board + '/marks', 'POST', { kind, at, end }, 422);
+    const figure = await owner(
+      board + '/marks',
+      'POST',
+      { kind, at, end: { x: 120, y: 160 }, folder: folder.id },
+      201,
+    );
+    const figureRoute = `/marks/${figure.id}`;
+    const corner = { x: -80, y: -40 };
+    await owner(figureRoute, 'PATCH', { end }, 422);
+    assert.deepEqual(await owner(figureRoute, 'PATCH', { at: corner }), { ...figure, at: corner });
+    assert.deepEqual(await owner(board + `/marks?folder=${folder.id}`), [
+      { ...figure, at: corner },
+    ]);
+    await owner(figureRoute, 'DELETE');
+  }
+  await owner(
+    '/capture',
+    'POST',
+    { project: project.id, folder: folder.id, name: 'Внутри папки' },
+    201,
+  );
+  const group = { cards: [card.id], marks: [label.id], requestId: randomUUID() };
+  await owner(board + '/trash-selection', 'POST', { ...group, cards: [card.id, folder.id] }, 409);
+  await owner(route);
+  assert.deepEqual(await owner(board + '/marks'), [updatedLabel]);
+  await owner(board + '/trash-selection', 'POST', group);
+  await owner(board + '/trash-selection', 'POST', group);
+  await owner(route, 'GET', undefined, 404);
+  assert.deepEqual(await owner(board + '/marks'), []);
+});
 
 test('accounts isolate projects, cards and media, persist nested edits and reject stale/invalid writes', async () => {
   const a = client();
@@ -159,4 +367,365 @@ test('accounts isolate projects, cards and media, persist nested edits and rejec
   await a(`/projects/${project.id}`, 'DELETE');
   assert.deepEqual(await a('/projects'), []);
   await a(`/cards/${child.id}`, 'DELETE', undefined, 404);
+});
+
+test('Memo graphs preserve multiple parents, reject cycles and isolate cross-project links', async () => {
+  const a = client();
+  const b = client();
+  for (const request of [a, b]) {
+    await request('/session');
+    await request('/auth/register', 'POST', {
+      email: `graph-${randomUUID()}@example.test`,
+      password: 'Synthetic-password-2026',
+    });
+  }
+  const project = await a('/projects', 'POST', { name: 'Семья', template: 'family' }, 201);
+  const cards = await a(`/projects/${project.id}/cards`);
+  assert.equal(cards.length, 3);
+  const [p1, p2, child] = cards;
+  let links = await a('/links');
+  assert.equal(links.filter((link) => link.target === child.id).length, 2);
+  const relation = { source: p1.id, target: child.id, label: 'Родитель' };
+  const beforeLink = await a(`/cards/${child.id}`);
+  await a('/links', 'PUT', relation);
+  await a(`/cards/${child.id}`, 'PUT', beforeLink, 409);
+  await a('/links', 'PUT', relation);
+  assert.equal((await a('/links')).length, 2, 'retry must not duplicate an edge');
+  await a('/links', 'PUT', { source: child.id, target: p1.id }, 422);
+  await a('/links', 'PUT', { source: p1.id, target: p1.id }, 422);
+  await a('/links', 'PUT', {
+    source: p1.id,
+    target: p2.id,
+    label: 'Родство',
+  });
+  const other = await a('/projects', 'POST', { name: 'Конспект', template: 'outline' }, 201);
+  const otherCards = await a(`/projects/${other.id}/cards`);
+  await a('/links', 'PUT', {
+    source: child.id,
+    target: otherCards[0].id,
+    label: 'Продолжение',
+  });
+  const foreignProject = await b('/projects', 'POST', { name: 'Чужое' }, 201);
+  const foreign = await b(
+    `/projects/${foreignProject.id}/cards`,
+    'POST',
+    { name: 'Чужая запись' },
+    201,
+  );
+  await a('/links', 'PUT', { source: p1.id, target: foreign.id }, 404);
+  await b('/links', 'DELETE', relation, 404);
+  assert.deepEqual(await b('/links'), []);
+  await b(`/cards/${p1.id}`, 'GET', undefined, 404);
+  await b(`/projects/${project.id}/export`, 'GET', undefined, 404);
+  await a(`/cards/${child.id}`, 'DELETE');
+  await b(`/cards/${child.id}?includeDeleted=1`, 'GET', undefined, 404);
+  assert.equal((await a(`/cards/${child.id}?includeDeleted=1`)).id, child.id);
+  links = await a('/links');
+  assert.ok(links.every((link) => link.source !== child.id && link.target !== child.id));
+  await a(
+    '/links',
+    'PUT',
+    { source: otherCards[0].id, target: p1.id },
+    422,
+    'cycle through trash is still a cycle',
+  );
+  await b(`/cards/${child.id}/restore`, 'POST', {}, 404);
+  await a(`/cards/${child.id}/restore`, 'POST', {});
+  assert.equal((await a('/links')).filter((link) => link.target === child.id).length, 2);
+  await a('/links', 'DELETE', relation);
+  assert.equal((await a(`/cards/${child.id}`)).parent, p2.id);
+  await a('/links', 'DELETE', relation);
+  const stale = await a(`/cards/${child.id}`);
+  const moved = await a(`/cards/${child.id}/move`, 'POST', {
+    project: other.id,
+    version: stale.version,
+  });
+  assert.equal(moved.project, other.id);
+  const descendant = await a(
+    '/capture',
+    'POST',
+    {
+      requestId: randomUUID(),
+      project: other.id,
+      parent: child.id,
+      name: 'После переноса',
+      text: 'Потомок карточки с межпроектными предками',
+    },
+    201,
+  );
+  assert.ok(
+    (await a('/links')).some((link) => link.source === child.id && link.target === descendant.id),
+  );
+  await a(
+    `/projects/${other.id}/cards`,
+    'POST',
+    { name: 'Совместимый потомок', parent: child.id },
+    201,
+  );
+  await a(`/cards/${child.id}/move`, 'POST', { project: project.id, version: stale.version }, 409);
+  assert.ok((await a('/links')).some((link) => link.source === p2.id && link.target === child.id));
+  await a(`/projects/${project.id}`, 'DELETE');
+  await a(`/cards/${p1.id}`, 'GET', undefined, 404);
+  await a('/links', 'PUT', { source: p1.id, target: child.id }, 404);
+  await b(`/projects/${project.id}/restore`, 'POST', {}, 404);
+  await a(`/projects/${project.id}/restore`, 'POST', {});
+  assert.ok((await a('/links')).some((link) => link.source === p2.id && link.target === child.id));
+});
+
+test('link rewiring is atomic, preserves labels and deduplicates a lost response', async () => {
+  const a = client();
+  const b = client();
+  for (const request of [a, b]) {
+    await request('/session');
+    await request('/auth/register', 'POST', {
+      email: `rewire-${randomUUID()}@example.test`,
+      password: 'Synthetic-password-2026',
+    });
+  }
+  const project = await a('/projects', 'POST', { name: 'Переназначение связей' }, 201);
+  const other = await a('/projects', 'POST', { name: 'Другой собственный проект' }, 201);
+  const cards = [];
+  for (const name of ['Источник', 'Прежняя цель', 'Новая цель', 'Потомок', 'Предок', 'В корзине']) {
+    cards.push(await a(`/projects/${project.id}/cards`, 'POST', { name }, 201));
+  }
+  const [source, target, nextTarget, descendant, ancestor, deleted] = cards;
+  const nextSource = await a(
+    `/projects/${other.id}/cards`,
+    'POST',
+    { name: 'Новый источник' },
+    201,
+  );
+  const foreignProject = await b('/projects', 'POST', { name: 'Чужие связи' }, 201);
+  const foreignSource = await b(
+    `/projects/${foreignProject.id}/cards`,
+    'POST',
+    { name: 'Чужой источник' },
+    201,
+  );
+  const foreignTarget = await b(
+    `/projects/${foreignProject.id}/cards`,
+    'POST',
+    { name: 'Чужая цель' },
+    201,
+  );
+  await b('/links', 'PUT', {
+    source: foreignSource.id,
+    target: foreignTarget.id,
+    label: 'Чужая подпись',
+  });
+  await a('/links', 'PUT', { source: source.id, target: target.id, label: 'Сохранённая подпись' });
+  await a('/links', 'PUT', { source: nextTarget.id, target: descendant.id });
+  await a('/links', 'PUT', { source: ancestor.id, target: nextSource.id });
+  await a(`/cards/${deleted.id}`, 'DELETE');
+  const state = async () => ({
+    links: await a('/links'),
+    cards: await Promise.all(
+      [...cards, nextSource].map((card) => a(`/cards/${card.id}?includeDeleted=1`)),
+    ),
+    foreign: await b('/links'),
+  });
+  const targetAttempt = {
+    requestId: randomUUID(),
+    source: source.id,
+    target: target.id,
+    newSource: source.id,
+    newTarget: nextTarget.id,
+  };
+  const beforeTarget = await a(`/cards/${target.id}`);
+  const rewiredTarget = await a('/links', 'PATCH', targetAttempt);
+  assert.equal(rewiredTarget.label, 'Сохранённая подпись');
+  assert.equal(rewiredTarget.source, source.id);
+  assert.equal(rewiredTarget.target, nextTarget.id);
+  const targetState = await state();
+  assert.equal((await a(`/cards/${target.id}`)).parent, null);
+  assert.equal((await a(`/cards/${nextTarget.id}`)).parent, source.id);
+  await a(`/cards/${target.id}`, 'PUT', beforeTarget, 409);
+  assert.deepEqual(await a('/links', 'PATCH', targetAttempt), rewiredTarget);
+  assert.deepEqual(await state(), targetState, 'retry must not alter card versions or graph');
+  await a('/links', 'PATCH', { ...targetAttempt, newTarget: descendant.id }, 409);
+
+  const sourceAttempt = {
+    requestId: randomUUID(),
+    source: source.id,
+    target: nextTarget.id,
+    newSource: nextSource.id,
+    newTarget: nextTarget.id,
+  };
+  const rewiredSource = await a('/links', 'PATCH', sourceAttempt);
+  assert.equal(rewiredSource.label, 'Сохранённая подпись');
+  assert.equal(rewiredSource.sourceProject, other.id);
+  assert.equal(rewiredSource.targetProject, project.id);
+  assert.equal((await a(`/cards/${nextTarget.id}`)).parent, nextSource.id);
+  const sourceState = await state();
+  assert.deepEqual(await a('/links', 'PATCH', sourceAttempt), rewiredSource);
+  assert.deepEqual(await a('/links', 'PATCH', targetAttempt), rewiredTarget);
+  assert.deepEqual(await state(), sourceState, 'an older receipt must not move the edge back');
+
+  const current = { source: nextSource.id, target: nextTarget.id };
+  const valid = { ...current, newSource: nextSource.id, newTarget: nextTarget.id };
+  await a('/links', 'PUT', { source: source.id, target: nextTarget.id, label: 'Другая подпись' });
+  const duplicate = { ...valid, requestId: randomUUID(), newSource: source.id };
+  const failures = [
+    [{ ...valid }, 422],
+    [{ ...valid, requestId: 'short' }, 422],
+    [{ ...valid, requestId: randomUUID(), newTarget: nextSource.id }, 422],
+    [{ ...valid, requestId: randomUUID(), newSource: descendant.id }, 422],
+    [{ ...valid, requestId: randomUUID(), newTarget: ancestor.id }, 422],
+    [{ ...valid, requestId: randomUUID(), newSource: foreignSource.id }, 404],
+    [{ ...valid, requestId: randomUUID(), newTarget: foreignTarget.id }, 404],
+    [{ ...valid, requestId: randomUUID(), newTarget: deleted.id }, 404],
+    [{ ...valid, requestId: randomUUID(), source: source.id, target: target.id }, 404],
+    [
+      { ...valid, requestId: randomUUID(), source: foreignSource.id, target: foreignTarget.id },
+      404,
+    ],
+    [duplicate, 409],
+  ];
+  for (const [body, status] of failures) {
+    const before = await state();
+    await a('/links', 'PATCH', body, status);
+    assert.deepEqual(
+      await state(),
+      before,
+      `failed HTTP ${status} must retain both pairs and cards`,
+    );
+  }
+  await a('/links', 'DELETE', { source: source.id, target: nextTarget.id });
+  const afterConflict = await a('/links', 'PATCH', duplicate);
+  assert.equal(
+    afterConflict.label,
+    'Сохранённая подпись',
+    'a failed conflict must not leave a receipt',
+  );
+  assert.equal(afterConflict.source, source.id);
+  const reversed = await a('/links', 'PATCH', {
+    requestId: randomUUID(),
+    source: source.id,
+    target: nextTarget.id,
+    newSource: nextTarget.id,
+    newTarget: source.id,
+  });
+  assert.equal(reversed.label, 'Сохранённая подпись');
+  assert.equal(reversed.source, nextTarget.id);
+  assert.equal(reversed.target, source.id, 'cycle validation must remove the old pair first');
+});
+
+test('capture and autosave deduplicate a lost response, retain trash, search content and export media', async () => {
+  const a = client();
+  await a('/session');
+  await a('/auth/register', 'POST', {
+    email: `capture-${randomUUID()}@example.test`,
+    password: 'Synthetic-password-2026',
+  });
+  const capture = {
+    requestId: randomUUID(),
+    text: 'Очень важная мысль\nСинтетический уникальный фрагмент 100%_!',
+  };
+  const first = await a('/capture', 'POST', capture, 201);
+  assert.deepEqual(await a('/capture', 'POST', capture, 201), first);
+  await a('/capture', 'POST', { ...capture, text: 'Другое содержимое' }, 409);
+  const second = await a('/capture', 'POST', { requestId: randomUUID(), text: 'Ещё мысль' }, 201);
+  assert.equal(second.project, first.project, 'all captures use one inbox');
+  const inbox = (await a('/projects')).find((item) => item.inbox);
+  assert.equal(inbox.cards, 2);
+  await a(`/projects/${inbox.id}`, 'DELETE', undefined, 422);
+  let search = await a(`/search?q=${encodeURIComponent('100%_!')}`);
+  assert.deepEqual(
+    search.cards.map((item) => item.id),
+    [first.id],
+  );
+  assert.equal(search.hasMore, false);
+  const attempt = {
+    ...first,
+    requestId: randomUUID(),
+    content: [
+      {
+        id: -1,
+        name: 'Новая группа',
+        fields: [{ id: -1, type: 'textarea', value: ['Результат автосохранения'] }],
+      },
+    ],
+  };
+  const saved = await a(`/cards/${first.id}`, 'PUT', attempt);
+  assert.deepEqual(await a(`/cards/${first.id}`, 'PUT', attempt), saved);
+  await a(`/cards/${first.id}`, 'PUT', { ...attempt, name: 'Другой запрос' }, 409);
+  await a(`/cards/${first.id}`, 'PUT', { ...first, requestId: randomUUID() }, 409);
+  const invalid = {
+    ...saved,
+    requestId: randomUUID(),
+    name: 'Откат транзакции',
+    content: [{ id: -1, fields: [{ id: -1, type: 'date', value: ['не дата'] }] }],
+  };
+  await a(`/cards/${first.id}`, 'PUT', invalid, 422);
+  assert.equal((await a(`/cards/${first.id}`)).name, saved.name);
+  const retried = await a(`/cards/${first.id}`, 'PUT', { ...invalid, content: saved.content });
+  await a(`/cards/${first.id}`, 'PUT', attempt, 409);
+  assert.equal(retried.name, 'Откат транзакции', 'rolled back operations must not leave a receipt');
+  await a(`/cards/${first.id}/metadata`, 'POST', { pinned: true });
+  assert.equal((await a('/search?filter=pinned')).cards[0].id, first.id);
+  await a(`/cards/${first.id}/visit`, 'POST', {});
+  assert.equal((await a('/search?filter=recent')).cards[0].id, first.id);
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aM1sAAAAASUVORK5CYII=',
+    'base64',
+  );
+  const form = new FormData();
+  form.set('file', new Blob([png], { type: 'image/png' }), 'pixel.png');
+  const media = await a('/media', 'POST', form, 201);
+  const current = await a(`/cards/${first.id}`);
+  await a(`/cards/${first.id}`, 'PUT', {
+    ...current,
+    content: [
+      ...current.content,
+      { id: -1, name: 'Медиа', fields: [{ id: -1, type: 'image', value: [media.url] }] },
+    ],
+  });
+  const exported = await a(`/projects/${inbox.id}/export`);
+  assert.equal(exported.format, 'memo-project');
+  assert.equal(exported.version, 1);
+  assert.equal(exported.cards.length, 2);
+  assert.deepEqual(Buffer.from(exported.media[0].base64, 'base64'), png);
+  await a(`/cards/${first.id}`, 'DELETE');
+  assert.equal((await a('/search?filter=pinned')).cards.length, 0);
+  assert.equal((await a('/trash')).cards[0].id, first.id);
+  assert.equal((await a(`/projects/${inbox.id}/export`)).cards.length, 1);
+  await a(`/cards/${first.id}/restore`, 'POST', {});
+  const restored = await a(`/cards/${first.id}`);
+  assert.equal(restored.pinned, true);
+  assert.equal(restored.content.length, 2);
+  const retro = await a('/projects', 'POST', { name: 'Ретро', template: 'retro' }, 201);
+  assert.equal((await a(`/projects/${retro.id}/cards`)).length, 4);
+  const tasks = await a('/projects', 'POST', { name: 'Задачи', template: 'tasks' }, 201);
+  assert.equal((await a(`/projects/${tasks.id}/cards`)).length, 3);
+  for (const [project, expected] of [
+    [retro, ['Хорошо', 'Нормально', 'Плохо']],
+    [tasks, ['Сделать', 'В работе', 'Готово']],
+  ]) {
+    const marks = await a(`/projects/${project.id}/marks`);
+    assert.deepEqual(
+      marks.filter((mark) => mark.kind === 'label').map((mark) => mark.text),
+      expected,
+    );
+    assert.equal(
+      marks.filter((mark) => mark.kind === 'line' && mark.at.x === mark.end.x).length,
+      2,
+    );
+  }
+  await a('/projects', 'POST', { name: 'Некорректно', template: 'missing' }, 422);
+  await a(
+    '/capture',
+    'POST',
+    { requestId: randomUUID(), text: 'У границы', coordinates: { x: 99920, y: 80 } },
+    201,
+  );
+  const afterBoundary = await a(
+    '/capture',
+    'POST',
+    { requestId: randomUUID(), text: 'Свободная позиция' },
+    201,
+  );
+  assert.ok(
+    Math.abs(afterBoundary.coordinates.x) <= 100000 &&
+      Math.abs(afterBoundary.coordinates.y) <= 100000,
+  );
 });

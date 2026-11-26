@@ -83,7 +83,7 @@ export function BoardContextMenu({
             action();
           }}
         >
-          <Icon name={icon} size={16} />
+          <Icon name={icon} size={24} />
           {label}
         </button>
       ))}

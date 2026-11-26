@@ -375,7 +375,7 @@ function ShapeCaption({
           <IconButton
             className="shape-caption-pencil"
             icon="pencil"
-            iconSize={15}
+            iconSize={22.5}
             label="Добавить подпись"
             disabled={disabled}
             onClick={onEdit}
@@ -562,7 +562,7 @@ export function MarkLayer({
     <IconButton
       className="canvas-trash"
       icon="trash"
-      iconSize={15}
+      iconSize={22.5}
       label={label}
       disabled={actionsDisabled}
       onPointerDown={(event) => event.stopPropagation()}

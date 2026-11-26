@@ -13,9 +13,12 @@ if (!$pdo->query("SHOW COLUMNS FROM cards WHERE Field = 'kind'")->fetch()) {
 if (!$pdo->query("SHOW COLUMNS FROM cards WHERE Field = 'folder_id'")->fetch()) {
     $pdo->exec('ALTER TABLE cards ADD COLUMN folder_id INT UNSIGNED NULL, ADD INDEX card_board (project_id, folder_id)');
 }
-foreach (['width' => 240, 'height' => 190] as $column => $default) {
-    if (!$pdo->query("SHOW COLUMNS FROM cards WHERE Field = '$column'")->fetch()) {
+foreach (['width' => 240, 'height' => 70] as $column => $default) {
+    $definition = $pdo->query("SHOW COLUMNS FROM cards WHERE Field = '$column'")->fetch();
+    if (!$definition) {
         $pdo->exec("ALTER TABLE cards ADD COLUMN $column SMALLINT UNSIGNED NOT NULL DEFAULT $default");
+    } elseif ($column === 'height' && (int) $definition['Default'] !== $default) {
+        $pdo->exec("ALTER TABLE cards ALTER COLUMN height SET DEFAULT $default");
     }
 }
 $markKind = $pdo->query("SHOW COLUMNS FROM board_marks WHERE Field = 'kind'")->fetch();
@@ -39,6 +42,10 @@ foreach (['projects', 'cards'] as $table) {
 $pdo->beginTransaction();
 try {
     $marker = $pdo->prepare('INSERT IGNORE INTO schema_migrations(name) VALUES(?)');
+    $marker->execute(['compact-card-height-v1']);
+    if ($marker->rowCount() === 1) {
+        $pdo->exec('UPDATE cards SET height=70,version=version+1 WHERE height=190');
+    }
     $marker->execute(['card-links-v1']);
     if ($marker->rowCount() === 1) {
         $pdo->exec("INSERT IGNORE INTO card_links(source_id,target_id) SELECT parent_id,id FROM cards WHERE parent_id IS NOT NULL");

@@ -7,8 +7,8 @@ import type {
   SVGAttributes,
 } from 'react';
 import { api } from './api';
+import type { markTools } from './shortcuts';
 import type { BoardMark, BoardMarkUpdate, Card, NewBoardMark, Sketch } from './types';
-import { markTools } from './shortcuts';
 import { IconButton } from './ui';
 
 type Point = Card['coordinates'];
@@ -297,34 +297,6 @@ export function useCanvasMarks(project: number, folder: number | null) {
 }
 
 type Marks = ReturnType<typeof useCanvasMarks>;
-
-export function MarkTools({
-  marks,
-  busy,
-  arm,
-}: {
-  marks: Marks;
-  busy: boolean;
-  arm: (tool: NonNullable<Marks['tool']>) => void;
-}) {
-  return (
-    <>
-      {markTools.map(({ kind, icon, label, key }) => (
-        <IconButton
-          key={kind}
-          icon={icon}
-          label={label}
-          tooltip={`${label} · Alt+Shift+${key}${kind === 'square' ? ' · Shift — квадрат' : ''}`}
-          className="secondary"
-          aria-pressed={marks.tool === kind}
-          aria-keyshortcuts={`Alt+Shift+${key}`}
-          disabled={busy || marks.locked}
-          onClick={() => arm(kind)}
-        />
-      ))}
-    </>
-  );
-}
 
 function MarkStroke({ sketch, ...props }: { sketch: Sketch } & SVGAttributes<SVGElement>) {
   const { kind, at, end } = sketch;

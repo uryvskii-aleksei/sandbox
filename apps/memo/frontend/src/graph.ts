@@ -1,12 +1,11 @@
-import type { JSONContent } from '@tiptap/core';
-import type { Card, CardLink, FieldGroup } from './types';
+import type { Card, CardLink, DocumentNode, FieldGroup } from './types';
 
 export const cardWidth = 240;
-export const cardHeight = 190;
+export const cardHeight = 70;
 export const cardDimensions = (card: Card) => card.size ?? { width: cardWidth, height: cardHeight };
 export const clampCardSize = (width: number, height: number) => ({
   width: Math.max(180, Math.min(920, Math.round(width))),
-  height: Math.max(125, Math.min(760, Math.round(height))),
+  height: Math.max(cardHeight, Math.min(760, Math.round(height))),
 });
 
 export function childPosition(cards: Card[], parent: Card): Card['coordinates'] {
@@ -29,7 +28,7 @@ export function childPosition(cards: Card[], parent: Card): Card['coordinates'] 
   return { x: parent.coordinates.x + 280, y: parent.coordinates.y + (cards.length + 1) * 260 };
 }
 
-function documentText(node: JSONContent): string {
+function documentText(node: DocumentNode): string {
   if (node.type === 'text') return node.text ?? '';
   if (node.type === 'hardBreak') return '\n';
   if (node.type === 'memoMedia') {
@@ -142,24 +141,4 @@ export function copiedContent(content: FieldGroup[]): FieldGroup[] {
     id: id--,
     fields: group.fields.map((field) => ({ ...field, id: id--, value: [...field.value] })),
   }));
-}
-
-export function quickContent(text: string, url: string): FieldGroup[] {
-  return [
-    {
-      id: -1,
-      name: 'Заметка',
-      order: 0,
-      collapsed: false,
-      fields: [
-        {
-          id: -2,
-          type: url ? 'url' : 'textarea',
-          title: '',
-          order: 0,
-          value: [text],
-        },
-      ],
-    },
-  ];
 }

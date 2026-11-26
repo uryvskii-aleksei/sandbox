@@ -26,7 +26,7 @@ export function TrashDialog({ card, selection, busy, error, cancel, confirm }: P
           </>
         )
       }
-      action={selection?.marks.length ? 'Удалить' : 'В корзину'}
+      action={card || selection?.marks.length ? 'Удалить' : 'В корзину'}
       icon="trash"
       busy={busy}
       error={error}

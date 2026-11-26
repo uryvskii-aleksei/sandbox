@@ -155,7 +155,7 @@ function cardSize(mixed $value): array
 {
     if (!is_array($value)) fail(422, 'Укажите размер карточки.');
     $width = $value['width'] ?? null; $height = $value['height'] ?? null;
-    if (!is_int($width) || !is_int($height) || $width < 180 || $width > 920 || $height < 125 || $height > 760) fail(422, 'Недопустимый размер карточки.');
+    if (!is_int($width) || !is_int($height) || $width < 180 || $width > 920 || $height < 70 || $height > 760) fail(422, 'Недопустимый размер карточки.');
     return ['width' => $width, 'height' => $height];
 }
 

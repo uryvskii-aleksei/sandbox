@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent, ReactNode } from 'react';
-import { createPortal } from 'react-dom';
 import { api, ApiError } from './api';
 import { BoardContextMenu } from './BoardContextMenu';
 import type { BoardMenuItem } from './BoardContextMenu';
-import { MarkLayer, MarkTools, useCanvasMarks } from './CanvasMarks';
+import { MarkLayer, useCanvasMarks } from './CanvasMarks';
 import { CardTitleEditor } from './CardTitleEditor';
 import { linkPort, routeBoardLinks, routeConnection } from './connectionRoutes';
 import { LinkControl } from './LinkControl';
@@ -28,7 +27,8 @@ interface Props {
   links: CardLink[];
   projectId: number;
   folderId: number | null;
-  markToolsSlot: HTMLElement | null;
+  drawingTool: (typeof markTools)[number]['kind'] | null;
+  consumeDrawingTool: () => void;
   notifications: ReactNode;
   locate: (card: Card) => void;
   busy: boolean;
@@ -182,7 +182,8 @@ export function Board({
   links,
   projectId,
   folderId,
-  markToolsSlot,
+  drawingTool,
+  consumeDrawingTool,
   notifications,
   locate,
   busy,
@@ -522,6 +523,11 @@ export function Board({
     setGroup(emptySelection);
     marks.arm(tool);
   };
+  useEffect(() => {
+    if (!drawingTool || busy || marks.locked) return;
+    consumeDrawingTool();
+    armMark(drawingTool);
+  }, [drawingTool, busy, marks.locked]);
   const dismissMenu = () => {
     const trigger = contextMenu?.returnFocus;
     if (trigger && document.activeElement?.closest('.board-context-menu')) trigger.focus();
@@ -1083,13 +1089,6 @@ export function Board({
         return;
       }
       if (isTextInput(event) || event.ctrlKey || event.metaKey) return;
-      if (event.altKey && event.shiftKey && !event.repeat && !marks.locked) {
-        const tool = markTools.find(({ key }) => event.code === `Key${key}`)?.kind;
-        if (!tool) return;
-        event.preventDefault();
-        armMark(tool);
-        return;
-      }
       if (event.altKey || (source !== null && event.key !== 'Escape')) return;
       const card = visible.find((item) => item.id === selection);
       if (event.key === '+' || event.key === '-' || event.key === '−') {
@@ -1280,11 +1279,6 @@ export function Board({
           dismiss={dismissMenu}
         />
       )}
-      {markToolsSlot &&
-        createPortal(
-          <MarkTools marks={marks} busy={busy || source !== null} arm={armMark} />,
-          markToolsSlot,
-        )}
       {marquee && (
         <div
           className="board-marquee"
@@ -1412,12 +1406,14 @@ export function Board({
           const local = onThisBoard(card);
           const isFolder = card.kind === 'folder';
           const grouped = highlightedGroup.cards.includes(card.id);
+          const cardSize = size(card);
           return (
             <article
               key={card.id}
               data-card-id={card.id}
+              data-compact={cardSize.height < 92 || undefined}
               className={`mind-card ${local ? '' : 'reference-card'} ${connected ? (validTarget(source ?? card.id, card.id) ? 'valid-target' : 'invalid-target') : ''} ${grouped ? 'grouped-card' : selection === card.id ? 'focused-card' : neighbors.has(card.id) ? 'related-card' : ''} ${dropFolder?.id === card.id ? (dropFolder.allowed ? 'folder-drop-target' : 'folder-drop-rejected') : ''} ${temporary[card.id] ? 'dragging-card' : ''}`}
-              style={{ left: point(card).x, top: point(card).y, ...size(card) }}
+              style={{ left: point(card).x, top: point(card).y, ...cardSize }}
               onPointerDown={(event) => start(event, card)}
               onClick={(event) => {
                 const click = mouseClick.current;
@@ -1443,6 +1439,7 @@ export function Board({
                 <button
                   className="card-title"
                   disabled={busy}
+                  title={card.name}
                   aria-keyshortcuts={source === null ? 'F2' : undefined}
                   aria-label={
                     source !== null
@@ -1472,14 +1469,23 @@ export function Board({
                   <span>{card.name}</span>
                 </button>
               )}
-              <IconButton
-                className="canvas-trash card-trash"
-                icon="trash"
-                iconSize={22.5}
-                label={`В корзину: ${card.name}`}
-                disabled={busy}
-                onClick={() => setTrashCandidate(card)}
-              />
+              <div className="card-tools">
+                <IconButton
+                  className="canvas-trash card-trash"
+                  icon="trash"
+                  iconSize={22.5}
+                  label={`Удалить: ${card.name}`}
+                  disabled={busy}
+                  onClick={() => setTrashCandidate(card)}
+                />
+                <IconButton
+                  icon="pencil"
+                  iconSize={22.5}
+                  label={`Изменить название: ${card.name}`}
+                  disabled={busy || source !== null || !!marks.tool || titleCardId === card.id}
+                  onClick={() => setTitleCardId(card.id)}
+                />
+              </div>
               {local &&
                 !marks.tool &&
                 source === null &&

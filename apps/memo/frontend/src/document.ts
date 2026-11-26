@@ -1,6 +1,5 @@
-import type { JSONContent } from '@tiptap/core';
 import { safeUrl } from './types';
-import type { Card, MemoDocument } from './types';
+import type { Card, DocumentNode, MemoDocument } from './types';
 
 export interface RecordSection {
   id: string;
@@ -12,6 +11,46 @@ export function hasSectionContent({ title, document }: RecordSection): boolean {
   return (
     !!title || document.content.some((node) => node.type !== 'paragraph' || !!node.content?.length)
   );
+}
+
+export function sectionText({ document }: RecordSection): string | null {
+  const paragraphs: string[] = [];
+  for (const paragraph of document.content) {
+    if (paragraph.type !== 'paragraph') return null;
+    let text = '';
+    for (const node of paragraph.content ?? []) {
+      if (node.type === 'hardBreak') text += '\n';
+      else if (node.type === 'text' && !node.marks?.length) text += node.text ?? '';
+      else return null;
+    }
+    paragraphs.push(text);
+  }
+  return paragraphs.join('\n');
+}
+
+export function textDocument(text: string): MemoDocument {
+  const content = text
+    .split('\n')
+    .flatMap((line, index): DocumentNode[] => [
+      ...(index ? [{ type: 'hardBreak' }] : []),
+      ...(line ? [{ type: 'text', text: line }] : []),
+    ]);
+  return {
+    type: 'doc',
+    content: [content.length ? { type: 'paragraph', content } : { type: 'paragraph' }],
+  };
+}
+
+export function withoutEmptySections(card: Card): Card {
+  if (!card.document?.content.every((node) => node.type === 'memoSection')) return card;
+  const sections = recordSections(card);
+  const populated = sections.filter((section) => {
+    const text = sectionText(section);
+    return text === null || !!section.title || !!text.trim();
+  });
+  return populated.length === sections.length
+    ? card
+    : { ...card, document: sectionDocument(populated) };
 }
 
 export function recordSections(card: Card): RecordSection[] {
@@ -46,8 +85,8 @@ export const documentUrl = (value: string) =>
     : '';
 
 export function legacyDocument(card: Card): MemoDocument {
-  const content: JSONContent[] = [];
-  const addText = (value: string, type = 'paragraph', attrs?: JSONContent['attrs']) => {
+  const content: DocumentNode[] = [];
+  const addText = (value: string, type = 'paragraph', attrs?: DocumentNode['attrs']) => {
     if (!value) return;
     const parts = value
       .split(/\r?\n/)

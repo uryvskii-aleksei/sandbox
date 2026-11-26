@@ -9,17 +9,24 @@ $owner = (int) database()->lastInsertId();
 try {
     // В отдельной тестовой БД воспроизводим схему прежнего релиза.
     foreach (['projects', 'cards'] as $table) query("ALTER TABLE $table DROP COLUMN public_id");
+    query('ALTER TABLE cards ALTER COLUMN height SET DEFAULT 190');
     query('INSERT INTO projects(owner_id,name) VALUES(?,?)', [$owner, 'Legacy migration fixture']);
     $project = (int) database()->lastInsertId();
     query('INSERT INTO cards(project_id,name) VALUES(?,?)', [$project, 'Parent']);
     $parent = (int) database()->lastInsertId();
-    query('INSERT INTO cards(project_id,parent_id,name) VALUES(?,?,?)', [$project, $parent, 'Child']);
+    query('INSERT INTO cards(project_id,parent_id,name,height) VALUES(?,?,?,?)', [$project, $parent, 'Child', 248]);
     $child = (int) database()->lastInsertId();
     query("UPDATE projects SET created_at='2024-01-01 00:00:00' WHERE id=?", [$project]);
     query("INSERT INTO card_details(card_id,updated_at) VALUES(?,'2024-02-01 00:00:00.123456')", [$parent]);
     query("INSERT INTO card_details(card_id,updated_at,opened_at) VALUES(?,'2024-03-01 00:00:00.000000','2024-03-01 00:00:00.000000')", [$child]);
-    query("DELETE FROM schema_migrations WHERE name IN ('card-links-v1','project-activity-v1')");
+    query("DELETE FROM schema_migrations WHERE name IN ('card-links-v1','project-activity-v1','compact-card-height-v1')");
     require '/var/www/memo/database/migrate.php';
+    $sizes = query('SELECT height FROM cards WHERE project_id=? ORDER BY id', [$project])->fetchAll(PDO::FETCH_COLUMN);
+    if (array_map('intval', $sizes) !== [70,248]) throw new RuntimeException('Default card height did not compact or a custom height was changed');
+    query('INSERT INTO cards(project_id,name) VALUES(?,?)', [$project, 'New default']);
+    $newCard = (int) database()->lastInsertId();
+    if ((int) query('SELECT height FROM cards WHERE id=?', [$newCard])->fetchColumn() !== 70) throw new RuntimeException('New cards still use the old height');
+    query('DELETE FROM cards WHERE id=?', [$newCard]);
     $lastEdit = query('SELECT updated_at FROM projects WHERE id=?', [$project])->fetchColumn();
     if ($lastEdit !== '2024-02-01 00:00:00.123456') throw new RuntimeException('Project activity did not preserve the last saved card edit');
     if ((int) query('SELECT COUNT(*) FROM card_links WHERE source_id=? AND target_id=?', [$parent,$child])->fetchColumn() !== 1) throw new RuntimeException('Legacy edge was not preserved');
@@ -30,8 +37,10 @@ try {
         if (!is_string($publicId) || !preg_match('/^m[a-f0-9]{32}$/D', $publicId)) throw new RuntimeException('Legacy entity has no public ID');
     }
     query('DELETE FROM card_links WHERE source_id=? AND target_id=?', [$parent,$child]);
+    query('UPDATE cards SET height=190 WHERE id=?', [$parent]);
     // Повтор миграции не воскрешает удалённые пользователем связи.
     require '/var/www/memo/database/migrate.php';
+    if ((int) query('SELECT height FROM cards WHERE id=?', [$parent])->fetchColumn() !== 190) throw new RuntimeException('Repeated migration overwrote a saved resize');
     if ((int) query('SELECT COUNT(*) FROM card_links WHERE source_id=? AND target_id=?', [$parent,$child])->fetchColumn() !== 0) throw new RuntimeException('Migration resurrected an edge');
     if (query('SELECT updated_at FROM projects WHERE id=?', [$project])->fetchColumn() !== $lastEdit) throw new RuntimeException('Migration changed project activity on repeat');
     if (query('SELECT public_id FROM projects WHERE id=?', [$project])->fetchColumn() !== $projectPublicId

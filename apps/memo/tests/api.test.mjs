@@ -137,6 +137,90 @@ test('folders scope nested boards without changing the directed graph or old rec
   assert.equal(copiedLinks.find(({ label }) => label === 'Решение').source, subfolder.id);
 });
 
+test('moving a selection preserves its layout and rejects splitting a connected group', async () => {
+  const owner = client();
+  const outsider = client();
+  for (const signIn of [owner, outsider]) {
+    await signIn('/session');
+    await signIn('/auth/register', 'POST', {
+      email: `group-move-${randomUUID()}@example.test`,
+      password: 'Synthetic-password-2026',
+    });
+  }
+  const project = await owner('/projects', 'POST', { name: 'Группы на полотне' }, 201);
+  const board = `/projects/${project.id}`;
+  const capture = (name, kind, x, y) =>
+    owner('/capture', 'POST', { project: project.id, name, kind, coordinates: { x, y } }, 201);
+  const a = await capture('Исходная', 'record', 30, 80);
+  const b = await capture('Средняя', 'record', 300, 160);
+  const c = await capture('Конечная', 'record', 600, 280);
+  const folder = await capture('Папка', 'folder', 900, 20);
+  const label = await owner(
+    board + '/marks',
+    'POST',
+    {
+      kind: 'label',
+      at: { x: 180, y: 50 },
+      text: 'Разметка',
+    },
+    201,
+  );
+  await owner('/links', 'PUT', { source: a.id, target: b.id });
+  await owner('/links', 'PUT', { source: b.id, target: c.id });
+  const original = await owner(board + '/cards?folder=root');
+  const selected = original
+    .filter(({ kind }) => kind === 'record')
+    .map(({ id, version }) => ({ id, version }));
+  const move = {
+    folder: null,
+    destination: folder.id,
+    cards: selected,
+    marks: [label.id],
+    requestId: randomUUID(),
+  };
+  await owner(board + '/move-selection', 'POST', { ...move, cards: selected.slice(0, 2) }, 409);
+  await owner(
+    `/cards/${a.id}/move`,
+    'POST',
+    { project: project.id, folder: folder.id, version: a.version },
+    409,
+  );
+  await outsider(board + '/move-selection', 'POST', move, 404);
+  assert.deepEqual(await owner(board + '/cards?folder=root'), original);
+  assert.deepEqual(await owner(board + '/marks?folder=root'), [label]);
+  const moved = await owner(board + '/move-selection', 'POST', move);
+  assert.deepEqual(await owner(board + '/move-selection', 'POST', move), moved);
+  assert.deepEqual(
+    (await owner(board + '/cards?folder=root')).map(({ id }) => id),
+    [folder.id],
+  );
+  assert.deepEqual(await owner(board + '/marks?folder=root'), []);
+  assert.deepEqual(await owner(board + `/marks?folder=${folder.id}`), moved.marks);
+  const [first, second, third] = moved.cards.map(({ coordinates }) => coordinates);
+  assert.deepEqual({ x: second.x - first.x, y: second.y - first.y }, { x: 270, y: 80 });
+  assert.deepEqual({ x: third.x - first.x, y: third.y - first.y }, { x: 570, y: 200 });
+  assert.deepEqual(
+    { x: moved.marks[0].at.x - first.x, y: moved.marks[0].at.y - first.y },
+    { x: 150, y: -30 },
+  );
+  assert.deepEqual(
+    (await owner('/links')).map(({ source, target }) => [source, target]),
+    [
+      [a.id, b.id],
+      [b.id, c.id],
+    ],
+  );
+  const offset = { x: 44, y: -25 };
+  const shifted = await owner(board + '/move-selection', 'POST', {
+    folder: folder.id,
+    offset,
+    cards: moved.cards.map(({ id, version }) => ({ id, version })),
+    marks: [label.id],
+    requestId: randomUUID(),
+  });
+  assert.deepEqual(shifted.cards[0].coordinates, { x: first.x + offset.x, y: first.y + offset.y });
+});
+
 test('visual documents preserve archived fields and board marks persist independently by folder', async () => {
   const owner = client();
   const outsider = client();
@@ -218,6 +302,7 @@ test('visual documents preserve archived fields and board marks persist independ
   });
   const updatedLine = await owner(`/marks/${line.id}`, 'PATCH', { end: newEnd });
   await owner(`/marks/${line.id}`, 'PATCH', { end: at }, 422);
+  await owner(`/marks/${line.id}`, 'PATCH', { text: 'Подпись линии' }, 422);
   assert.deepEqual(updatedLabel, { ...label, at: labelAt, text: 'Отлично', scale: 1.65 });
   assert.deepEqual(updatedLine, { ...line, end: newEnd });
   assert.deepEqual(await owner(board + '/marks'), [updatedLabel]);
@@ -255,10 +340,11 @@ test('visual documents preserve archived fields and board marks persist independ
   const rectangle = await owner(
     board + '/marks',
     'POST',
-    { kind: 'square', at, end: newEnd, folder: folder.id },
+    { kind: 'square', at, end: newEnd, folder: folder.id, text: 'Скопированная фигура' },
     201,
   );
   assert.deepEqual(rectangle.end, newEnd);
+  assert.equal(rectangle.text, 'Скопированная фигура');
   await owner(`/marks/${rectangle.id}`, 'PATCH', { end }, 422);
   await owner(`/marks/${rectangle.id}`, 'DELETE');
   for (const kind of ['square', 'circle']) {
@@ -272,10 +358,19 @@ test('visual documents preserve archived fields and board marks persist independ
     const figureRoute = `/marks/${figure.id}`;
     const corner = { x: -80, y: kind === 'circle' ? -40 : -60 };
     await owner(figureRoute, 'PATCH', { end }, 422);
-    assert.deepEqual(await owner(figureRoute, 'PATCH', { at: corner }), { ...figure, at: corner });
-    assert.deepEqual(await owner(board + `/marks?folder=${folder.id}`), [
-      { ...figure, at: corner },
-    ]);
+    await outsider(figureRoute, 'PATCH', { text: 'Чужая фигура' }, 404);
+    const named = await owner(figureRoute, 'PATCH', { text: '  Область задач  ' });
+    assert.deepEqual(named, { ...figure, text: 'Область задач' });
+    await owner(figureRoute, 'PATCH', { text: 'x'.repeat(129) }, 422);
+    const movedFigure = { ...named, at: corner };
+    assert.deepEqual(await owner(figureRoute, 'PATCH', { at: corner }), movedFigure);
+    assert.deepEqual(await owner(board + `/marks?folder=${folder.id}`), [movedFigure]);
+    assert.ok(
+      (await owner(board + '/export')).marks.some(
+        (mark) => mark.id === figure.id && mark.text === named.text,
+      ),
+    );
+    assert.deepEqual(await owner(figureRoute, 'PATCH', { text: '' }), { ...figure, at: corner });
     await owner(figureRoute, 'DELETE');
   }
   await owner(
@@ -747,23 +842,52 @@ test('capture and autosave deduplicate a lost response, retain trash, search con
   assert.equal(restored.pinned, true);
   assert.equal(restored.content.length, 2);
   const retro = await a('/projects', 'POST', { name: 'Ретро', template: 'retro' }, 201);
-  assert.equal((await a(`/projects/${retro.id}/cards`)).length, 4);
-  const tasks = await a('/projects', 'POST', { name: 'Задачи', template: 'tasks' }, 201);
-  assert.equal((await a(`/projects/${tasks.id}/cards`)).length, 3);
-  for (const [project, expected] of [
-    [retro, ['Хорошо', 'Нормально', 'Плохо']],
-    [tasks, ['Сделать', 'В работе', 'Готово']],
+  const retroCards = await a(`/projects/${retro.id}/cards`);
+  const frames = await a(`/projects/${retro.id}/marks`);
+  assert.deepEqual(
+    frames.map(({ kind, text }) => [kind, text]),
+    [
+      ['square', 'Ретро'],
+      ['square', 'Плохо'],
+      ['square', 'Хорошо'],
+      ['square', 'Что будем делать?'],
+    ],
+  );
+  const [frame, left, right, actions] = frames;
+  const contains = (outer, at, end) =>
+    at.x >= outer.at.x && at.y >= outer.at.y && end.x <= outer.end.x && end.y <= outer.end.y;
+  assert.ok([left, right, actions].every((section) => contains(frame, section.at, section.end)));
+  assert.equal(left.at.y, right.at.y);
+  assert.ok(left.end.x < right.at.x && actions.at.y > Math.max(left.end.y, right.end.y));
+  assert.equal(actions.at.x, left.at.x);
+  assert.equal(actions.end.x, right.end.x);
+  assert.equal(retroCards.length, 4);
+  for (const [section, expected] of [
+    [left, 1],
+    [right, 2],
+    [actions, 1],
   ]) {
-    const marks = await a(`/projects/${project.id}/marks`);
-    assert.deepEqual(
-      marks.filter((mark) => mark.kind === 'label').map((mark) => mark.text),
+    assert.equal(
+      retroCards.filter(({ coordinates, size }) =>
+        contains(section, coordinates, {
+          x: coordinates.x + size.width,
+          y: coordinates.y + size.height,
+        }),
+      ).length,
       expected,
     );
-    assert.equal(
-      marks.filter((mark) => mark.kind === 'line' && mark.at.x === mark.end.x).length,
-      2,
-    );
   }
+  const tasks = await a('/projects', 'POST', { name: 'Задачи', template: 'tasks' }, 201);
+  assert.equal((await a(`/projects/${tasks.id}/cards`)).length, 3);
+  const taskMarks = await a(`/projects/${tasks.id}/marks`);
+  assert.deepEqual(
+    taskMarks.filter((mark) => mark.kind === 'label').map((mark) => mark.text),
+    ['Сделать', 'В работе', 'Готово'],
+  );
+  assert.equal(
+    taskMarks.filter((mark) => mark.kind === 'line' && mark.at.x === mark.end.x).length,
+    2,
+  );
   await a('/projects', 'POST', { name: 'Некорректно', template: 'missing' }, 422);
   await a(
     '/capture',

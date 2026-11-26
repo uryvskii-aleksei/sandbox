@@ -8,3 +8,4 @@ export { Popover } from './Popover';
 export { Modal } from './Modal';
 export { ConfirmDialog } from './ConfirmDialog';
 export { Select } from './Select';
+export { Toast } from './Toast';

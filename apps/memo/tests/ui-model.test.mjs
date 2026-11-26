@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { linkPort, routeBoardLinks, routeConnection } from '../frontend/src/connectionRoutes.ts';
 import {
   branchIds,
   canConnect,
@@ -32,6 +33,150 @@ const group = (id, field, value) => ({
   order: 0,
   collapsed: false,
   fields: [{ id: field, type: 'textarea', title: '', order: 0, value: [value] }],
+});
+
+const block = (id, x, y, width, height) => ({ id, x, y, width, height });
+const routeClears = ({ samples }, blocks) => {
+  for (const [index, start] of samples.slice(0, -1).entries()) {
+    const end = samples[index + 1];
+    for (let step = 0; step <= 24; step++) {
+      const x = start.x + ((end.x - start.x) * step) / 24;
+      const y = start.y + ((end.y - start.y) * step) / 24;
+      assert.ok(
+        !blocks.some((r) => x > r.x && x < r.x + r.width && y > r.y && y < r.y + r.height),
+        `route ran through a block at ${x},${y}`,
+      );
+    }
+  }
+};
+
+const routesDoNotCross = (routes) => {
+  const area = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  for (const [index, route] of routes.entries()) {
+    for (const other of routes.slice(index + 1)) {
+      assert.ok(
+        !route.segments.some(({ from: a, to: b }) =>
+          other.segments.some(
+            ({ from: c, to: d }) =>
+              area(a, b, c) * area(a, b, d) < 0 && area(c, d, a) * area(c, d, b) < 0,
+          ),
+        ),
+      );
+    }
+  }
+};
+
+test('clear diagonal connections keep a single smooth bend between their ports', () => {
+  const source = block(1, 0, 0, 240, 190);
+  for (const y of [245, 640]) {
+    const target = block(2, 400, y, 240, 190);
+    const blocks = [source, target];
+    const route = routeConnection(linkPort(source, true), linkPort(target, false), blocks);
+    assert.deepEqual(route.d.match(/[MCL]/g), ['M', 'C']);
+    assert.ok(
+      route.samples.every(
+        (point, index, samples) => index === 0 || point.y >= samples[index - 1].y,
+      ),
+    );
+    routeClears(route, blocks);
+  }
+});
+
+test('three nearby targets in a row receive smooth outgoing curves with no crossovers', () => {
+  const blocks = [
+    block(1, 0, 0, 240, 190),
+    block(2, 0, 280, 240, 190),
+    block(3, 280, 280, 240, 190),
+    block(4, 560, 280, 240, 190),
+  ];
+  const routes = routeBoardLinks([edge(1, 2), edge(1, 3), edge(1, 4)], blocks);
+  assert.equal(routes.length, 3);
+  for (const route of routes) {
+    assert.deepEqual(route.d.match(/[MCL]/g), ['M', 'C']);
+    routeClears(route, blocks);
+  }
+  routesDoNotCross(routes);
+});
+
+test('overlapping endpoints meet across the exposed corner with a short curve in either direction', () => {
+  const blocks = [block(1, 0, 0, 240, 190), block(2, 128.242, 91.3438, 240, 190)];
+  for (const link of [edge(1, 2), edge(2, 1)]) {
+    const [route] = routeBoardLinks([link], blocks);
+    assert.deepEqual(route.d.match(/[MCL]/g), ['M', 'C']);
+    const length = route.segments.reduce(
+      (total, { from, to }) => total + Math.hypot(to.x - from.x, to.y - from.y),
+      0,
+    );
+    assert.ok(length < 65, `curve wrapped around the overlapping card: ${length}`);
+    routeClears(route, blocks);
+  }
+});
+
+test('connections curve around stacked obstacles and adapt when a block is moved', () => {
+  const source = block(1, 0, 0, 240, 120);
+  const target = block(2, 180, 770, 240, 120);
+  const upper = block(3, 50, 175, 360, 230);
+  const lower = block(4, -50, 385, 350, 280);
+  const route = (obstacles) =>
+    routeConnection(linkPort(source, true), linkPort(target, false), obstacles);
+  const obstacles = [source, target, upper, lower];
+  const detour = route(obstacles);
+  assert.match(detour.d, /C/);
+  routeClears(detour, obstacles);
+  const moved = [source, target, { ...upper, x: 700 }, lower];
+  const next = route(moved);
+  assert.notEqual(next.d, detour.d);
+  routeClears(next, moved);
+});
+
+test('an upward connection turns into the top port over a longer approach', () => {
+  const source = block(1, 0, 521.016, 240, 190);
+  const target = block(2, 474.406, 0, 240, 190);
+  const route = (blocks) =>
+    routeConnection(linkPort(source, true), linkPort(target, false), blocks);
+  const open = route([source, target]);
+  let approach = 0;
+  for (const { from, to } of open.segments.toReversed()) {
+    const dx = Math.abs(to.x - from.x);
+    const dy = to.y - from.y;
+    if (dy <= 0 || dx > dy) break;
+    approach += Math.hypot(dx, dy);
+  }
+  assert.ok(approach > 38, `the turn is compressed against the target port: ${approach}`);
+  routeClears(open, [source, target]);
+
+  const tight = [source, target, block(3, 480, -221, 240, 190)];
+  routeClears(route(tight), tight);
+});
+
+test('a second connection uses the opposite side of an occupied corridor', () => {
+  const middle = block(5, -60, 180, 480, 190);
+  const blocks = [
+    block(1, 0, 0, 96, 80),
+    block(2, 100, 0, 96, 80),
+    block(3, 0, 500, 96, 80),
+    block(4, 100, 500, 96, 80),
+    middle,
+  ];
+  const [single] = routeBoardLinks([edge(2, 4)], blocks);
+  assert.ok(single.center.x < middle.x);
+  const [first, second] = routeBoardLinks([edge(1, 3), edge(2, 4)], blocks);
+  assert.ok(first.center.x < middle.x);
+  assert.ok(second.center.x > middle.x + middle.width);
+  routeClears(first, blocks);
+  routeClears(second, blocks);
+});
+
+test('outgoing connections do not cross when the far target needs the lower corridor', () => {
+  const blocks = [
+    block(1, 0, 0, 240, 190),
+    block(2, 520, 178, 240, 190),
+    block(3, 840, 178, 240, 190),
+    block(4, 200, 458, 240, 190),
+  ];
+  const routes = routeBoardLinks([edge(1, 2), edge(1, 3), edge(1, 4)], blocks);
+  routes.forEach((route) => routeClears(route, blocks));
+  routesDoNotCross(routes);
 });
 
 test('multiple parents keep both branches reachable and reject cycles across every parent', () => {

@@ -1,12 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { CSSProperties, PointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, PointerEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { api, ApiError } from './api';
 import { BoardContextMenu } from './BoardContextMenu';
 import type { BoardMenuItem } from './BoardContextMenu';
 import { MarkLayer, MarkTools, useCanvasMarks } from './CanvasMarks';
+import { linkPort, routeBoardLinks, routeConnection } from './connectionRoutes';
 import { LinkControl } from './LinkControl';
-import { Icon, IconButton } from './ui';
+import { Icon, IconButton, Toast } from './ui';
 import { canConnect, cardDimensions, clampCardSize, excerpt } from './graph';
 import { isTextInput, markTools } from './shortcuts';
 import { readLocal, writeLocal } from './storage';
@@ -14,6 +15,7 @@ import { TrashDialog } from './TrashDialog';
 import type {
   BoardClipboard,
   BoardMark,
+  BoardMove,
   BoardSelection,
   Card,
   CardLink,
@@ -26,6 +28,7 @@ interface Props {
   projectId: number;
   folderId: number | null;
   markToolsSlot: HTMLElement | null;
+  notifications: ReactNode;
   locate: (card: Card) => void;
   busy: boolean;
   keyboardDisabled: boolean;
@@ -37,7 +40,7 @@ interface Props {
   createBlock: (kind: 'record' | 'folder', at: Card['coordinates']) => void;
   open: (card: Card, editing?: boolean) => void;
   enter: (card: Card) => void;
-  moveInto: (card: Card, folder: Card) => Promise<void>;
+  moveSelection: (cards: Card[], marks: number[], move: BoardMove) => Promise<BoardMark[]>;
   remove: (card: Card) => Promise<void>;
   removeSelection: (selection: BoardSelection, requestId: string) => Promise<void>;
   child: (card: Card) => void;
@@ -79,6 +82,7 @@ type ResizeGesture = {
 interface Drag {
   card: Card | null;
   selecting: boolean;
+  selection: BoardSelection | null;
   pointer: number;
   x: number;
   y: number;
@@ -101,7 +105,7 @@ function markAt(mark: NewBoardMark, point: Card['coordinates']): NewBoardMark {
       Math.min(coordinateLimit - Math.max(0, delta), at),
     );
   const at = { x: start(point.x, dx), y: start(point.y, dy) };
-  return { kind: mark.kind, at, end: { x: at.x + dx, y: at.y + dy } };
+  return { ...mark, at, end: { x: at.x + dx, y: at.y + dy } };
 }
 
 function dragRectangle(drag: Drag, event: PointerEvent<HTMLElement>, board: DOMRect) {
@@ -206,6 +210,7 @@ export function Board({
   projectId,
   folderId,
   markToolsSlot,
+  notifications,
   locate,
   busy,
   keyboardDisabled,
@@ -217,7 +222,7 @@ export function Board({
   createBlock,
   open,
   enter,
-  moveInto,
+  moveSelection,
   remove,
   removeSelection,
   child,
@@ -232,9 +237,11 @@ export function Board({
   );
   const [temporary, setTemporary] = useState<Record<number, Card['coordinates']>>({});
   const [resizePreview, setResizePreview] = useState<(Bounds & { id: number }) | null>(null);
-  const [dropFolder, setDropFolder] = useState<number | null>(null);
+  const [dropFolder, setDropFolder] = useState<{ id: number; allowed: boolean } | null>(null);
   const [trashCandidate, setTrashCandidate] = useState<Card | null>(null);
-  const [marquee, setMarquee] = useState<DOMRect | null>(null);
+  const [marquee, setMarquee] = useState<{ rect: DOMRect; selection: BoardSelection } | null>(null);
+  const [groupOffset, setGroupOffset] = useState<Card['coordinates'] | null>(null);
+  const [moveError, setMoveError] = useState('');
   const [group, setGroup] = useState<BoardSelection>(emptySelection);
   const [trashGroup, setTrashGroup] = useState<{
     selection: BoardSelection;
@@ -267,6 +274,7 @@ export function Board({
   const root = useRef<HTMLElement>(null);
   const viewport = useRef<{ width: number; height: number } | null>(null);
   const drag = useRef<Drag | null>(null);
+  const modifierSelectionHandled = useRef(false);
   const markPointer = useRef<number | null>(null);
   const resizing = useRef<ResizeGesture | null>(null);
   const linking = useRef(false);
@@ -297,38 +305,44 @@ export function Board({
       : (temporary[card.id] ?? card.coordinates);
   const size = (card: Card) =>
     resizePreview?.id === card.id ? resizePreview.size : cardDimensions(card);
-  const port = (card: Card, output = false) => {
-    const { x, y } = point(card);
-    const { width, height } = size(card);
-    return { x: x + width / 2, y: y + (output ? height : 0) };
-  };
-  const automaticReferences = links
-    .filter((link) => cards.some((card) => card.id === link.source || card.id === link.target))
-    .flatMap((link) => [link.source, link.target])
-    .filter((id) => !cards.some((card) => card.id === id));
-  const neededReferences = [...new Set([...references.ids, ...automaticReferences])].filter(
-    (id) => !cards.some((card) => card.id === id),
-  );
+  const neededReferences = useMemo(() => {
+    const localIds = new Set(cards.map((card) => card.id));
+    const linked = links
+      .filter((link) => localIds.has(link.source) || localIds.has(link.target))
+      .flatMap((link) => [link.source, link.target]);
+    return [...new Set([...references.ids, ...linked])].filter((id) => !localIds.has(id));
+  }, [cards, links, references.ids]);
   const referenceKey = neededReferences
     .slice()
     .sort((a, b) => a - b)
     .join(',');
-  const allCards = [
-    ...cards,
-    ...external
-      .filter((card) => neededReferences.includes(card.id))
-      .map((card, index) => ({
-        ...card,
-        coordinates: references.positions[String(card.id)] ?? {
-          x:
-            Math.max(320, ...cards.map((item) => item.coordinates.x + size(item).width)) +
-            80 +
-            index * 280,
-          y: 80,
-        },
-      })),
-  ];
+  const allCards = useMemo(
+    () => [
+      ...cards,
+      ...external
+        .filter((card) => neededReferences.includes(card.id))
+        .map((card, index) => ({
+          ...card,
+          coordinates: references.positions[String(card.id)] ?? {
+            x:
+              Math.max(
+                320,
+                ...cards.map((item) => item.coordinates.x + cardDimensions(item).width),
+              ) +
+              80 +
+              index * 280,
+            y: 80,
+          },
+        })),
+    ],
+    [cards, external, neededReferences, references.positions],
+  );
   const visible = allCards;
+  const blocks = useMemo(
+    () => visible.map((card) => ({ id: card.id, ...point(card), ...size(card) })),
+    [visible, temporary, resizePreview],
+  );
+  const routedLinks = useMemo(() => routeBoardLinks(links, blocks), [links, blocks]);
   useEffect(() => {
     writeLocal(`${storageKey}:references`, references);
   }, [references, storageKey]);
@@ -368,15 +382,10 @@ export function Board({
       live = false;
     };
   }, [referenceKey, referenceRevision]);
-  const localLinks = links.filter(
-    (link) =>
-      visible.some((card) => card.id === link.source) &&
-      visible.some((card) => card.id === link.target),
-  );
   const selection = visible.some((card) => card.id === selectedId) ? selectedId : null;
   const related = (link: CardLink) => link.source === selection || link.target === selection;
   const neighbors = new Set(
-    localLinks.filter(related).flatMap((link) => [link.source, link.target]),
+    routedLinks.flatMap(({ link }) => (related(link) ? [link.source, link.target] : [])),
   );
   const fit = (items = visible) => {
     if (!root.current || !items.length) return;
@@ -558,6 +567,9 @@ export function Board({
     if (target && 'card' in target) {
       const card = target.card;
       return [
+        ...(card.kind === 'folder'
+          ? [{ label: 'Открыть', icon: 'folder' as const, action: () => selectCard(card) }]
+          : []),
         {
           label: 'Редактировать',
           icon: 'pencil',
@@ -569,6 +581,16 @@ export function Board({
             open(card, true);
           },
         },
+        ...(onThisBoard(card)
+          ? [
+              {
+                label: 'Добавить связанную запись',
+                icon: 'plus' as const,
+                disabled: busy,
+                action: () => usePlus(card),
+              },
+            ]
+          : []),
         { label: 'Копировать', icon: 'copy', action: () => copy({ cardId: card.id }) },
         {
           label: 'Удалить',
@@ -580,9 +602,14 @@ export function Board({
     }
     if (target && 'mark' in target) {
       const { id, ...mark } = target.mark;
+      const hasCaption = mark.kind === 'square' || mark.kind === 'circle';
       return [
         {
-          label: 'Редактировать',
+          label: hasCaption
+            ? mark.text
+              ? 'Изменить подпись'
+              : 'Добавить подпись'
+            : 'Редактировать',
           icon: 'pencil',
           disabled: marks.locked,
           action: () => {
@@ -621,14 +648,7 @@ export function Board({
         label,
         icon,
         disabled: marks.locked,
-        action: () => {
-          if (kind === 'label') {
-            cancelLink();
-            marks.cancel();
-            setGroup(emptySelection);
-            marks.placeLabel(at);
-          } else armMark(kind);
-        },
+        action: () => armMark(kind),
       })),
     ];
   };
@@ -670,7 +690,7 @@ export function Board({
     linking.current = true;
   };
   const startReconnection = (
-    event: PointerEvent<SVGLineElement>,
+    event: PointerEvent<SVGPathElement>,
     link: CardLink,
     start: Card['coordinates'],
     end: Card['coordinates'],
@@ -684,7 +704,12 @@ export function Board({
     captureLink(event);
   };
   const usePlus = (card: Card) => (onThisBoard(card) ? child(card) : locate(card));
-  const start = (event: PointerEvent<HTMLElement>, card: Card | null, pan = false) => {
+  const start = (
+    event: PointerEvent<HTMLElement>,
+    card: Card | null,
+    pan = false,
+    moveGroup = false,
+  ) => {
     if (
       busy ||
       source !== null ||
@@ -692,6 +717,7 @@ export function Board({
       resizing.current ||
       (!pan && event.button !== 0) ||
       (!pan &&
+        !moveGroup &&
         event.target instanceof Element &&
         event.target.closest('button:not(.card-title),select,input'))
     )
@@ -700,11 +726,13 @@ export function Board({
     event.currentTarget.setPointerCapture(event.pointerId);
     if (!pan && marks.tool) {
       setSelectedId(null);
-      if (marks.tool !== 'label') markPointer.current = event.pointerId;
+      markPointer.current = event.pointerId;
       marks.start(worldPoint(event));
       return;
     }
-    const selecting = !card && !pan && event.pointerType !== 'touch';
+    setMoveError('');
+    const selection = moveGroup || (card && group.cards.includes(card.id)) ? group : null;
+    const selecting = !card && !selection && !pan && event.pointerType !== 'touch';
     if (!card) event.preventDefault();
     if (selecting) {
       setSelectedId(null);
@@ -715,6 +743,7 @@ export function Board({
     drag.current = {
       card,
       selecting,
+      selection,
       pointer: event.pointerId,
       x: event.clientX,
       y: event.clientY,
@@ -753,11 +782,10 @@ export function Board({
       setResizePreview(null);
     }
   };
-  const findDropFolder = (event: PointerEvent<HTMLElement>, dragged: Card) => {
+  const findDropFolder = (event: PointerEvent<HTMLElement>, moving: number[]) => {
     const rect = root.current?.getBoundingClientRect();
     if (
       !rect ||
-      !onThisBoard(dragged) ||
       event.clientX < rect.left ||
       event.clientX > rect.right ||
       event.clientY < rect.top ||
@@ -769,11 +797,94 @@ export function Board({
       .slice()
       .reverse()
       .find((candidate) => {
-        if (candidate.id === dragged.id || candidate.kind !== 'folder') return false;
+        if (moving.includes(candidate.id) || candidate.kind !== 'folder') return false;
         const { x, y } = point(candidate);
         const { width, height } = size(candidate);
         return cursor.x >= x && cursor.x <= x + width && cursor.y >= y && cursor.y <= y + height;
       });
+  };
+  const linkedMoveError =
+    'Для переноса в папку выделите всю группу связанных карточек на этом полотне.';
+  const canMoveToFolder = (ids: number[]) => {
+    const local = new Set(cards.map((card) => card.id));
+    const moving = new Set(ids);
+    return links.every(
+      ({ source, target }) =>
+        !local.has(source) || !local.has(target) || moving.has(source) === moving.has(target),
+    );
+  };
+  const selectionIn = (box: DOMRect, board: HTMLElement): BoardSelection => {
+    const covered = (selector: string, id: string) =>
+      [...board.querySelectorAll<HTMLElement | SVGElement>(selector)].flatMap((element) => {
+        const rect = element.getBoundingClientRect();
+        return box.left <= rect.left &&
+          box.right >= rect.right &&
+          box.top <= rect.top &&
+          box.bottom >= rect.bottom
+          ? [Number(element.getAttribute(id))]
+          : [];
+      });
+    return {
+      cards: covered('.mind-card:not(.reference-card)', 'data-card-id'),
+      marks: covered(
+        '.mark-stroke[data-mark-id], .canvas-label-item[data-mark-id]',
+        'data-mark-id',
+      ),
+    };
+  };
+  const selectionTarget = (element: Element) => {
+    const card = Number(
+      element.closest('.mind-card:not(.reference-card)')?.getAttribute('data-card-id'),
+    );
+    if (card) return { kind: 'cards' as const, id: card };
+    const mark = Number(element.closest('[data-menu-mark]')?.getAttribute('data-menu-mark'));
+    return mark ? { kind: 'marks' as const, id: mark } : null;
+  };
+  const toggleSelection = ({ kind, id }: NonNullable<ReturnType<typeof selectionTarget>>) => {
+    const selectedMark = marks.selected;
+    const selectedCard =
+      selectedId !== null && cards.some((card) => card.id === selectedId) ? selectedId : null;
+    setGroup((current) => {
+      const base =
+        current.cards.length || current.marks.length
+          ? current
+          : {
+              cards: selectedCard === null ? [] : [selectedCard],
+              marks: selectedMark === null ? [] : [selectedMark],
+            };
+      const items = base[kind];
+      return {
+        ...base,
+        [kind]: items.includes(id) ? items.filter((item) => item !== id) : [...items, id],
+      };
+    });
+    setSelectedId(null);
+    setMoveError('');
+    marks.cancel();
+  };
+  const dropFor = (event: PointerEvent<HTMLElement>, current: Drag) =>
+    current.selection || (current.card && onThisBoard(current.card))
+      ? findDropFolder(event, current.selection?.cards ?? (current.card ? [current.card.id] : []))
+      : undefined;
+  const offsetFor = (event: PointerEvent<HTMLElement>, current: Drag) => {
+    const x = (event.clientX - current.x) / camera.scale;
+    const y = (event.clientY - current.y) / camera.scale;
+    if (!current.selection) return { x, y };
+    const points = [
+      ...cards
+        .filter(({ id }) => current.selection?.cards.includes(id))
+        .map(({ coordinates }) => coordinates),
+      ...marks.items
+        .filter(({ id }) => current.selection?.marks.includes(id))
+        .flatMap((mark) => (mark.kind === 'label' ? [mark.at] : [mark.at, mark.end])),
+    ];
+    const limit = (value: number, axis: 'x' | 'y') =>
+      points.reduce(
+        (result, point) =>
+          Math.max(-coordinateLimit - point[axis], Math.min(coordinateLimit - point[axis], result)),
+        value,
+      );
+    return { x: limit(x, 'x'), y: limit(y, 'y') };
   };
   const move = (event: PointerEvent<HTMLElement>) => {
     if (resizing.current) {
@@ -781,8 +892,7 @@ export function Board({
         setResizePreview({ id: resizing.current.card.id, ...resized(event, resizing.current) });
       return;
     }
-    if (marks.tool && marks.tool !== 'label' && marks.move(worldPoint(event), event.shiftKey))
-      return;
+    if (marks.tool && marks.move(worldPoint(event), event.shiftKey)) return;
     if (linking.current && source !== null && root.current) {
       const press = linkPress.current;
       if (press && press.pointer !== event.pointerId) return;
@@ -811,14 +921,32 @@ export function Board({
     if (current.selecting && root.current) {
       const board = root.current.getBoundingClientRect();
       const box = dragRectangle(current, event, board);
-      setMarquee(new DOMRect(box.x - board.x, box.y - board.y, box.width, box.height));
-    } else if (current.card) {
-      const id = current.card.id;
-      setDropFolder(findDropFolder(event, current.card)?.id ?? null);
-      setTemporary((values) => ({
-        ...values,
-        [id]: { x: current.startX + dx / camera.scale, y: current.startY + dy / camera.scale },
-      }));
+      setMarquee({
+        rect: new DOMRect(box.x - board.x, box.y - board.y, box.width, box.height),
+        selection: selectionIn(box, root.current),
+      });
+    } else if (current.selection || current.card) {
+      const ids = current.selection?.cards ?? (current.card ? [current.card.id] : []);
+      const folder = dropFor(event, current);
+      setDropFolder(folder ? { id: folder.id, allowed: canMoveToFolder(ids) } : null);
+      const offset = offsetFor(event, current);
+      if (current.selection) {
+        setGroupOffset(offset);
+        setTemporary(
+          Object.fromEntries(
+            cards
+              .filter((card) => ids.includes(card.id))
+              .map((card) => [
+                card.id,
+                { x: card.coordinates.x + offset.x, y: card.coordinates.y + offset.y },
+              ]),
+          ),
+        );
+      } else if (current.card) {
+        setTemporary({
+          [current.card.id]: { x: current.startX + offset.x, y: current.startY + offset.y },
+        });
+      }
     } else setCamera((value) => ({ ...value, x: current.startX + dx, y: current.startY + dy }));
   };
   const end = async (event: PointerEvent<HTMLElement>, cancelled = false) => {
@@ -862,67 +990,58 @@ export function Board({
     if (current.selecting) {
       setMarquee(null);
       const board = root.current;
-      if (cancelled || !board) return;
-      const box = dragRectangle(current, event, board.getBoundingClientRect());
-      const covered = (selector: string, id: string) =>
-        [...board.querySelectorAll<HTMLElement | SVGElement>(selector)].flatMap((element) => {
-          const rect = element.getBoundingClientRect();
-          return box.left <= rect.left &&
-            box.right >= rect.right &&
-            box.top <= rect.top &&
-            box.bottom >= rect.bottom
-            ? [Number(element.getAttribute(id))]
-            : [];
-        });
-      setGroup(
-        current.moved
-          ? {
-              cards: covered('.mind-card:not(.reference-card)', 'data-card-id'),
-              marks: covered(
-                '.mark-stroke[data-mark-id], .canvas-label-item[data-mark-id]',
-                'data-mark-id',
-              ),
-            }
-          : emptySelection,
-      );
-      return;
-    }
-    if (!current?.card) {
-      if (current && !current.moved && !cancelled) {
-        marks.cancel();
-        setSelectedId(null);
-        setGroup(emptySelection);
+      if (!cancelled && board && current.moved) {
+        setGroup(selectionIn(dragRectangle(current, event, board.getBoundingClientRect()), board));
       }
       return;
     }
-    const card = current.card;
-    if (current.moved && !cancelled) {
-      try {
-        const folder = findDropFolder(event, card);
-        const coordinates = {
-          x: current.startX + (event.clientX - current.x) / camera.scale,
-          y: current.startY + (event.clientY - current.y) / camera.scale,
-        };
-        if (folder) {
-          await moveInto(card, folder);
-          setNotice(`«${card.name}» перемещена в «${folder.name}».`);
-        } else if (onThisBoard(card)) await position({ ...card, coordinates });
+    try {
+      if (cancelled) return;
+      if (!current.moved) {
+        if (current.card && !current.selection) selectCard(current.card);
+        else if (!current.selection) {
+          marks.cancel();
+          setSelectedId(null);
+          setGroup(emptySelection);
+        }
+        return;
+      }
+      const offset = offsetFor(event, current);
+      const folder = dropFor(event, current);
+      if (current.selection || folder) {
+        const movingCards = current.selection
+          ? cards.filter(({ id }) => current.selection?.cards.includes(id))
+          : current.card
+            ? [current.card]
+            : [];
+        if (folder && !canMoveToFolder(movingCards.map(({ id }) => id))) {
+          setMoveError(linkedMoveError);
+          return;
+        }
+        const movingMarks = current.selection?.marks ?? [];
+        const saved = await moveSelection(
+          movingCards,
+          movingMarks,
+          folder ? { destination: folder.id } : { offset },
+        );
+        marks.applyMoved(saved, Boolean(folder));
+        if (folder) setGroup(emptySelection);
+      } else if (current.card) {
+        const card = current.card;
+        const coordinates = { x: current.startX + offset.x, y: current.startY + offset.y };
+        if (onThisBoard(card)) await position({ ...card, coordinates });
         else
           setReferences((value) => ({
             ...value,
             positions: { ...value.positions, [card.id]: coordinates },
           }));
-      } catch {
-        /* Ошибка показана приложением, положение откатывается. */
       }
-    } else if (!cancelled) {
-      selectCard(card);
+    } catch {
+      // Ошибка показана приложением, положение откатывается.
+    } finally {
+      setTemporary({});
+      setGroupOffset(null);
     }
-    setTemporary((values) => {
-      const next = { ...values };
-      delete next[card.id];
-      return next;
-    });
   };
   const trashFromCanvas = async (card: Card) => {
     await remove(card);
@@ -1019,7 +1138,41 @@ export function Board({
   });
   const sourceCard = allCards.find((card) => card.id === source);
   const movingStart = reconnecting?.moving === 'source';
-  const fixedPort = sourceCard ? port(sourceCard, !movingStart) : null;
+  const destinationCard = allCards.find((card) => card.id === target);
+  const snappedRoute = useMemo(() => {
+    if (!sourceCard || !destinationCard || !validTarget(sourceCard.id, destinationCard.id))
+      return null;
+    const [from, to] = movingStart ? [destinationCard, sourceCard] : [sourceCard, destinationCard];
+    const pending: CardLink = {
+      source: from.id,
+      target: to.id,
+      label: '',
+      sourceName: from.name,
+      targetName: to.name,
+      sourceProject: from.project,
+      targetProject: to.project,
+    };
+    const old = reconnecting?.link;
+    const planned = [
+      ...links.filter((link) => !old || link.source !== old.source || link.target !== old.target),
+      pending,
+    ].sort((a, b) => a.source - b.source || a.target - b.target);
+    return routeBoardLinks(planned, blocks).find(({ link }) => link === pending) ?? null;
+  }, [sourceCard, destinationCard, movingStart, reconnecting, links, blocks]);
+  const fixedBlock = blocks.find(({ id }) => id === source);
+  const targetBlock = blocks.find(({ id }) => id === target && id !== source);
+  const fixedPort = fixedBlock ? linkPort(fixedBlock, !movingStart) : null;
+  const movingPort = targetBlock ? linkPort(targetBlock, movingStart) : cursor && { at: cursor };
+  const draftRoute =
+    cursor && fixedPort && movingPort
+      ? (snappedRoute ??
+        routeConnection(
+          movingStart ? movingPort : fixedPort,
+          movingStart ? fixedPort : movingPort,
+          blocks,
+        ))
+      : null;
+  const highlightedGroup = marquee?.selection ?? group;
   const worldStyle: CSSProperties & { '--board-scale': number } = {
     transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`,
     '--board-scale': camera.scale,
@@ -1031,11 +1184,54 @@ export function Board({
       aria-label="Полотно проекта"
       tabIndex={0}
       onContextMenu={(event) => {
+        if (event.ctrlKey && event.target instanceof Element) {
+          const item = selectionTarget(event.target);
+          if (item) {
+            if (
+              !modifierSelectionHandled.current &&
+              !busy &&
+              !marks.locked &&
+              !marks.tool &&
+              source === null
+            ) {
+              toggleSelection(item);
+            }
+            modifierSelectionHandled.current = false;
+            event.preventDefault();
+            return;
+          }
+        }
         if (event.target instanceof Element && showMenu(event.target, event)) {
           event.preventDefault();
         }
       }}
+      onClickCapture={(event) => {
+        if (
+          (event.ctrlKey || event.metaKey) &&
+          event.target instanceof Element &&
+          selectionTarget(event.target)
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
       onKeyDown={(event) => {
+        if (
+          (event.ctrlKey || event.metaKey) &&
+          event.key === ' ' &&
+          event.target instanceof Element &&
+          !busy &&
+          !marks.locked &&
+          !marks.tool &&
+          source === null
+        ) {
+          const target = selectionTarget(event.target);
+          if (target) {
+            event.preventDefault();
+            toggleSelection(target);
+            return;
+          }
+        }
         if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
         if (!(event.target instanceof Element)) return;
         const rect = event.target.getBoundingClientRect();
@@ -1043,6 +1239,31 @@ export function Board({
           event.preventDefault();
       }}
       onPointerDownCapture={(event) => {
+        modifierSelectionHandled.current = false;
+        if (
+          event.button === 0 &&
+          event.target instanceof Element &&
+          !busy &&
+          !marks.locked &&
+          !marks.tool &&
+          source === null
+        ) {
+          const item = selectionTarget(event.target);
+          if (item && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            event.stopPropagation();
+            toggleSelection(item);
+            modifierSelectionHandled.current = true;
+            return;
+          }
+          if (item?.kind === 'marks' && event.target.closest('.mark-hit,.canvas-label')) {
+            if (group.marks.includes(item.id)) start(event, null, false, true);
+            else {
+              setGroup(emptySelection);
+              setSelectedId(null);
+            }
+          }
+        }
         if (
           event.button === 1 &&
           event.target instanceof Element &&
@@ -1076,10 +1297,10 @@ export function Board({
           className="board-marquee"
           aria-hidden="true"
           style={{
-            left: marquee.x,
-            top: marquee.y,
-            width: marquee.width,
-            height: marquee.height,
+            left: marquee.rect.x,
+            top: marquee.rect.y,
+            width: marquee.rect.width,
+            height: marquee.rect.height,
           }}
         />
       )}
@@ -1088,6 +1309,21 @@ export function Board({
           <button className="secondary" onClick={cancelLink}>
             Отменить связь
           </button>
+        </div>
+      )}
+      {(notifications || moveError) && (
+        <div className="memo-toast-stack" onPointerDown={(event) => event.stopPropagation()}>
+          {moveError && (
+            <Toast kind="error" onDismiss={() => setMoveError('')}>
+              {moveError}
+            </Toast>
+          )}
+          {notifications}
+        </div>
+      )}
+      {dropFolder?.allowed === false && (
+        <div className="board-move-error" role="status">
+          {linkedMoveError}
         </div>
       )}
       {marks.error && (
@@ -1129,34 +1365,26 @@ export function Board({
           marks={marks}
           scale={camera.scale}
           busy={busy || source !== null}
-          group={group.marks}
+          group={highlightedGroup.marks}
+          offset={groupOffset}
         />
         <svg className="connections" width="1" height="1" aria-hidden="true">
-          {localLinks.map((link) => {
-            const from = visible.find((card) => card.id === link.source);
-            const to = visible.find((card) => card.id === link.target);
-            if (!from || !to) return null;
-            const a = port(from, true);
-            const b = port(to);
-            const key = `${link.source}:${link.target}`;
-            const coords = {
-              x1: a.x,
-              y1: a.y,
-              x2: b.x,
-              y2: b.y,
-            };
+          {routedLinks.map(({ link, key, d, start, end }) => {
+            const grouped =
+              highlightedGroup.cards.includes(link.source) &&
+              highlightedGroup.cards.includes(link.target);
             const appearance =
-              selection === null ? '' : related(link) ? 'related-link' : 'dimmed-link';
+              grouped || related(link) ? 'related-link' : selection === null ? '' : 'dimmed-link';
             return (
               <g key={key}>
-                <line
-                  {...coords}
+                <path
+                  d={d}
                   className={`${appearance} ${reconnecting?.link.source === link.source && reconnecting.link.target === link.target ? 'reconnecting-link' : ''}`}
                 />
-                <line
-                  {...coords}
+                <path
+                  d={d}
                   className="link-hit"
-                  onPointerDown={(event) => startReconnection(event, link, a, b)}
+                  onPointerDown={(event) => startReconnection(event, link, start, end)}
                   onPointerEnter={() => setHoveredLink(key)}
                   onPointerLeave={() => setHoveredLink(null)}
                   onClick={() => {
@@ -1166,48 +1394,36 @@ export function Board({
               </g>
             );
           })}
-          {sourceCard && cursor && fixedPort && (
-            <line
+          {sourceCard && draftRoute && (
+            <path
               className={`draft-link ${target !== null && !validTarget(sourceCard.id, target) ? 'invalid' : ''}`}
-              x1={movingStart ? cursor.x : fixedPort.x}
-              y1={movingStart ? cursor.y : fixedPort.y}
-              x2={movingStart ? fixedPort.x : cursor.x}
-              y2={movingStart ? fixedPort.y : cursor.y}
+              d={draftRoute.d}
             />
           )}
         </svg>
-        {localLinks.map((link) => {
-          const from = visible.find((card) => card.id === link.source);
-          const to = visible.find((card) => card.id === link.target);
-          if (!from || !to) return null;
-          const a = port(from, true);
-          const b = port(to);
-          return (
-            <LinkControl
-              key={`${link.source}:${link.target}`}
-              link={link}
-              highlighted={hoveredLink === `${link.source}:${link.target}`}
-              dimmed={selection !== null && !related(link)}
-              busy={busy}
-              style={{
-                left: (a.x + b.x) / 2,
-                top: (a.y + b.y) / 2,
-              }}
-              save={(item, label) => connect(item.source, item.target, label)}
-              remove={disconnect}
-              reassign={(moving) => selectReconnection(link, moving)}
-            />
-          );
-        })}
+        {routedLinks.map(({ link, key, center }) => (
+          <LinkControl
+            key={key}
+            link={link}
+            highlighted={hoveredLink === key}
+            dimmed={selection !== null && !related(link)}
+            busy={busy}
+            style={{ left: center.x, top: center.y }}
+            save={(item, label) => connect(item.source, item.target, label)}
+            remove={disconnect}
+            reassign={(moving) => selectReconnection(link, moving)}
+          />
+        ))}
         {visible.map((card) => {
           const connected = source !== null && target === card.id;
           const local = onThisBoard(card);
           const isFolder = card.kind === 'folder';
+          const grouped = highlightedGroup.cards.includes(card.id);
           return (
             <article
               key={card.id}
               data-card-id={card.id}
-              className={`mind-card ${local ? '' : 'reference-card'} ${connected ? (validTarget(source ?? card.id, card.id) ? 'valid-target' : 'invalid-target') : ''} ${selection === card.id || group.cards.includes(card.id) ? 'focused-card' : neighbors.has(card.id) ? 'related-card' : ''} ${isFolder ? 'folder-card' : ''} ${dropFolder === card.id ? 'folder-drop-target' : ''} ${temporary[card.id] ? 'dragging-card' : ''}`}
+              className={`mind-card ${local ? '' : 'reference-card'} ${connected ? (validTarget(source ?? card.id, card.id) ? 'valid-target' : 'invalid-target') : ''} ${grouped ? 'grouped-card' : selection === card.id ? 'focused-card' : neighbors.has(card.id) ? 'related-card' : ''} ${isFolder ? 'folder-card' : ''} ${dropFolder?.id === card.id ? (dropFolder.allowed ? 'folder-drop-target' : 'folder-drop-rejected') : ''} ${temporary[card.id] ? 'dragging-card' : ''}`}
               style={{ left: point(card).x, top: point(card).y, ...size(card) }}
               onPointerDown={(event) => start(event, card)}
             >
@@ -1222,9 +1438,7 @@ export function Board({
                       : undefined
                 }
                 aria-pressed={
-                  !isFolder && source === null
-                    ? selection === card.id || group.cards.includes(card.id)
-                    : undefined
+                  source === null ? grouped || (!isFolder && selection === card.id) : undefined
                 }
                 onFocus={() => {
                   if (source !== null) setTarget(card.id);
@@ -1233,6 +1447,7 @@ export function Board({
                   if (!linking.current) setTarget(null);
                 }}
                 onClick={(event) => {
+                  if (event.ctrlKey || event.metaKey) return;
                   if (source !== null && !linking.current) void finishLink(source, card.id);
                   else if (event.detail === 0) selectCard(card);
                 }}

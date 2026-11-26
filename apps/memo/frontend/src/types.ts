@@ -56,6 +56,7 @@ export interface Sketch {
   kind: SketchKind;
   at: Card['coordinates'];
   end: Card['coordinates'];
+  text?: string;
 }
 export type NewBoardMark =
   { kind: 'label'; at: Card['coordinates']; text: string; scale?: number } | Sketch;
@@ -71,6 +72,7 @@ export interface BoardSelection {
   cards: number[];
   marks: number[];
 }
+export type BoardMove = { destination: number } | { offset: Card['coordinates'] };
 export interface Folder {
   id: number;
   name: string;

@@ -6,8 +6,6 @@ export function isTextInput(event: KeyboardEvent): boolean {
 }
 
 export const markTools = [
-  { kind: 'label', icon: 'text', label: 'Добавить подпись', key: 'P' },
-  { kind: 'line', icon: 'line', label: 'Нарисовать линию', key: 'L' },
   { kind: 'square', icon: 'rectangle', label: 'Нарисовать прямоугольник', key: 'Q' },
   { kind: 'circle', icon: 'circle', label: 'Нарисовать круг', key: 'C' },
 ] as const;

@@ -102,10 +102,98 @@ function moveCardToBoard(array $row, int $owner, array $body): void
         }
     }
     if ($project === (int) $row['project_id'] && $folder === folderId($row['folder_id'])) return;
+    if ($folder !== null) {
+        requireLinkedSelection($owner, (int) $row['project_id'], folderId($row['folder_id']), [(int) $row['id']]);
+    }
     $point = nextCardPosition($project, $folder);
     query('UPDATE cards SET project_id=?,folder_id=?,x=?,y=?,version=version+1 WHERE id=?',
         [$project, $folder, $point['x'], $point['y'], $row['id']]);
     touchCard((int) $row['id']);
+}
+
+function requireLinkedSelection(int $owner, int $project, ?int $folder, array $selectedIds): void
+{
+    if (!$selectedIds) return;
+    $selected = array_fill_keys($selectedIds, true);
+    $local = array_fill_keys(query('SELECT id FROM cards WHERE project_id=? AND folder_id <=> ?', [$project, $folder])->fetchAll(\PDO::FETCH_COLUMN), true);
+    foreach (linkRows($owner) as $link) {
+        $source = $link['source'];
+        $target = $link['target'];
+        if (isset($local[$source], $local[$target]) && (isset($selected[$source]) !== isset($selected[$target]))) {
+            fail(409, 'Для переноса в папку выделите всю группу связанных карточек на этом полотне.');
+        }
+    }
+}
+
+function moveBoardSelection(int $project, int $owner, array $body): array
+{
+    if (!isset($body['requestId'])) fail(422, 'Укажите идентификатор операции.');
+    return receipted($owner, 'move-selection:' . $project, $body, static function () use ($project, $owner, $body): array {
+        project($project, $owner);
+        $folder = folderId($body['folder'] ?? null);
+        validateFolder($folder, $project, $owner);
+        $cards = $body['cards'] ?? [];
+        $marks = $body['marks'] ?? [];
+        if (!is_array($cards) || !array_is_list($cards) || !is_array($marks) || !array_is_list($marks) || (!$cards && !$marks)) {
+            fail(422, 'Выберите элементы на полотне.');
+        }
+        $cardRows = [];
+        foreach ($cards as $card) {
+            if (!is_array($card)) fail(422, 'Укажите карточку и её версию.');
+            $id = positiveId($card['id'] ?? null);
+            $row = cardRow($id, $owner);
+            if ((int) $row['project_id'] !== $project || folderId($row['folder_id']) !== $folder) fail(409, 'Карточка уже на другом полотне.');
+            if (($card['version'] ?? null) !== (int) $row['version']) fail(409, 'Карточка изменилась. Сначала обновите полотно.');
+            $cardRows[$id] = $row;
+        }
+        $markRows = [];
+        foreach (array_unique(array_map(__NAMESPACE__ . '\\positiveId', $marks)) as $id) {
+            $row = query('SELECT * FROM board_marks WHERE id=? AND project_id=? AND folder_id <=> ?', [$id, $project, $folder])->fetch();
+            if (!$row) fail(409, 'Элемент разметки уже на другом полотне.');
+            $markRows[$id] = $row;
+        }
+
+        $destination = $folder;
+        if (array_key_exists('destination', $body)) {
+            $destination = positiveId($body['destination']);
+            $destinationRow = cardRow($destination, $owner);
+            if ($destinationRow['kind'] !== 'folder' || (int) $destinationRow['project_id'] !== $project ||
+                folderId($destinationRow['folder_id']) !== $folder || isset($cardRows[$destination])) {
+                fail(422, 'Выберите другую папку на текущем полотне.');
+            }
+            requireLinkedSelection($owner, $project, $folder, array_keys($cardRows));
+            $left = INF;
+            $top = INF;
+            foreach (array_merge($cardRows, $markRows) as $row) {
+                $left = min($left, (float) $row['x'], (float) ($row['end_x'] ?? $row['x']));
+                $top = min($top, (float) $row['y'], (float) ($row['end_y'] ?? $row['y']));
+            }
+            $bottom = query('SELECT MAX(bottom) FROM (
+                SELECT c.y+c.height AS bottom FROM cards c LEFT JOIN card_details d ON d.card_id=c.id
+                WHERE c.project_id=? AND c.folder_id=? AND d.deleted_at IS NULL
+                UNION ALL SELECT GREATEST(y, COALESCE(end_y,y)) FROM board_marks WHERE project_id=? AND folder_id=?
+            ) AS contents', [$project, $destination, $project, $destination])->fetchColumn();
+            $offset = ['x' => 80 - $left, 'y' => max(0, (float) $bottom) + 80 - $top];
+        } else {
+            $offset = coordinates($body['offset'] ?? null);
+        }
+        $shift = static fn($x, $y): array => array_values(coordinates(['x' => (float) $x + $offset['x'], 'y' => (float) $y + $offset['y']]));
+        $savedCards = [];
+        foreach ($cardRows as $id => $row) {
+            [$x, $y] = $shift($row['x'], $row['y']);
+            query('UPDATE cards SET folder_id=?,x=?,y=?,version=version+1 WHERE id=?', [$destination, $x, $y, $id]);
+            touchCard($id);
+            $savedCards[] = cardOutput(cardRow($id, $owner));
+        }
+        $savedMarks = [];
+        foreach ($markRows as $id => $row) {
+            [$x, $y] = $shift($row['x'], $row['y']);
+            [$endX, $endY] = $row['end_x'] === null ? [null, null] : $shift($row['end_x'], $row['end_y']);
+            query('UPDATE board_marks SET folder_id=?,x=?,y=?,end_x=?,end_y=? WHERE id=?', [$destination, $x, $y, $endX, $endY, $id]);
+            $savedMarks[] = boardMarkOutput(query('SELECT * FROM board_marks WHERE id=?', [$id])->fetch());
+        }
+        return ['cards' => $savedCards, 'marks' => $savedMarks];
+    });
 }
 
 function nextCardPosition(int $projectId, ?int $folder = null): array
@@ -337,7 +425,7 @@ function templateProject(int $owner, string $name, string $template): array
         $nodes = match ($template) {
             'family' => [['Родитель 1', 40, 60, 'Имя, даты жизни и воспоминания.'], ['Родитель 2', 420, 60, 'Имя, даты жизни и воспоминания.'], ['Ребёнок', 230, 360, 'Замените примеры участниками вашей семьи.']],
             'outline' => [['Тема', 280, 40, 'Главная мысль конспекта.'], ['Основные идеи', 0, 350, 'Запишите ключевые тезисы.'], ['Источники', 300, 350, 'Ссылки и материалы.'], ['Вопросы', 600, 350, 'Что хочется изучить дальше?']],
-            'retro' => [['Что получилось', 40, 145, 'Что помогло и что стоит повторить?'], ['Что было ожидаемо', 360, 145, 'Что прошло по плану?'], ['Что мешало', 680, 145, 'Что стоит изменить в следующий раз?'], ['Следующие шаги', 40, 470, 'Действие, ответственный и срок.']],
+            'retro' => [['Что мешало', 110, 225, 'Что стоит изменить в следующий раз?'], ['Что получилось', 720, 225, 'Что помогло и что стоит повторить?'], ['Что было ожидаемо', 990, 225, 'Что прошло по плану?'], ['Следующие шаги', 110, 764, 'Действие, ответственный и срок.']],
             'tasks' => [['Собрать требования', 40, 145, 'Опишите результат и укажите срок.'], ['Подготовить черновик', 360, 145, 'Запишите текущий шаг.'], ['Согласовать план', 680, 145, 'Укажите результат или ссылку.']],
             default => [],
         };
@@ -354,17 +442,21 @@ function templateProject(int $owner, string $name, string $template): array
             default => [],
         };
         foreach ($pairs as [$source, $target]) putLink($owner, ['source' => $ids[$source], 'target' => $ids[$target]]);
-        $columns = match ($template) {
-            'retro' => ['Хорошо', 'Нормально', 'Плохо'],
-            'tasks' => ['Сделать', 'В работе', 'Готово'],
-            default => [],
-        };
-        foreach ($columns as $index => $label) {
-            $x = $index * 320;
-            insertBoardMark($projectId, null, 'label', ['x' => $x + 40, 'y' => 40], null, $label);
-            if ($index > 0) {
-                $endY = $template === 'retro' ? 430 : 620;
-                insertBoardMark($projectId, null, 'line', ['x' => $x, 'y' => 40], ['x' => $x, 'y' => $endY], '');
+        if ($template === 'retro') {
+            $frames = [
+                [$name, 40, 95, 1300, 1000],
+                ['Плохо', 76, 175, 654, 650],
+                ['Хорошо', 686, 175, 1264, 650],
+                ['Что будем делать?', 76, 730, 1264, 964],
+            ];
+            foreach ($frames as [$label, $left, $top, $right, $bottom]) {
+                insertBoardMark($projectId, null, 'square', ['x' => $left, 'y' => $top], ['x' => $right, 'y' => $bottom], $label);
+            }
+        } elseif ($template === 'tasks') {
+            foreach (['Сделать', 'В работе', 'Готово'] as $index => $label) {
+                $x = $index * 320;
+                insertBoardMark($projectId, null, 'label', ['x' => $x + 40, 'y' => 40], null, $label);
+                if ($index > 0) insertBoardMark($projectId, null, 'line', ['x' => $x, 'y' => 40], ['x' => $x, 'y' => 620], '');
             }
         }
         return project($projectId, $owner) + ['cards' => count($ids)];
@@ -441,7 +533,8 @@ function boardMarkOutput(array $row): array
 {
     return ['id' => (int) $row['id'], 'kind' => $row['kind'], 'at' => ['x' => (float) $row['x'], 'y' => (float) $row['y']],
         ...($row['kind'] !== 'label'
-            ? ['end' => ['x' => (float) $row['end_x'], 'y' => (float) $row['end_y']]]
+            ? ['end' => ['x' => (float) $row['end_x'], 'y' => (float) $row['end_y']],
+                ...($row['kind'] !== 'line' && $row['label'] !== '' ? ['text' => $row['label']] : [])]
             : ['text' => $row['label'], 'scale' => (float) $row['label_scale']])];
 }
 
@@ -469,7 +562,7 @@ function createBoardMark(int $project, int $owner, array $body): array
         if (!in_array($kind, ['label', 'line', 'square', 'circle'], true)) fail(422, 'Неизвестный элемент полотна.');
         $end = $kind === 'label' ? null : coordinates($body['end'] ?? null);
         if ($end) validateMarkGeometry($kind, $at, $end);
-        $label = $kind === 'label' ? text($body['text'] ?? '') : '';
+        $label = $kind === 'line' ? '' : text($body['text'] ?? '', 128, $kind !== 'label');
         $scale = $body['scale'] ?? 1;
         if ($kind === 'label' && ((!is_float($scale) && !is_int($scale)) || !is_finite($scale) || $scale < 0.4 || $scale > 4)) fail(422, 'Недопустимый размер подписи.');
         return insertBoardMark($project, $folder, $kind, $at, $end, $label, $kind === 'label' ? $scale : 1);
@@ -504,8 +597,8 @@ function changeBoardMark(int $id, int $owner, ?array $body): ?array
         }
         if ($end) validateMarkGeometry($row['kind'], $at, $end);
         if (array_key_exists('text', $body)) {
-            if ($row['kind'] !== 'label') fail(422, 'Текст можно изменить только у подписи.');
-            $row['label'] = text($body['text']);
+            if ($row['kind'] === 'line') fail(422, 'У линии нет подписи.');
+            $row['label'] = text($body['text'], 128, $row['kind'] !== 'label');
         }
         if (array_key_exists('scale', $body)) {
             $scale = $body['scale'];

@@ -1182,23 +1182,23 @@ kbd {
 }
 .search-label {
   min-width: 0;
-  display: flex;
-  gap: 6px;
+  position: relative;
+  display: block;
   flex: 1;
-  align-items: center;
 }
-.search-label > span {
-  font-size: 26px;
+.search-label > .ui-icon {
+  position: absolute;
+  inset-inline-end: 9px;
+  top: 50%;
+  transform: translateY(-50%);
   color: var(--accent);
+  pointer-events: none;
 }
 .search-label input {
   border: 0;
   background: #f5f7fc;
-  padding: 7px 10px;
+  padding: 7px 32px 7px 10px;
   font-size: 13px;
-}
-.global-search > kbd {
-  color: var(--muted);
 }
 .workspace {
   height: 100dvh;
@@ -1519,7 +1519,6 @@ kbd {
   .workspace-header {
     padding-inline: 20px;
   }
-  .global-search > kbd,
   .capture-button kbd {
     display: none;
   }

@@ -20,7 +20,7 @@ import type {
   Trash,
   User,
 } from './types';
-import { Button, ConfirmDialog, IconButton, Popover, Select } from './ui';
+import { Button, ConfirmDialog, Icon, IconButton, Popover, Select } from './ui';
 
 type BlockKind = 'record' | 'folder';
 
@@ -998,22 +998,21 @@ export function App() {
             )}
             <div className="global-search">
               <label className="search-label">
-                <span aria-hidden="true">⌕</span>
                 <input
                   ref={searchInput}
                   type="search"
                   maxLength={128}
                   aria-label="Поиск по всем записям"
                   aria-keyshortcuts="Meta+K Control+K"
-                  placeholder="Найти"
+                  placeholder="Найти · ⌘ / Ctrl K"
                   value={query}
                   onChange={(event) => {
                     setQuery(event.target.value);
                     if (route.view !== 'search') navigate({ view: 'search' });
                   }}
                 />
+                <Icon name="search" size={16} />
               </label>
-              <kbd>⌘ / Ctrl K</kbd>
               <IconButton
                 ref={shortcutsButton}
                 icon="keyboard"

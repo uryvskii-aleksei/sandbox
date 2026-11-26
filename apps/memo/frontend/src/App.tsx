@@ -4,6 +4,7 @@ import { api } from './api';
 import { Board } from './Board';
 import { CardEditor } from './CardEditor';
 import { PanelDivider } from './PanelDivider';
+import { ProjectCreateDialog } from './ProjectCreateDialog';
 import { childPosition, excerpt } from './graph';
 import { QuickCapture } from './QuickCapture';
 import { isTextInput, shortcutHelp } from './shortcuts';
@@ -21,7 +22,7 @@ import type {
   Trash,
   User,
 } from './types';
-import { Button, ConfirmDialog, Icon, IconButton, Popover, Select, Toast } from './ui';
+import { Button, ConfirmDialog, Icon, IconButton, Popover, Toast } from './ui';
 
 type BlockKind = 'record' | 'folder';
 
@@ -239,10 +240,10 @@ export function App() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectsStatus, setProjectsStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [route, setRoute] = useState<Route>(currentRoute);
   const [cards, setCards] = useState<Card[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
-  const [rediscover, setRediscover] = useState<Card[]>([]);
   const [links, setLinks] = useState<CardLink[]>([]);
   const [trash, setTrash] = useState<Trash>({ cards: [], projects: [] });
   const [loading, setLoading] = useState(false);
@@ -251,8 +252,8 @@ export function App() {
   const [editing, setEditing] = useState<Card | null>(null);
   const [openForEditing, setOpenForEditing] = useState(false);
   const [capturing, setCapturing] = useState(false);
-  const [newProject, setNewProject] = useState('');
-  const [template, setTemplate] = useState<Template>('blank');
+  const [projectCreateOpen, setProjectCreateOpen] = useState(false);
+  const projectCreateButton = useRef<HTMLButtonElement>(null);
   const [query, setQuery] = useState('');
   const [hasMore, setHasMore] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -276,13 +277,16 @@ export function App() {
   const searchButton = useRef<HTMLButtonElement>(null);
   const [searchOpen, setSearchOpen] = useState(() => currentRoute().view === 'search');
   const settingsButton = useRef<HTMLButtonElement>(null);
+  const shortcutsButton = useRef<HTMLButtonElement>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [markToolsSlot, setMarkToolsSlot] = useState<HTMLSpanElement | null>(null);
   const [panels, setPanels] = useState(panelPreferences);
   useEffect(() => {
     writeLocal(panelKey, panels);
   }, [panels]);
-  const modal = capturing;
+  const modal = capturing || projectCreateOpen;
+  const showingProjects = route.view === 'dashboard';
+  const visibleProjects = projects.filter((project) => !project.inbox);
   const selected = route.view === 'project' ? route.project : undefined;
   const folder = route.view === 'project' ? (route.folder ?? null) : null;
   const loadKey = `${route.view}:${selected ?? ''}:${folder ?? ''}:${route.view === 'search' ? query : ''}`;
@@ -311,12 +315,30 @@ export function App() {
   useEffect(() => {
     if (!user) return;
     const controller = new AbortController();
-    void Promise.all([api.projects(controller.signal), api.links(controller.signal)])
-      .then(([items, edges]) => {
+    setProjectsStatus('loading');
+    void api
+      .projects(controller.signal)
+      .then((items) => {
         if (!controller.signal.aborted) {
           setProjects(items);
-          setLinks(edges);
+          setProjectsStatus('ready');
         }
+      })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) {
+          setProjectsStatus('error');
+          if (!showingProjects) setError(reasonText(reason));
+        }
+      });
+    return () => controller.abort();
+  }, [user, revision, showingProjects]);
+  useEffect(() => {
+    if (!user) return;
+    const controller = new AbortController();
+    void api
+      .links(controller.signal)
+      .then((edges) => {
+        if (!controller.signal.aborted) setLinks(edges);
       })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) setError(reasonText(reason));
@@ -330,7 +352,7 @@ export function App() {
     pendingPaste.current = null;
   }, [route.view, selected, folder]);
   useEffect(() => {
-    if (!user) return;
+    if (!user || route.view === 'dashboard') return;
     const controller = new AbortController();
     setLoading(true);
     setLoaded(false);
@@ -349,12 +371,7 @@ export function App() {
             const result = await api.trash();
             if (!controller.signal.aborted) setTrash(result);
           } else if (route.view !== 'drafts') {
-            const filter =
-              route.view === 'dashboard'
-                ? 'recent'
-                : route.view === 'inbox' || route.view === 'recent'
-                  ? route.view
-                  : 'all';
+            const filter = route.view === 'inbox' || route.view === 'recent' ? route.view : 'all';
             const result = await api.search(
               route.view === 'search' ? query : '',
               filter,
@@ -363,10 +380,6 @@ export function App() {
             if (!controller.signal.aborted) {
               setCards(result.cards);
               setHasMore(result.hasMore);
-            }
-            if (route.view === 'dashboard') {
-              const old = await api.search('', 'rediscover', controller.signal);
-              if (!controller.signal.aborted) setRediscover(old.cards);
             }
           }
           if (!controller.signal.aborted) setLoaded(true);
@@ -494,15 +507,17 @@ export function App() {
       setUser(result.user);
     });
   };
-  const createProject = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    run(async () => {
-      const result = await api.createProject(newProject, template);
-      setProjects((items) => [result, ...items]);
-      setNewProject('');
-      navigate({ view: 'project', project: result.id });
-      await refreshLinks();
-    });
+  const createProject = async (name: string, template: Template, requestId: string) => {
+    const result = await api.createProject(name, template, requestId);
+    setProjects((items) => [result, ...items.filter((item) => item.id !== result.id)]);
+    setProjectCreateOpen(false);
+    setViewMode('board');
+    navigate({ view: 'project', project: result.id });
+    refresh();
+  };
+  const dismissProjectCreate = () => {
+    setProjectCreateOpen(false);
+    requestAnimationFrame(() => projectCreateButton.current?.focus());
   };
   const dismissSettings = () => {
     setProjectSettingsOpen(false);
@@ -566,9 +581,9 @@ export function App() {
       if (event.shiftKey && event.code === 'KeyH') {
         event.preventDefault();
         setSearchOpen(false);
-        setProjectSettingsOpen(true);
+        setProjectSettingsOpen(false);
         setShortcutsOpen(true);
-        settingsButton.current?.focus();
+        shortcutsButton.current?.focus();
       } else if (event.code === 'KeyN' && !event.shiftKey && !busy) {
         event.preventDefault();
         dismissSettings();
@@ -949,24 +964,22 @@ export function App() {
           </nav>
           <p className="nav-section">ПРОЕКТЫ</p>
           <nav className="project-navigation" aria-label="Проекты">
-            {projects
-              .filter((project) => !project.inbox)
-              .map((project) => (
-                <button
-                  key={project.id}
-                  className={`nav-item ${selected === project.id ? 'selected' : ''}`}
-                  disabled={busy}
-                  onClick={() => navigate({ view: 'project', project: project.id })}
-                  aria-label={project.name}
-                  title={panels.collapsed ? project.name : undefined}
-                >
-                  <span className="project-dot" aria-hidden="true">
-                    <span>{project.name.slice(0, 1).toLocaleUpperCase('ru')}</span>
-                  </span>
-                  <span className="sidebar-label">{project.name}</span>
-                  <small>{project.cards ?? 0}</small>
-                </button>
-              ))}
+            {visibleProjects.map((project) => (
+              <button
+                key={project.id}
+                className={`nav-item ${selected === project.id ? 'selected' : ''}`}
+                disabled={busy}
+                onClick={() => navigate({ view: 'project', project: project.id })}
+                aria-label={project.name}
+                title={panels.collapsed ? project.name : undefined}
+              >
+                <span className="project-dot" aria-hidden="true">
+                  <span>{project.name.slice(0, 1).toLocaleUpperCase('ru')}</span>
+                </span>
+                <span className="sidebar-label">{project.name}</span>
+                <small>{project.cards ?? 0}</small>
+              </button>
+            ))}
           </nav>
           <div className="sidebar-bottom">
             <span className="avatar">{user.email[0].toUpperCase()}</span>
@@ -982,7 +995,6 @@ export function App() {
                   setProjects([]);
                   setCards([]);
                   setLinks([]);
-                  setRediscover([]);
                   setTrash({ cards: [], projects: [] });
                   setQuery('');
                   setBoardClipboard(null);
@@ -1042,8 +1054,60 @@ export function App() {
                 <h1>{active?.name ?? names[route.view]}</h1>
               )}
             </div>
+            <div className="workspace-shortcuts">
+              <IconButton
+                ref={shortcutsButton}
+                icon="keyboard"
+                iconSize={22}
+                label="Сочетания клавиш"
+                aria-expanded={shortcutsOpen}
+                aria-controls={shortcutsOpen ? 'keyboard-shortcuts' : undefined}
+                aria-keyshortcuts="Alt+Shift+H"
+                onClick={() => {
+                  setProjectSettingsOpen(false);
+                  setShortcutsOpen((open) => !open);
+                }}
+              />
+              {shortcutsOpen && (
+                <Popover
+                  id="keyboard-shortcuts"
+                  className="shortcuts-panel"
+                  role="region"
+                  aria-labelledby="shortcuts-title"
+                  trigger={shortcutsButton}
+                  onDismiss={() => setShortcutsOpen(false)}
+                >
+                  <h2 id="shortcuts-title">Сочетания клавиш</h2>
+                  <dl className="shortcut-list">
+                    {shortcutHelp.map(([action, keys]) => (
+                      <div key={action}>
+                        <dt>{action}</dt>
+                        <dd>
+                          <kbd>{keys}</kbd>
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </Popover>
+              )}
+            </div>
           </header>
           <div className="project-toolbar">
+            {showingProjects && (
+              <Button
+                ref={projectCreateButton}
+                variant="primary"
+                icon="plus"
+                aria-haspopup="dialog"
+                disabled={busy}
+                onClick={() => {
+                  dismissSettings();
+                  setProjectCreateOpen(true);
+                }}
+              >
+                Создать проект
+              </Button>
+            )}
             {active && (
               <div className="board-add" role="group" aria-label="Добавить на полотно">
                 <IconButton
@@ -1089,93 +1153,68 @@ export function App() {
                 />
               </div>
             )}
-            <div className="project-settings">
-              <IconButton
-                ref={settingsButton}
-                icon="settings"
-                label={active ? 'Настройки проекта' : 'Настройки Memo'}
-                tooltip="Настройки"
-                aria-expanded={projectSettingsOpen}
-                aria-controls={projectSettingsOpen ? 'project-settings-panel' : undefined}
-                onClick={() =>
-                  projectSettingsOpen ? dismissSettings() : setProjectSettingsOpen(true)
-                }
-              />
-              {projectSettingsOpen && (
-                <Popover
-                  id="project-settings-panel"
-                  role="region"
-                  aria-label={active ? 'Настройки проекта' : 'Настройки Memo'}
-                  trigger={settingsButton}
-                  onDismiss={dismissSettings}
-                  className={
-                    shortcutsOpen
-                      ? 'project-settings-panel has-shortcuts'
-                      : 'project-settings-panel'
-                  }
-                >
-                  <Button
-                    variant="text"
-                    icon="keyboard"
-                    aria-expanded={shortcutsOpen}
-                    aria-controls={shortcutsOpen ? 'keyboard-shortcuts' : undefined}
-                    aria-keyshortcuts="Alt+Shift+H"
-                    onClick={() => setShortcutsOpen((open) => !open)}
+            {active && (
+              <div className="project-settings">
+                <IconButton
+                  ref={settingsButton}
+                  icon="more"
+                  label="Действия с проектом"
+                  tooltip="Действия с проектом"
+                  aria-expanded={projectSettingsOpen}
+                  aria-controls={projectSettingsOpen ? 'project-settings-panel' : undefined}
+                  onClick={() => {
+                    setShortcutsOpen(false);
+                    setProjectSettingsOpen((open) => !open);
+                  }}
+                />
+                {projectSettingsOpen && (
+                  <Popover
+                    id="project-settings-panel"
+                    role="region"
+                    aria-label="Действия с проектом"
+                    trigger={settingsButton}
+                    onDismiss={dismissSettings}
+                    className="project-settings-panel"
                   >
-                    Сочетания клавиш
-                  </Button>
-                  {shortcutsOpen && (
-                    <dl className="shortcut-list" id="keyboard-shortcuts">
-                      {shortcutHelp.map(([action, keys]) => (
-                        <div key={action}>
-                          <dt>{action}</dt>
-                          <dd>
-                            <kbd>{keys}</kbd>
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                  )}
-                  {active && (
-                    <>
-                      <Button
-                        variant="text"
-                        disabled={busy}
-                        onClick={() => {
-                          dismissSettings();
-                          exportActive();
-                        }}
-                      >
-                        Экспорт
-                      </Button>
-                      <Button
-                        variant="text"
-                        className="danger"
-                        disabled={busy || active.inbox}
-                        onClick={() => {
-                          settingsButton.current?.focus();
-                          dismissSettings();
-                          requestDelete({ project: active });
-                        }}
-                      >
-                        В корзину
-                      </Button>
-                    </>
-                  )}
-                </Popover>
-              )}
-            </div>
+                    <Button
+                      variant="text"
+                      disabled={busy}
+                      onClick={() => {
+                        dismissSettings();
+                        exportActive();
+                      }}
+                    >
+                      Экспорт
+                    </Button>
+                    <Button
+                      variant="text"
+                      className="danger"
+                      disabled={busy || active.inbox}
+                      onClick={() => {
+                        settingsButton.current?.focus();
+                        dismissSettings();
+                        requestDelete({ project: active });
+                      }}
+                    >
+                      В корзину
+                    </Button>
+                  </Popover>
+                )}
+              </div>
+            )}
             {!showingBoard && toasts && (
               <div className="memo-toast-stack toolbar-toasts">{toasts}</div>
             )}
           </div>
-          {loading || loadedKey !== loadKey ? (
+          {(showingProjects ? projectsStatus === 'loading' : loading || loadedKey !== loadKey) ? (
             <div className="loading-screen" role="status">
-              Загружаем записи…
+              {showingProjects ? 'Загружаем проекты…' : 'Загружаем записи…'}
             </div>
-          ) : !loaded ? (
+          ) : !(showingProjects ? projectsStatus === 'ready' : loaded) ? (
             <div className="loading-screen">
-              <p>Не удалось загрузить записи.</p>
+              <p>
+                {showingProjects ? 'Не удалось загрузить проекты.' : 'Не удалось загрузить записи.'}
+              </p>
               <button className="secondary" onClick={refresh}>
                 Повторить загрузку
               </button>
@@ -1192,7 +1231,7 @@ export function App() {
                 notifications={toasts}
                 locate={locate}
                 busy={busy || modal}
-                keyboardDisabled={projectSettingsOpen || searchOpen}
+                keyboardDisabled={projectSettingsOpen || shortcutsOpen || searchOpen}
                 storageKey={`memo:${user.id}:camera:${selected}${folder === null ? '' : `:${folder}`}`}
                 focusId={focusId}
                 clipboard={boardClipboard}
@@ -1219,99 +1258,25 @@ export function App() {
                 {!cards.length && <p className="empty-message">Здесь пока нет записей и папок.</p>}
               </section>
             )
-          ) : route.view === 'dashboard' ? (
-            <section className="dashboard">
-              <p className="lead">
-                Сохраняйте мысли сразу. Объединяйте людей, темы и идеи в понятную картину.
-              </p>
-              <form className="new-project" onSubmit={createProject}>
-                <label>
-                  Название проекта
-                  <input
-                    required
-                    maxLength={128}
-                    placeholder="Например: Семья, Учёба, Ретро ноября"
-                    value={newProject}
-                    onChange={(event) => setNewProject(event.target.value)}
-                  />
-                </label>
-                <Select
-                  label="Начать с шаблона"
-                  value={template}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setTemplate(
-                      value === 'family' ||
-                        value === 'outline' ||
-                        value === 'retro' ||
-                        value === 'tasks'
-                        ? value
-                        : 'blank',
-                    );
-                  }}
-                >
-                  <option value="blank">Пустой проект</option>
-                  <option value="family">Семейное дерево</option>
-                  <option value="outline">Конспект по теме</option>
-                  <option value="retro">Ретроспектива</option>
-                  <option value="tasks">Трекер задач</option>
-                </Select>
-                <button className="primary" disabled={busy || !newProject.trim()}>
-                  Создать проект
-                </button>
-              </form>
-              <div className="project-grid">
-                {projects
-                  .filter((project) => !project.inbox)
-                  .map((project) => (
-                    <button
-                      className="project-tile"
-                      key={project.id}
-                      onClick={() => navigate({ view: 'project', project: project.id })}
-                    >
-                      <span className="tile-symbol">⌘</span>
-                      <h2>{project.name}</h2>
-                      <p>{project.cards ?? 0} записей</p>
-                      <span className="tile-arrow">↗</span>
-                    </button>
+          ) : showingProjects ? (
+            <section className="library-panel">
+              {visibleProjects.length ? (
+                <ul className="project-list">
+                  {visibleProjects.map((project) => (
+                    <li key={project.id}>
+                      <button
+                        className="project-row"
+                        disabled={busy}
+                        onClick={() => navigate({ view: 'project', project: project.id })}
+                      >
+                        <span className="project-row-name">{project.name}</span>
+                        <span className="project-row-count">Записей: {project.cards ?? 0}</span>
+                      </button>
+                    </li>
                   ))}
-              </div>
-              {!projects.some((project) => !project.inbox) && (
-                <div className="empty-projects">
-                  <span>✧</span>
-                  <h2>Какую историю соберём?</h2>
-                  <p>Выберите шаблон для ретро, семейного дерева, конспекта или трекера задач.</p>
-                </div>
-              )}
-              {cards.length > 0 && (
-                <section className="dashboard-section">
-                  <div className="section-heading">
-                    <h2>Продолжить работу</h2>
-                    <button className="text-button" onClick={() => navigate({ view: 'recent' })}>
-                      Все недавние
-                    </button>
-                  </div>
-                  <CardList
-                    cards={cards.slice(0, 5)}
-                    projects={projects}
-                    open={openFromList}
-                    locate={locate}
-                  />
-                </section>
-              )}
-              {rediscover.length > 0 && (
-                <section className="dashboard-section">
-                  <h2>Вернуться к записям</h2>
-                  <p className="help-text">
-                    То, что вы давно не открывали. Возможно, сейчас появится новая связь.
-                  </p>
-                  <CardList
-                    cards={rediscover.slice(0, 3)}
-                    projects={projects}
-                    open={openFromList}
-                    locate={locate}
-                  />
-                </section>
+                </ul>
+              ) : (
+                <p className="empty-message">У вас пока нет проектов.</p>
               )}
             </section>
           ) : route.view === 'trash' ? (
@@ -1460,6 +1425,9 @@ export function App() {
           </div>
         )}
       </div>
+      {projectCreateOpen && (
+        <ProjectCreateDialog create={createProject} dismiss={dismissProjectCreate} />
+      )}
       {confirmDelete && (
         <ConfirmDialog
           title={'project' in confirmDelete ? 'Переместить проект в корзину?' : 'Удалить черновик?'}

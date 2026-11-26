@@ -13,14 +13,20 @@ try {
     $parent = (int) database()->lastInsertId();
     query('INSERT INTO cards(project_id,parent_id,name) VALUES(?,?,?)', [$project, $parent, 'Child']);
     $child = (int) database()->lastInsertId();
-    query("DELETE FROM schema_migrations WHERE name='card-links-v1'");
+    query("UPDATE projects SET created_at='2024-01-01 00:00:00' WHERE id=?", [$project]);
+    query("INSERT INTO card_details(card_id,updated_at) VALUES(?,'2024-02-01 00:00:00.123456')", [$parent]);
+    query("INSERT INTO card_details(card_id,updated_at,opened_at) VALUES(?,'2024-03-01 00:00:00.000000','2024-03-01 00:00:00.000000')", [$child]);
+    query("DELETE FROM schema_migrations WHERE name IN ('card-links-v1','project-activity-v1')");
     require '/var/www/memo/database/migrate.php';
+    $lastEdit = query('SELECT updated_at FROM projects WHERE id=?', [$project])->fetchColumn();
+    if ($lastEdit !== '2024-02-01 00:00:00.123456') throw new RuntimeException('Project activity did not preserve the last saved card edit');
     if ((int) query('SELECT COUNT(*) FROM card_links WHERE source_id=? AND target_id=?', [$parent,$child])->fetchColumn() !== 1) throw new RuntimeException('Legacy edge was not preserved');
     query('DELETE FROM card_links WHERE source_id=? AND target_id=?', [$parent,$child]);
     // Повтор миграции не воскрешает удалённые пользователем связи.
     require '/var/www/memo/database/migrate.php';
     if ((int) query('SELECT COUNT(*) FROM card_links WHERE source_id=? AND target_id=?', [$parent,$child])->fetchColumn() !== 0) throw new RuntimeException('Migration resurrected an edge');
-    echo "Legacy graph migration and repeatability verified.\n";
+    if (query('SELECT updated_at FROM projects WHERE id=?', [$project])->fetchColumn() !== $lastEdit) throw new RuntimeException('Migration changed project activity on repeat');
+    echo "Legacy graph migration, project activity and repeatability verified.\n";
 } finally {
     query('DELETE FROM users WHERE id=?', [$owner]);
 }

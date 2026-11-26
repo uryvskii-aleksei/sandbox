@@ -25,12 +25,26 @@ if ($markKind && $markKind['Type'] === "enum('label','line')") {
 if (!$pdo->query("SHOW COLUMNS FROM board_marks WHERE Field = 'label_scale'")->fetch()) {
     $pdo->exec('ALTER TABLE board_marks ADD COLUMN label_scale DOUBLE NOT NULL DEFAULT 1');
 }
+if (!$pdo->query("SHOW COLUMNS FROM projects WHERE Field = 'updated_at'")->fetch()) {
+    $pdo->exec('ALTER TABLE projects ADD COLUMN updated_at DATETIME(6) NULL');
+}
 $pdo->beginTransaction();
 try {
     $marker = $pdo->prepare('INSERT IGNORE INTO schema_migrations(name) VALUES(?)');
     $marker->execute(['card-links-v1']);
     if ($marker->rowCount() === 1) {
         $pdo->exec("INSERT IGNORE INTO card_links(source_id,target_id) SELECT parent_id,id FROM cards WHERE parent_id IS NOT NULL");
+    }
+    $marker->execute(['project-activity-v1']);
+    if ($marker->rowCount() === 1) {
+        // У старых проектов используем сохранённые правки карточек. Первое открытие старой карточки могло создать обе даты сразу.
+        $pdo->exec('UPDATE projects p JOIN (
+            SELECT c.project_id, MAX(GREATEST(d.updated_at, COALESCE(d.deleted_at, d.updated_at))) AS last_edit
+            FROM cards c JOIN card_details d ON d.card_id=c.id
+            WHERE d.opened_at IS NULL OR d.opened_at<>d.updated_at OR d.deleted_at IS NOT NULL
+            GROUP BY c.project_id
+        ) activity ON activity.project_id=p.id
+        SET p.updated_at=activity.last_edit WHERE p.updated_at IS NULL AND activity.last_edit>p.created_at');
     }
     $pdo->commit();
 } catch (\Throwable $error) {

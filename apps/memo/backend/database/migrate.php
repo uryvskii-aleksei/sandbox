@@ -13,7 +13,7 @@ if (!$pdo->query("SHOW COLUMNS FROM cards WHERE Field = 'kind'")->fetch()) {
 if (!$pdo->query("SHOW COLUMNS FROM cards WHERE Field = 'folder_id'")->fetch()) {
     $pdo->exec('ALTER TABLE cards ADD COLUMN folder_id INT UNSIGNED NULL, ADD INDEX card_board (project_id, folder_id)');
 }
-foreach (['width' => 280, 'height' => 70] as $column => $default) {
+foreach (['width' => 188, 'height' => 70] as $column => $default) {
     $definition = $pdo->query("SHOW COLUMNS FROM cards WHERE Field = '$column'")->fetch();
     if (!$definition) {
         $pdo->exec("ALTER TABLE cards ADD COLUMN $column SMALLINT UNSIGNED NOT NULL DEFAULT $default");

@@ -654,6 +654,31 @@ export function App() {
       await importWorkspace(pending);
     });
   };
+  const logout = () =>
+    run(async () => {
+      await api.logout();
+      clearGuestStorage();
+      setGuest(createGuestWorkspace());
+      setAccount(null);
+      setLoaded(false);
+      setLoadedKey('');
+      entryRoute.current = { view: 'dashboard' };
+      setRoute(guestRoute);
+      setViewMode('board');
+      history.replaceState(null, '', base);
+      setProjects([]);
+      setCards([]);
+      setWorkspace(null);
+      openedLink.current = undefined;
+      setLinks([]);
+      setTrash({ cards: [], projects: [] });
+      setQuery('');
+      setSearchOpen(false);
+      setBoardClipboard(null);
+      setDeletedItem(null);
+      setNotice('');
+      setEditing(null);
+    });
   const createProject = async (name: string, template: Template, requestId: string) => {
     const result = await api.createProject(name, template, requestId);
     setProjects((items) => [result, ...items.filter((item) => item.id !== result.id)]);
@@ -1020,43 +1045,6 @@ export function App() {
               </nav>
             </>
           )}
-          <div className="sidebar-bottom">
-            <span className="avatar">{user.email.charAt(0).toUpperCase()}</span>
-            <span title={user.email}>{user.email}</span>
-            <button
-              className="icon-button"
-              disabled={busy}
-              aria-label="Выйти"
-              onClick={() =>
-                run(async () => {
-                  await api.logout();
-                  clearGuestStorage();
-                  setGuest(createGuestWorkspace());
-                  setAccount(null);
-                  setLoaded(false);
-                  setLoadedKey('');
-                  entryRoute.current = { view: 'dashboard' };
-                  setRoute(guestRoute);
-                  setViewMode('board');
-                  history.replaceState(null, '', base);
-                  setProjects([]);
-                  setCards([]);
-                  setWorkspace(null);
-                  openedLink.current = undefined;
-                  setLinks([]);
-                  setTrash({ cards: [], projects: [] });
-                  setQuery('');
-                  setSearchOpen(false);
-                  setBoardClipboard(null);
-                  setDeletedItem(null);
-                  setNotice('');
-                  setEditing(null);
-                })
-              }
-            >
-              ↪
-            </button>
-          </div>
           {!panels.collapsed && (
             <PanelDivider
               side="left"
@@ -1070,59 +1058,45 @@ export function App() {
         </aside>
         <main className="workspace">
           <header className="workspace-header">
-            <div className="workspace-heading" inert={searchOpen && !guestMode}>
-              {folder !== null && active && (
-                <nav className="board-breadcrumbs" aria-label="Путь к папке">
-                  <button
-                    title={active.name}
-                    onClick={() =>
-                      navigate({ view: 'project', project: active.publicId ?? active.id })
-                    }
-                  >
-                    {active.name}
-                  </button>
-                  <span aria-hidden="true">/</span>
-                  {trail
-                    .filter((item) => item.id !== folder)
-                    .map((item) => (
-                      <span key={item.id}>
-                        <button
-                          title={item.name}
-                          onClick={() => enterFolder(item.publicId, active.id)}
-                        >
-                          {item.name}
-                        </button>
-                        <span aria-hidden="true">/</span>
-                      </span>
-                    ))}
-                </nav>
-              )}
-              {active && (folder === null || activeFolder) ? (
-                <WorkspaceTitle
-                  key={activeFolder ? `folder-${activeFolder.id}` : `project-${active.id}`}
-                  name={activeFolder?.name ?? active.name}
-                  label={activeFolder ? 'Название папки' : 'Название проекта'}
-                  save={(name) => renameTitle(active, activeFolder, name)}
-                />
-              ) : (
-                <h1>{active?.name ?? names[route.view]}</h1>
-              )}
-            </div>
-            <div className="workspace-header-actions">
-              {guestMode && (
-                <Button
-                  className="guest-auth-button"
-                  aria-haspopup="dialog"
-                  disabled={busy}
-                  onClick={() => {
-                    setAuthError('');
-                    setMode('login');
-                    setAuthOpen(true);
-                  }}
-                >
-                  Войти
-                </Button>
-              )}
+            <div className="workspace-header-main">
+              <div className="workspace-heading" inert={searchOpen && !guestMode}>
+                {folder !== null && active && (
+                  <nav className="board-breadcrumbs" aria-label="Путь к папке">
+                    <button
+                      title={active.name}
+                      onClick={() =>
+                        navigate({ view: 'project', project: active.publicId ?? active.id })
+                      }
+                    >
+                      {active.name}
+                    </button>
+                    <span aria-hidden="true">/</span>
+                    {trail
+                      .filter((item) => item.id !== folder)
+                      .map((item) => (
+                        <span key={item.id}>
+                          <button
+                            title={item.name}
+                            onClick={() => enterFolder(item.publicId, active.id)}
+                          >
+                            {item.name}
+                          </button>
+                          <span aria-hidden="true">/</span>
+                        </span>
+                      ))}
+                  </nav>
+                )}
+                {active && (folder === null || activeFolder) ? (
+                  <WorkspaceTitle
+                    key={activeFolder ? `folder-${activeFolder.id}` : `project-${active.id}`}
+                    name={activeFolder?.name ?? active.name}
+                    label={activeFolder ? 'Название папки' : 'Название проекта'}
+                    save={(name) => renameTitle(active, activeFolder, name)}
+                  />
+                ) : (
+                  <h1>{active?.name ?? names[route.view]}</h1>
+                )}
+              </div>
               {!guestMode && (
                 <div className="workspace-search">
                   <IconButton
@@ -1162,43 +1136,33 @@ export function App() {
                   )}
                 </div>
               )}
-              <div className="workspace-shortcuts">
-                <IconButton
-                  ref={shortcutsButton}
-                  icon="keyboard"
-                  iconSize={22}
-                  label="Сочетания клавиш"
-                  aria-expanded={shortcutsOpen}
-                  aria-controls={shortcutsOpen ? 'keyboard-shortcuts' : undefined}
-                  aria-keyshortcuts="Alt+Shift+H"
-                  onClick={() => {
-                    setShortcutsOpen((open) => !open);
-                  }}
-                />
-                {shortcutsOpen && (
-                  <Popover
-                    id="keyboard-shortcuts"
-                    className="shortcuts-panel"
-                    role="region"
-                    aria-labelledby="shortcuts-title"
-                    trigger={shortcutsButton}
-                    onDismiss={() => setShortcutsOpen(false)}
-                  >
-                    <h2 id="shortcuts-title">Сочетания клавиш</h2>
-                    <dl className="shortcut-list">
-                      {shortcutHelp.map(([action, keys]) => (
-                        <div key={action}>
-                          <dt>{action}</dt>
-                          <dd>
-                            <kbd>{keys}</kbd>
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </Popover>
-                )}
-              </div>
             </div>
+            {guestMode ? (
+              <Button
+                className="guest-auth-button"
+                aria-haspopup="dialog"
+                disabled={busy}
+                onClick={() => {
+                  setAuthError('');
+                  setMode('login');
+                  setAuthOpen(true);
+                }}
+              >
+                Войти
+              </Button>
+            ) : (
+              <div className="workspace-account">
+                <span className="avatar" aria-hidden="true">
+                  {user.email.charAt(0).toUpperCase()}
+                </span>
+                <span className="workspace-email" title={user.email}>
+                  {user.email}
+                </span>
+                <button className="icon-button" disabled={busy} aria-label="Выйти" onClick={logout}>
+                  ↪
+                </button>
+              </div>
+            )}
           </header>
           <div className="project-toolbar">
             {showingProjects && (
@@ -1271,9 +1235,6 @@ export function App() {
                   </Popover>
                 )}
               </div>
-            )}
-            {guestMode && (
-              <p className="guest-notice">Временное полотно. Войдите, чтобы сохранить.</p>
             )}
             {active && (
               <div className="view-switch" role="group" aria-label="Вид проекта">
@@ -1490,6 +1451,40 @@ export function App() {
               )}
             </section>
           )}
+          <div className="workspace-shortcuts">
+            <IconButton
+              ref={shortcutsButton}
+              icon="keyboard"
+              iconSize={22}
+              label="Сочетания клавиш"
+              aria-expanded={shortcutsOpen}
+              aria-controls={shortcutsOpen ? 'keyboard-shortcuts' : undefined}
+              aria-keyshortcuts="Alt+Shift+H"
+              onClick={() => setShortcutsOpen((open) => !open)}
+            />
+            {shortcutsOpen && (
+              <Popover
+                id="keyboard-shortcuts"
+                className="shortcuts-panel"
+                role="region"
+                aria-labelledby="shortcuts-title"
+                trigger={shortcutsButton}
+                onDismiss={() => setShortcutsOpen(false)}
+              >
+                <h2 id="shortcuts-title">Сочетания клавиш</h2>
+                <dl className="shortcut-list">
+                  {shortcutHelp.map(([action, keys]) => (
+                    <div key={action}>
+                      <dt>{action}</dt>
+                      <dd>
+                        <kbd>{keys}</kbd>
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </Popover>
+            )}
+          </div>
         </main>
         {editing && (
           <div className="record-dock">

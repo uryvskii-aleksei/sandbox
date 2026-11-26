@@ -31,7 +31,8 @@ try {
 
     query('INSERT INTO cards(project_id,name) VALUES(?,?)', [$project, 'New default']);
     $newCard = (int) database()->lastInsertId();
-    if ((int) query('SELECT height FROM cards WHERE id=?', [$newCard])->fetchColumn() !== 70) throw new RuntimeException('New cards still use the old height');
+    $newSize = query('SELECT width,height FROM cards WHERE id=?', [$newCard])->fetch(PDO::FETCH_NUM);
+    if (array_map('intval', $newSize) !== [188,70]) throw new RuntimeException('New cards did not get the compact default size');
     query('DELETE FROM cards WHERE id=?', [$newCard]);
     $lastEdit = query('SELECT updated_at FROM projects WHERE id=?', [$project])->fetchColumn();
     if ($lastEdit !== '2024-02-01 00:00:00.123456') throw new RuntimeException('Project activity did not preserve the last saved card edit');

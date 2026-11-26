@@ -1,6 +1,6 @@
 import type { Card, CardLink, DocumentNode, FieldGroup } from './types';
 
-export const cardWidth = 280;
+export const cardWidth = 188;
 export const cardHeight = 70;
 export const cardDimensions = (card: Card) => card.size ?? { width: cardWidth, height: cardHeight };
 export const clampCardSize = (width: number, height: number) => ({

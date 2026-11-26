@@ -1,7 +1,7 @@
 {
   "version": 1,
   "app": "mind-assistant",
-  "commit": "3c93b27713749372bcc0d8c6371c469d1d814bc3",
-  "sha256": "889b795b6d853141009af466862c481d18b322e7741a66ff319d7f4db071b1a9",
-  "artifact": "mind-assistant-3c93b27713749372bcc0d8c6371c469d1d814bc3.tar.gz"
+  "commit": "fda02f90e04ddbb91bc5f5e0b6be5e21cea756da",
+  "sha256": "b6d1c9bbf506038818bca1958d93799471ffe3a0fa165e3891fbca072382fccf",
+  "artifact": "mind-assistant-fda02f90e04ddbb91bc5f5e0b6be5e21cea756da.tar.gz"
 }

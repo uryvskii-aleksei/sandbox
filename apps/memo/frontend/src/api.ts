@@ -277,6 +277,15 @@ export const api = {
     coordinates?: Card['coordinates'];
   }) => request('/capture', isCard, { method: 'POST', body: JSON.stringify(body) }),
   visit: (id: number) => request(`/cards/${id}/visit`, isCard, { method: 'POST', body: '{}' }),
+  copyCard: (
+    id: number,
+    body: {
+      requestId: string;
+      project: number;
+      folder: number | null;
+      coordinates: Card['coordinates'];
+    },
+  ) => request(`/cards/${id}/copy`, isCard, { method: 'POST', body: JSON.stringify(body) }),
   move: (card: Card, project: number, folder: number | null) =>
     request(`/cards/${card.id}/move`, isCard, {
       method: 'POST',

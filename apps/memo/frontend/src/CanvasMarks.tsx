@@ -179,7 +179,7 @@ export function useCanvasMarks(project: number, folder: number | null) {
     setTool(tool === next ? null : next);
   };
   const choose = (mark: BoardMark, edit = true) => {
-    if (blocked.current || tool) return;
+    if (blocked.current) return;
     setSelected(mark.id);
     setDraft(
       mark.kind === 'label' && edit
@@ -187,14 +187,16 @@ export function useCanvasMarks(project: number, folder: number | null) {
         : null,
     );
   };
+  const placeLabel = (at: Point) => {
+    if (blocked.current || loading) return;
+    setDraft({ at, text: '' });
+    setTool(null);
+  };
   const start = (at: Point) => {
     if (tool && tool !== 'label' && !drawing.current) {
       drawing.current = { kind: tool, at, end: at };
       setPreview(drawing.current);
-    } else if (tool === 'label') {
-      setDraft({ at, text: '' });
-      setTool(null);
-    }
+    } else if (tool === 'label') placeLabel(at);
   };
   const move = (end: Point, straight: boolean) => {
     const current = drawing.current;
@@ -249,6 +251,8 @@ export function useCanvasMarks(project: number, folder: number | null) {
     tool,
     arm,
     start,
+    placeLabel,
+    store,
     move,
     finish,
     choose,
@@ -465,7 +469,12 @@ export function MarkLayer({
           const middleY = (mark.at.y + mark.end.y) / 2;
           const handles = mark.kind === 'square' ? corners : (['at', 'end'] as const);
           return (
-            <g key={mark.id} data-kind={mark.kind} data-active={selected || undefined}>
+            <g
+              key={mark.id}
+              data-kind={mark.kind}
+              data-active={selected || undefined}
+              data-menu-mark={mark.id}
+            >
               <MarkStroke
                 sketch={mark}
                 className={`mark-stroke ${grouped ? 'mark-grouped' : ''}`}
@@ -535,6 +544,7 @@ export function MarkLayer({
               key={mark.id}
               className="canvas-label-item"
               data-mark-id={mark.id}
+              data-menu-mark={mark.id}
               style={{ left: mark.at.x, top: mark.at.y, ...labelStyle(mark.scale) }}
             >
               <button

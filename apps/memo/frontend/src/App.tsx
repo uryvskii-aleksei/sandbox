@@ -11,6 +11,7 @@ import { draftKey, listDrafts, readLocal, removeLocal, writeLocal } from './stor
 import { folderTrail } from './types';
 import type {
   BoardSelection,
+  BoardClipboard,
   Card,
   CardLink,
   Folder,
@@ -19,7 +20,7 @@ import type {
   Trash,
   User,
 } from './types';
-import { IconButton } from './ui';
+import { Button, ConfirmDialog, IconButton, Popover, Select } from './ui';
 
 type BlockKind = 'record' | 'folder';
 
@@ -256,30 +257,29 @@ export function App() {
   const [revision, setRevision] = useState(0);
   const [focusId, setFocusId] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
-  const pendingBlock = useRef<Partial<Record<BlockKind, string>>>({});
+  const pendingBlock = useRef<
+    Partial<Record<BlockKind, { requestId: string; coordinates?: Card['coordinates'] }>>
+  >({});
+  const [boardClipboard, setBoardClipboard] = useState<BoardClipboard | null>(null);
+  const pendingPaste = useRef<{ requestId: string; coordinates: Card['coordinates'] } | null>(null);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<{ project: Project } | { draft: Card } | null>(
+    null,
+  );
+  const [deleteError, setDeleteError] = useState('');
   const [notice, setNotice] = useState('');
   const [deletedItem, setDeletedItem] = useState<{ id: number; type: 'card' | 'project' } | null>(
     null,
   );
   const searchInput = useRef<HTMLInputElement>(null);
   const shortcutsButton = useRef<HTMLButtonElement>(null);
-  const searchArea = useRef<HTMLDivElement>(null);
+  const settingsButton = useRef<HTMLButtonElement>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [markToolsSlot, setMarkToolsSlot] = useState<HTMLSpanElement | null>(null);
   const [panels, setPanels] = useState(panelPreferences);
   useEffect(() => {
     writeLocal(panelKey, panels);
   }, [panels]);
-  useEffect(() => {
-    if (!shortcutsOpen) return;
-    const dismiss = (event: PointerEvent) => {
-      if (event.target instanceof Node && !searchArea.current?.contains(event.target))
-        setShortcutsOpen(false);
-    };
-    document.addEventListener('pointerdown', dismiss);
-    return () => document.removeEventListener('pointerdown', dismiss);
-  }, [shortcutsOpen]);
   const modal = capturing;
   const selected = route.view === 'project' ? route.project : undefined;
   const folder = route.view === 'project' ? (route.folder ?? null) : null;
@@ -324,6 +324,7 @@ export function App() {
   useEffect(() => {
     setProjectSettingsOpen(false);
     pendingBlock.current = {};
+    pendingPaste.current = null;
   }, [route.view, selected, folder]);
   useEffect(() => {
     if (!user) return;
@@ -500,22 +501,32 @@ export function App() {
       await refreshLinks();
     });
   };
-  const createBlock = (kind: BlockKind) => {
+  const createBlock = (kind: BlockKind, coordinates?: Card['coordinates']) => {
     if (!active || busy || !loaded || loadedKey !== loadKey) return;
     const pending = pendingBlock.current;
-    const requestId = pending[kind] ?? crypto.randomUUID();
-    pending[kind] = requestId;
+    const operation = pending[kind] ?? { requestId: crypto.randomUUID(), coordinates };
+    pending[kind] = operation;
     setProjectSettingsOpen(false);
     run(async () => {
       const created = await api.capture({
-        requestId,
+        ...operation,
         project: active.id,
         folder: folder ?? undefined,
         kind,
         content: [],
       });
       delete pending[kind];
-      setFocusId(created.id);
+      if (!operation.coordinates) setFocusId(created.id);
+      refresh();
+    });
+  };
+  const pasteCard = (source: number, coordinates: Card['coordinates']) => {
+    if (!active || busy || !loaded || loadedKey !== loadKey) return;
+    const operation = pendingPaste.current ?? { requestId: crypto.randomUUID(), coordinates };
+    pendingPaste.current = operation;
+    run(async () => {
+      await api.copyCard(source, { ...operation, project: active.id, folder });
+      if (pendingPaste.current === operation) pendingPaste.current = null;
       refresh();
     });
   };
@@ -532,12 +543,6 @@ export function App() {
         event.preventDefault();
         setShortcutsOpen(false);
         searchInput.current?.focus();
-        return;
-      }
-      if (event.key === 'Escape' && shortcutsOpen) {
-        event.preventDefault();
-        setShortcutsOpen(false);
-        shortcutsButton.current?.focus();
         return;
       }
       if (event.key === 'Escape' && editing && !isTextInput(event)) {
@@ -644,6 +649,28 @@ export function App() {
       );
       refresh();
     });
+  const requestDelete = (target: NonNullable<typeof confirmDelete>) => {
+    setDeleteError('');
+    setConfirmDelete(target);
+  };
+  const deleteConfirmed = () => {
+    if (!confirmDelete || busy) return;
+    if ('draft' in confirmDelete) {
+      if (user) removeLocal(draftKey(user.id, confirmDelete.draft.id));
+      setConfirmDelete(null);
+      refresh();
+      return;
+    }
+    const project = confirmDelete.project;
+    void perform(async () => {
+      await api.deleteProject(project.id);
+      setConfirmDelete(null);
+      setDeletedItem({ id: project.id, type: 'project' });
+      setNotice('Проект перемещён в корзину.');
+      navigate({ view: 'dashboard' });
+      refresh();
+    }).catch((reason: unknown) => setDeleteError(reasonText(reason)));
+  };
   const exportActive = () => {
     if (!active) return;
     run(async () => {
@@ -852,6 +879,7 @@ export function App() {
                   setRediscover([]);
                   setTrash({ cards: [], projects: [] });
                   setQuery('');
+                  setBoardClipboard(null);
                   setDeletedItem(null);
                   setNotice('');
                   setEditing(null);
@@ -874,54 +902,8 @@ export function App() {
           )}
         </aside>
         <main className="workspace">
-          <div className="global-search" ref={searchArea}>
-            <label className="search-label">
-              <span aria-hidden="true">⌕</span>
-              <input
-                ref={searchInput}
-                type="search"
-                maxLength={128}
-                aria-label="Поиск по всем записям"
-                aria-keyshortcuts="Meta+K Control+K"
-                placeholder="Найти"
-                value={query}
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                  if (route.view !== 'search') navigate({ view: 'search' });
-                }}
-              />
-            </label>
-            <kbd>⌘ / Ctrl K</kbd>
-            <IconButton
-              ref={shortcutsButton}
-              icon="keyboard"
-              label="Сочетания клавиш"
-              aria-keyshortcuts="Alt+Shift+H"
-              aria-expanded={shortcutsOpen}
-              aria-controls="keyboard-shortcuts"
-              onClick={() => setShortcutsOpen((open) => !open)}
-            />
-            <section
-              className="shortcut-panel"
-              id="keyboard-shortcuts"
-              aria-label="Сочетания клавиш"
-              hidden={!shortcutsOpen}
-            >
-              <dl>
-                {shortcutHelp.map(([action, keys]) => (
-                  <div key={action}>
-                    <dt>{action}</dt>
-                    <dd>
-                      <kbd>{keys}</kbd>
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-          </div>
           <header className="workspace-header">
-            <div>
-              <p className="eyebrow">ЛИЧНАЯ ПАМЯТЬ · СВЯЗАННЫЕ ЗАПИСИ</p>
+            <div className="workspace-heading">
               {active && (folder === null || activeFolder) ? (
                 <WorkspaceTitle
                   key={activeFolder ? `folder-${activeFolder.id}` : `project-${active.id}`}
@@ -988,8 +970,8 @@ export function App() {
               </button>
             </div>
           )}
-          {route.view === 'project' && active && (
-            <div className="project-toolbar">
+          <div className="project-toolbar">
+            {active && (
               <div className="board-add" role="group" aria-label="Добавить на полотно">
                 <IconButton
                   className="primary"
@@ -1013,65 +995,123 @@ export function App() {
                   <span className="mark-tools-slot" ref={setMarkToolsSlot} />
                 )}
               </div>
-              <div className="view-switch" role="group" aria-label="Вид проекта">
-                <IconButton
-                  label="Полотно"
-                  tooltip="Полотно · Alt+Shift+B"
-                  aria-keyshortcuts="Alt+Shift+B"
-                  icon="board"
-                  aria-pressed={viewMode === 'board'}
-                  onClick={() => setViewMode('board')}
+            )}
+            <div className="global-search">
+              <label className="search-label">
+                <span aria-hidden="true">⌕</span>
+                <input
+                  ref={searchInput}
+                  type="search"
+                  maxLength={128}
+                  aria-label="Поиск по всем записям"
+                  aria-keyshortcuts="Meta+K Control+K"
+                  placeholder="Найти"
+                  value={query}
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                    if (route.view !== 'search') navigate({ view: 'search' });
+                  }}
                 />
-                <IconButton
-                  label="Список"
-                  tooltip="Список · Alt+Shift+V"
-                  aria-keyshortcuts="Alt+Shift+V"
-                  icon="list"
-                  aria-pressed={viewMode === 'list'}
-                  onClick={() => setViewMode('list')}
-                />
-              </div>
-              <div className="project-settings">
-                <IconButton
-                  icon="settings"
-                  label="Настройки проекта"
-                  tooltip="Настройки проекта"
-                  aria-expanded={projectSettingsOpen}
-                  aria-controls="project-settings-panel"
-                  onClick={() => setProjectSettingsOpen((open) => !open)}
-                />
-                <div
-                  id="project-settings-panel"
-                  className="project-settings-panel"
-                  hidden={!projectSettingsOpen}
+              </label>
+              <kbd>⌘ / Ctrl K</kbd>
+              <IconButton
+                ref={shortcutsButton}
+                icon="keyboard"
+                label="Сочетания клавиш"
+                aria-keyshortcuts="Alt+Shift+H"
+                aria-expanded={shortcutsOpen}
+                aria-controls="keyboard-shortcuts"
+                onClick={() => setShortcutsOpen((open) => !open)}
+              />
+              {shortcutsOpen && (
+                <Popover
+                  className="shortcut-panel"
+                  role="region"
+                  trigger={shortcutsButton}
+                  onDismiss={() => setShortcutsOpen(false)}
+                  id="keyboard-shortcuts"
+                  aria-label="Сочетания клавиш"
                 >
-                  <button className="text-button" disabled={busy} onClick={exportActive}>
-                    Экспорт
-                  </button>
-                  <button
-                    className="danger text-button"
-                    disabled={busy || active.inbox}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          'Переместить проект в корзину? Его записи и связи можно восстановить.',
-                        )
-                      )
-                        run(async () => {
-                          await api.deleteProject(active.id);
-                          setDeletedItem({ id: active.id, type: 'project' });
-                          setNotice('Проект перемещён в корзину.');
-                          navigate({ view: 'dashboard' });
-                          refresh();
-                        });
-                    }}
-                  >
-                    В корзину
-                  </button>
-                </div>
-              </div>
+                  <dl>
+                    {shortcutHelp.map(([action, keys]) => (
+                      <div key={action}>
+                        <dt>{action}</dt>
+                        <dd>
+                          <kbd>{keys}</kbd>
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </Popover>
+              )}
             </div>
-          )}
+            {active && (
+              <>
+                <div className="view-switch" role="group" aria-label="Вид проекта">
+                  <IconButton
+                    label="Полотно"
+                    tooltip="Полотно · Alt+Shift+B"
+                    aria-keyshortcuts="Alt+Shift+B"
+                    icon="board"
+                    aria-pressed={viewMode === 'board'}
+                    onClick={() => setViewMode('board')}
+                  />
+                  <IconButton
+                    label="Список"
+                    tooltip="Список · Alt+Shift+V"
+                    aria-keyshortcuts="Alt+Shift+V"
+                    icon="list"
+                    aria-pressed={viewMode === 'list'}
+                    onClick={() => setViewMode('list')}
+                  />
+                </div>
+                <div className="project-settings">
+                  <IconButton
+                    ref={settingsButton}
+                    icon="settings"
+                    label="Настройки проекта"
+                    tooltip="Настройки проекта"
+                    aria-expanded={projectSettingsOpen}
+                    aria-controls="project-settings-panel"
+                    onClick={() => setProjectSettingsOpen((open) => !open)}
+                  />
+                  {projectSettingsOpen && (
+                    <Popover
+                      id="project-settings-panel"
+                      role="region"
+                      aria-label="Настройки проекта"
+                      trigger={settingsButton}
+                      onDismiss={() => setProjectSettingsOpen(false)}
+                      className="project-settings-panel"
+                    >
+                      <Button
+                        variant="text"
+                        disabled={busy}
+                        onClick={() => {
+                          setProjectSettingsOpen(false);
+                          exportActive();
+                        }}
+                      >
+                        Экспорт
+                      </Button>
+                      <Button
+                        variant="text"
+                        className="danger"
+                        disabled={busy || active.inbox}
+                        onClick={() => {
+                          settingsButton.current?.focus();
+                          setProjectSettingsOpen(false);
+                          requestDelete({ project: active });
+                        }}
+                      >
+                        В корзину
+                      </Button>
+                    </Popover>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
           {loading || loadedKey !== loadKey ? (
             <div className="loading-screen" role="status">
               Загружаем записи…
@@ -1097,6 +1137,13 @@ export function App() {
                 keyboardDisabled={shortcutsOpen}
                 storageKey={`memo:${user.id}:camera:${selected}${folder === null ? '' : `:${folder}`}`}
                 focusId={focusId}
+                clipboard={boardClipboard}
+                copy={(item) => {
+                  pendingPaste.current = null;
+                  setBoardClipboard(item);
+                }}
+                pasteCard={pasteCard}
+                createBlock={createBlock}
                 open={(card, edit) => openId(card.id, edit)}
                 enter={(card) => enterFolder(card.id, card.project)}
                 moveInto={moveInto}
@@ -1130,29 +1177,27 @@ export function App() {
                     onChange={(event) => setNewProject(event.target.value)}
                   />
                 </label>
-                <label>
-                  Начать с шаблона
-                  <select
-                    value={template}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setTemplate(
-                        value === 'family' ||
-                          value === 'outline' ||
-                          value === 'retro' ||
-                          value === 'tasks'
-                          ? value
-                          : 'blank',
-                      );
-                    }}
-                  >
-                    <option value="blank">Пустой проект</option>
-                    <option value="family">Семейное дерево</option>
-                    <option value="outline">Конспект по теме</option>
-                    <option value="retro">Ретроспектива</option>
-                    <option value="tasks">Трекер задач</option>
-                  </select>
-                </label>
+                <Select
+                  label="Начать с шаблона"
+                  value={template}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setTemplate(
+                      value === 'family' ||
+                        value === 'outline' ||
+                        value === 'retro' ||
+                        value === 'tasks'
+                        ? value
+                        : 'blank',
+                    );
+                  }}
+                >
+                  <option value="blank">Пустой проект</option>
+                  <option value="family">Семейное дерево</option>
+                  <option value="outline">Конспект по теме</option>
+                  <option value="retro">Ретроспектива</option>
+                  <option value="tasks">Трекер задач</option>
+                </Select>
                 <button className="primary" disabled={busy || !newProject.trim()}>
                   Создать проект
                 </button>
@@ -1271,21 +1316,13 @@ export function App() {
                     <button className="secondary" onClick={() => openId(draft.card.id, true)}>
                       Открыть черновик
                     </button>
-                    <button
-                      className="text-button danger"
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            'Удалить только черновик с этого устройства? Серверная запись останется.',
-                          )
-                        ) {
-                          removeLocal(draftKey(user.id, draft.card.id));
-                          refresh();
-                        }
-                      }}
+                    <Button
+                      variant="text"
+                      className="danger"
+                      onClick={() => requestDelete({ draft: draft.card })}
                     >
                       Удалить черновик
-                    </button>
+                    </Button>
                   </div>
                 </article>
               ))}
@@ -1365,6 +1402,22 @@ export function App() {
           </div>
         )}
       </div>
+      {confirmDelete && (
+        <ConfirmDialog
+          title={'project' in confirmDelete ? 'Переместить проект в корзину?' : 'Удалить черновик?'}
+          description={
+            'project' in confirmDelete
+              ? 'Проект, записи и связи можно будет восстановить из корзины.'
+              : 'Удалится черновик на этом устройстве. Запись на сервере сохранится.'
+          }
+          action={'project' in confirmDelete ? 'В корзину' : 'Удалить'}
+          icon="trash"
+          busy={busy}
+          error={deleteError}
+          dismiss={() => setConfirmDelete(null)}
+          confirm={deleteConfirmed}
+        />
+      )}
       {capturing && (
         <QuickCapture
           userId={user.id}

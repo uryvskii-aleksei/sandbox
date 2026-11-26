@@ -91,6 +91,50 @@ test('folders scope nested boards without changing the directed graph or old rec
   await owner(`/cards/${nested.id}/restore`, 'POST', {});
   await owner(`/cards/${note.id}/restore`, 'POST', {});
   assert.deepEqual(await ids(nested.id), [note.id]);
+  await owner(
+    `/projects/${project.id}/marks`,
+    'POST',
+    {
+      folder: nested.id,
+      kind: 'label',
+      at: { x: 15, y: 20 },
+      text: 'Проверка разметки',
+      scale: 2,
+    },
+    201,
+  );
+  const destination = {
+    project: other.id,
+    folder: null,
+    coordinates: { x: 88, y: 150 },
+    requestId: randomUUID(),
+  };
+  const copyRoute = `/cards/${folder.id}/copy`;
+  await outsider(copyRoute, 'POST', destination, 404);
+  await owner(copyRoute, 'POST', { ...destination, folder: nested.id }, 422);
+  const copied = await owner(copyRoute, 'POST', destination, 201);
+  assert.deepEqual(await owner(copyRoute, 'POST', destination, 201), copied);
+  assert.equal(copied.name, folder.name);
+  assert.deepEqual(copied.coordinates, destination.coordinates);
+  assert.deepEqual(copied.size, folder.size);
+  const board = `/projects/${other.id}`;
+  assert.deepEqual(
+    (await owner(board + '/cards?folder=root')).map(({ id }) => id),
+    [copied.id],
+  );
+  const subfolder = (await owner(board + '/folders')).find(({ folder }) => folder === copied.id);
+  const [copiedNote] = await owner(board + '/cards?folder=' + subfolder.id);
+  assert.equal(copiedNote.name, note.name);
+  assert.notEqual(copiedNote.content[0].fields[0].id, note.content[0].fields[0].id);
+  assert.deepEqual(copiedNote.content[0].fields[0].value, ['Сверить решения']);
+  const [copiedLabel] = await owner(board + '/marks?folder=' + subfolder.id);
+  assert.equal(copiedLabel.text, 'Проверка разметки');
+  assert.equal(copiedLabel.scale, 2);
+  const copiedLinks = (await owner('/links')).filter(
+    ({ sourceProject }) => sourceProject === other.id,
+  );
+  assert.equal(copiedLinks.length, 2);
+  assert.equal(copiedLinks.find(({ label }) => label === 'Решение').source, subfolder.id);
 });
 
 test('visual documents preserve archived fields and board marks persist independently by folder', async () => {

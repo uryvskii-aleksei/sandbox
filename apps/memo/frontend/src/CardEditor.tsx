@@ -9,7 +9,7 @@ import { draftKey, readDraft, removeLocal, writeLocal } from './storage';
 import { TrashDialog } from './TrashDialog';
 import type { Draft, SaveAttempt } from './storage';
 import type { Card } from './types';
-import { Button, IconButton } from './ui';
+import { Button, ConfirmDialog, IconButton } from './ui';
 
 interface Props {
   card: Card;
@@ -51,6 +51,7 @@ export function CardEditor({
   const [fieldPending, setFieldPending] = useState(0);
   const [working, setWorking] = useState(false);
   const [confirmTrash, setConfirmTrash] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const saving = useRef(false);
   const attempt = useRef<SaveAttempt | undefined>(undefined);
   const heading = useRef<HTMLInputElement>(null);
@@ -146,16 +147,8 @@ export function CardEditor({
   }, []);
   const closeEditor = () => {
     if (saving.current || working || fieldPending > 0) return;
-    if (
-      !recovery &&
-      (dirty || attempt.current) &&
-      !persist() &&
-      !window.confirm(
-        'Хранилище устройства недоступно. Закрыть запись и потерять несохранённый ввод?',
-      )
-    )
-      return;
-    close();
+    if (!recovery && (dirty || attempt.current) && !persist()) setConfirmDiscard(true);
+    else close();
   };
   const closeRef = useRef(closeEditor);
   closeRef.current = closeEditor;
@@ -163,6 +156,7 @@ export function CardEditor({
     const previous = document.activeElement;
     const keydown = (event: KeyboardEvent) => {
       if (
+        event.defaultPrevented ||
         !(event.target instanceof Element) ||
         !dialog.current?.contains(event.target) ||
         event.target.closest('dialog[open]')
@@ -508,6 +502,15 @@ export function CardEditor({
           )}
         </form>
       </section>
+      {confirmDiscard && (
+        <ConfirmDialog
+          title="Закрыть запись без сохранения?"
+          description="Черновик недоступен. Несохранённый ввод будет потерян."
+          action="Закрыть"
+          dismiss={() => setConfirmDiscard(false)}
+          confirm={close}
+        />
+      )}
       {confirmTrash && (
         <TrashDialog
           card={card}

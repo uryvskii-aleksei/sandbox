@@ -18,6 +18,8 @@ export type IconName =
   | 'circle'
   | 'keyboard'
   | 'sidebar'
+  | 'copy'
+  | 'paste'
   | 'plus';
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'children' | 'name'> {
@@ -44,6 +46,8 @@ const paths: Record<IconName, string> = {
   circle: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z',
   keyboard: 'M2 5h20v14H2ZM6 9h1m4 0h1m4 0h1M6 13h1m4 0h1m4 0h1M8 16h8',
   sidebar: 'M3 5h18v14H3ZM9 5v14',
+  copy: 'M8 8h12v12H8ZM16 8V4H4v12h4',
+  paste: 'M8 5H5v16h14V5h-3M8 3h8v5H8ZM9 12h6M9 16h6',
   plus: 'M12 5v14M5 12h14',
 };
 

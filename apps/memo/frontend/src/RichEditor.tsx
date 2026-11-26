@@ -6,7 +6,7 @@ import { StarterKit } from '@tiptap/starter-kit';
 import { api, resolveMediaUrl } from './api';
 import { documentUrl } from './document';
 import type { MemoDocument } from './types';
-import { Button } from './ui';
+import { Button, Popover } from './ui';
 
 type MediaKind = 'image' | 'video' | 'audio';
 type Insertion = 'link' | 'date' | MediaKind;
@@ -69,6 +69,7 @@ export function RichEditor({
 }) {
   const onChange = useRef(change);
   onChange.current = change;
+  const insertionTrigger = useRef<HTMLButtonElement>(null);
   const [insertion, setInsertion] = useState<Insertion | null>(null);
   const [value, setValue] = useState('');
   const [error, setError] = useState('');
@@ -199,7 +200,8 @@ export function RichEditor({
             disabled={disabled || uploading}
             variant="text"
             aria-pressed={insertion === kind}
-            onClick={() => {
+            onClick={(event) => {
+              insertionTrigger.current = event.currentTarget;
               setInsertion(insertion === kind ? null : kind);
               const href: unknown = kind === 'link' ? editor.getAttributes('link').href : null;
               setValue(typeof href === 'string' ? href : '');
@@ -211,7 +213,12 @@ export function RichEditor({
         ))}
       </div>
       {insertion && (
-        <div className="rich-insert">
+        <Popover
+          className="rich-insert"
+          trigger={insertionTrigger}
+          locked={uploading}
+          onDismiss={() => setInsertion(null)}
+        >
           <label>
             {insertion === 'date' ? 'Дата' : 'Адрес ссылки'}
             <input
@@ -224,11 +231,6 @@ export function RichEditor({
                 if (event.key === 'Enter') {
                   event.preventDefault();
                   insert(insertion, value);
-                }
-                if (event.key === 'Escape') {
-                  event.stopPropagation();
-                  setInsertion(null);
-                  editor.commands.focus();
                 }
               }}
             />
@@ -264,7 +266,7 @@ export function RichEditor({
               />
             </label>
           )}
-        </div>
+        </Popover>
       )}
       {error && (
         <p className="alert" role="alert">

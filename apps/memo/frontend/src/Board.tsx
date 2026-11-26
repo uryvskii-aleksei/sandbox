@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { api, ApiError } from './api';
+import { BoardContextMenu } from './BoardContextMenu';
+import type { BoardMenuItem } from './BoardContextMenu';
 import { MarkLayer, MarkTools, useCanvasMarks } from './CanvasMarks';
 import { LinkControl } from './LinkControl';
 import { Icon, IconButton } from './ui';
@@ -9,7 +11,14 @@ import { canConnect, cardDimensions, clampCardSize, excerpt } from './graph';
 import { isTextInput, markTools } from './shortcuts';
 import { readLocal, writeLocal } from './storage';
 import { TrashDialog } from './TrashDialog';
-import type { BoardSelection, Card, CardLink } from './types';
+import type {
+  BoardClipboard,
+  BoardMark,
+  BoardSelection,
+  Card,
+  CardLink,
+  NewBoardMark,
+} from './types';
 
 interface Props {
   cards: Card[];
@@ -22,6 +31,10 @@ interface Props {
   keyboardDisabled: boolean;
   storageKey: string;
   focusId: number | null;
+  clipboard: BoardClipboard | null;
+  copy: (item: BoardClipboard) => void;
+  pasteCard: (source: number, at: Card['coordinates']) => void;
+  createBlock: (kind: 'record' | 'folder', at: Card['coordinates']) => void;
   open: (card: Card, editing?: boolean) => void;
   enter: (card: Card) => void;
   moveInto: (card: Card, folder: Card) => Promise<void>;
@@ -74,6 +87,22 @@ interface Drag {
   moved: boolean;
 }
 const emptySelection: BoardSelection = { cards: [], marks: [] };
+type MenuTarget = { card: Card } | { mark: BoardMark } | null;
+type MenuPosition = { clientX: number; clientY: number };
+const coordinateLimit = 100000;
+
+function markAt(mark: NewBoardMark, point: Card['coordinates']): NewBoardMark {
+  if (mark.kind === 'label') return { ...mark, at: point };
+  const dx = mark.end.x - mark.at.x;
+  const dy = mark.end.y - mark.at.y;
+  const start = (at: number, delta: number) =>
+    Math.max(
+      -coordinateLimit - Math.min(0, delta),
+      Math.min(coordinateLimit - Math.max(0, delta), at),
+    );
+  const at = { x: start(point.x, dx), y: start(point.y, dy) };
+  return { kind: mark.kind, at, end: { x: at.x + dx, y: at.y + dy } };
+}
 
 function dragRectangle(drag: Drag, event: PointerEvent<HTMLElement>, board: DOMRect) {
   const x = Math.max(board.left, Math.min(board.right, event.clientX));
@@ -182,6 +211,10 @@ export function Board({
   keyboardDisabled,
   storageKey,
   focusId,
+  clipboard,
+  copy,
+  pasteCard,
+  createBlock,
   open,
   enter,
   moveInto,
@@ -224,6 +257,13 @@ export function Board({
   const [selectedId, setSelectedId] = useState(focusId);
   const [hoveredLink, setHoveredLink] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
+  const [contextMenu, setContextMenu] = useState<
+    | (MenuPosition & {
+        target: MenuTarget;
+        returnFocus: HTMLElement | SVGElement;
+      })
+    | null
+  >(null);
   const root = useRef<HTMLElement>(null);
   const viewport = useRef<{ width: number; height: number } | null>(null);
   const drag = useRef<Drag | null>(null);
@@ -455,9 +495,9 @@ export function Board({
     linkPress.current = null;
     setReconnecting(null);
   };
-  const worldPoint = (event: PointerEvent<Element>) => {
+  const worldPoint = (event: MenuPosition) => {
     const rect = root.current?.getBoundingClientRect();
-    const clamp = (value: number) => Math.max(-100000, Math.min(100000, value));
+    const clamp = (value: number) => Math.max(-coordinateLimit, Math.min(coordinateLimit, value));
     return {
       x: clamp((event.clientX - (rect?.left ?? 0) - camera.x) / camera.scale),
       y: clamp((event.clientY - (rect?.top ?? 0) - camera.y) / camera.scale),
@@ -489,6 +529,108 @@ export function Board({
     cancelLink();
     setGroup(emptySelection);
     marks.arm(tool);
+  };
+  const dismissMenu = () => {
+    const trigger = contextMenu?.returnFocus;
+    if (trigger && document.activeElement?.closest('.board-context-menu')) trigger.focus();
+    setContextMenu(null);
+  };
+  const showMenu = (element: Element, position: MenuPosition) => {
+    const board = root.current;
+    if (!board || busy || trashCandidate || trashGroup) return false;
+    if (
+      element.closest(
+        'input,textarea,select,[contenteditable],.board-tools,.mark-error,.zoom-controls,.connection-control,.link-hit',
+      )
+    )
+      return false;
+    const cardId = Number(element.closest('[data-card-id]')?.getAttribute('data-card-id'));
+    const markId = Number(element.closest('[data-menu-mark]')?.getAttribute('data-menu-mark'));
+    const card = visible.find((item) => item.id === cardId);
+    const mark = marks.items.find((item) => item.id === markId);
+    const focus = element.closest('button,[tabindex]');
+    const returnFocus = focus instanceof HTMLElement || focus instanceof SVGElement ? focus : board;
+    setContextMenu({ ...position, target: card ? { card } : mark ? { mark } : null, returnFocus });
+    return true;
+  };
+  const menuItems = (menu: MenuPosition & { target: MenuTarget }): BoardMenuItem[] => {
+    const { target } = menu;
+    if (target && 'card' in target) {
+      const card = target.card;
+      return [
+        {
+          label: 'Редактировать',
+          icon: 'pencil',
+          action: () => {
+            cancelLink();
+            marks.cancel();
+            setGroup(emptySelection);
+            setSelectedId(card.id);
+            open(card, true);
+          },
+        },
+        { label: 'Копировать', icon: 'copy', action: () => copy({ cardId: card.id }) },
+        {
+          label: 'Удалить',
+          icon: 'trash',
+          danger: true,
+          action: () => setTrashCandidate(card),
+        },
+      ];
+    }
+    if (target && 'mark' in target) {
+      const { id, ...mark } = target.mark;
+      return [
+        {
+          label: 'Редактировать',
+          icon: 'pencil',
+          disabled: marks.locked,
+          action: () => {
+            cancelLink();
+            marks.cancel();
+            setGroup(emptySelection);
+            setSelectedId(null);
+            marks.choose(target.mark);
+          },
+        },
+        { label: 'Копировать', icon: 'copy', action: () => copy({ mark }) },
+        {
+          label: 'Удалить',
+          icon: 'trash',
+          danger: true,
+          disabled: marks.locked,
+          action: () => confirmGroup({ cards: [], marks: [id] }),
+        },
+      ];
+    }
+    const at = worldPoint(menu);
+    return [
+      {
+        label: 'Вставить',
+        icon: 'paste',
+        disabled: !clipboard || ('mark' in clipboard && marks.locked),
+        action: () => {
+          if (!clipboard) return;
+          if ('cardId' in clipboard) pasteCard(clipboard.cardId, at);
+          else void marks.store(markAt(clipboard.mark, at));
+        },
+      },
+      { label: 'Создать запись', icon: 'record', action: () => createBlock('record', at) },
+      { label: 'Создать папку', icon: 'folder', action: () => createBlock('folder', at) },
+      ...markTools.map(({ kind, icon, label }) => ({
+        label,
+        icon,
+        disabled: marks.locked,
+        action: () => {
+          if (kind === 'label') {
+            cancelLink();
+            marks.cancel();
+            setGroup(emptySelection);
+            marks.placeLabel(at);
+          } else armMark(kind);
+        },
+      })),
+    ];
   };
   const finishLink = async (anchor: number, candidate: number) => {
     if (!validTarget(anchor, candidate)) {
@@ -809,7 +951,8 @@ export function Board({
         trashCandidate ||
         trashGroup ||
         event.defaultPrevented ||
-        event.isComposing
+        event.isComposing ||
+        (event.target instanceof Element && !!event.target.closest('dialog[open]'))
       )
         return;
       if (
@@ -886,6 +1029,19 @@ export function Board({
       ref={root}
       className={`board ${marks.tool ? 'board-marking' : ''}`}
       aria-label="Полотно проекта"
+      tabIndex={0}
+      onContextMenu={(event) => {
+        if (event.target instanceof Element && showMenu(event.target, event)) {
+          event.preventDefault();
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+        if (!(event.target instanceof Element)) return;
+        const rect = event.target.getBoundingClientRect();
+        if (showMenu(event.target, { clientX: rect.left + 12, clientY: rect.top + 12 }))
+          event.preventDefault();
+      }}
       onPointerDownCapture={(event) => {
         if (
           event.button === 1 &&
@@ -901,6 +1057,15 @@ export function Board({
       onPointerUp={(event) => void end(event)}
       onPointerCancel={(event) => void end(event, true)}
     >
+      {contextMenu && (
+        <BoardContextMenu
+          x={contextMenu.clientX}
+          y={contextMenu.clientY}
+          label={contextMenu.target ? 'Действия элемента' : 'Инструменты полотна'}
+          items={menuItems(contextMenu)}
+          dismiss={dismissMenu}
+        />
+      )}
       {markToolsSlot &&
         createPortal(
           <MarkTools marks={marks} busy={busy || source !== null} arm={armMark} />,

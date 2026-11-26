@@ -139,6 +139,9 @@ function route(): never
             respond($created, 201);
         }
     }
+    if ($method === 'POST' && preg_match('~^/cards/(\d+)/copy$~', $path, $match)) {
+        respond(copyBoardCard(positiveId($match[1]), $owner, jsonBody()), 201);
+    }
     if (preg_match('~^/cards/(\d+)/(restore|metadata|visit|move)$~', $path, $match)) {
         $id = positiveId($match[1]); $operation = $match[2];
         if ($method === 'POST') {

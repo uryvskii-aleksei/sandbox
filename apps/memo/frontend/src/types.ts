@@ -60,6 +60,7 @@ export interface Sketch {
 export type NewBoardMark =
   { kind: 'label'; at: Card['coordinates']; text: string; scale?: number } | Sketch;
 export type BoardMark = NewBoardMark & { id: number };
+export type BoardClipboard = { cardId: number } | { mark: NewBoardMark };
 export interface BoardMarkUpdate {
   at?: Card['coordinates'];
   end?: Card['coordinates'];

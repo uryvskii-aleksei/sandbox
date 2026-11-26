@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const siteNames = ['amodu', 'purpur', 'stonehaus'];
 
 /** Создаёт отдельную копию файлов сайта для дальнейшей поставки. */
 export function buildSite(appDirectory) {
@@ -16,7 +17,8 @@ export function buildSite(appDirectory) {
   }
   fs.rmSync(output, { recursive: true, force: true });
   fs.mkdirSync(output, { recursive: true });
-  const nestedVersions = path.basename(appDirectory) === 'purpur' ? 'purpur' : null;
+  const appName = path.basename(appDirectory);
+  const nestedVersions = appName === 'purpur' ? 'purpur' : null;
   for (const entry of fs.readdirSync(source)) {
     if (entry === nestedVersions) continue;
     fs.cpSync(path.join(source, entry), path.join(output, entry), {
@@ -32,15 +34,25 @@ export function buildSite(appDirectory) {
       });
     }
   }
+  if (appName === 'amodu') {
+    // Страница открывается в корне, а её ресурсы поставляются в каталог /amodu/.
+    const indexPath = path.join(output, 'index.html');
+    const html = fs.readFileSync(indexPath, 'utf8');
+    const publicHtml = html.replace(
+      /(href|src)="\.\/(styles\.css|assets\/[^"]+)"/g,
+      '$1="/amodu/$2"',
+    );
+    fs.writeFileSync(indexPath, publicHtml);
+  }
   return output;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const check = process.argv.includes('--check');
   const selected = process.argv.slice(2).find((value) => value !== '--check');
-  if (selected && !['purpur', 'stonehaus'].includes(selected)) throw new Error('Неизвестный сайт.');
+  if (selected && !siteNames.includes(selected)) throw new Error('Неизвестный сайт.');
   let count = 0;
-  for (const name of selected ? [selected] : ['purpur', 'stonehaus']) {
+  for (const name of selected ? [selected] : siteNames) {
     const app = path.join(repo, 'apps', name);
     if (check) {
       const source = path.join(app, 'site');

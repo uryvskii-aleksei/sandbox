@@ -236,7 +236,7 @@ export const api = {
       }),
     });
   },
-  card: (id: number) => request(`/cards/${id}`, isCard),
+  card: (id: EntityRef, signal?: AbortSignal) => request(`/cards/${id}`, isCard, { signal }),
   search: (query = '', filter = 'all', signal?: AbortSignal) =>
     request(
       `/search?q=${encodeURIComponent(query)}&filter=${encodeURIComponent(filter)}`,
@@ -289,7 +289,8 @@ export const api = {
     document?: MemoDocument;
     coordinates?: Card['coordinates'];
   }) => request('/capture', isCard, { method: 'POST', body: JSON.stringify(body) }),
-  visit: (id: number) => request(`/cards/${id}/visit`, isCard, { method: 'POST', body: '{}' }),
+  visit: (id: number, signal?: AbortSignal) =>
+    request(`/cards/${id}/visit`, isCard, { method: 'POST', body: '{}', signal }),
   copyCard: (
     id: number,
     body: {

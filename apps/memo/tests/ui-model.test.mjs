@@ -58,6 +58,17 @@ test('workspace routes round-trip opaque IDs and still resolve numeric bookmarks
   });
 });
 
+test('record bookmarks identify a note independently of its workspace or folder', () => {
+  const base = '/memo/';
+  const record = `m${'c'.repeat(32)}`;
+  const route = { view: 'record', record };
+  const bookmark = routeUrl(base, route);
+  assert.equal(bookmark, `${base}record/${record}`);
+  assert.deepEqual(parseRoute(bookmark, base), route);
+  assert.deepEqual(parseRoute(`${bookmark}/`, base), route);
+  assert.deepEqual(parseRoute(`${base}record/123`, base), { view: 'dashboard' });
+});
+
 const block = (id, x, y, width, height) => ({ id, x, y, width, height });
 const routeClears = ({ samples }, blocks) => {
   for (const [index, start] of samples.slice(0, -1).entries()) {

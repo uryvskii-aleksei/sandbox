@@ -124,6 +124,7 @@ try {
   assert.match(index, /<title>Memo/);
   for (const route of [
     `workspace/m${'a'.repeat(32)}/folder/m${'b'.repeat(32)}`,
+    `record/m${'c'.repeat(32)}`,
     'workplace/123/folder/456',
   ]) {
     const deepPage = await fetch(`${base}/${route}`);

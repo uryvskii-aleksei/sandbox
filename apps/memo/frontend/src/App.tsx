@@ -50,6 +50,7 @@ function panelPreferences() {
 }
 
 type View = Route['view'];
+type RecordRoute = Extract<Route, { view: 'record' }>;
 const base = import.meta.env.BASE_URL;
 const currentRoute = () => parseRoute(location.pathname, base);
 const urlFor = (route: Route) => routeUrl(base, route);
@@ -152,13 +153,14 @@ function WorkspaceTitle({
 const names: Record<View, string> = {
   dashboard: 'Мои проекты',
   project: 'Проект',
+  record: 'Запись',
   inbox: 'Входящие',
   recent: 'Недавние записи',
   search: 'Поиск по Memo',
   trash: 'Корзина',
   drafts: 'Черновики на устройстве',
 };
-const navigation: { view: Exclude<View, 'project'>; icon: string; label: string }[] = [
+const navigation: { view: Exclude<View, 'project' | 'record'>; icon: string; label: string }[] = [
   { view: 'dashboard', icon: '▦', label: 'Мои проекты' },
   { view: 'inbox', icon: '↓', label: 'Входящие' },
   { view: 'recent', icon: '◷', label: 'Недавние' },
@@ -225,7 +227,9 @@ export function App() {
     project: Project;
     folders: Folder[];
     folder: number | null;
+    linked?: { route: RecordRoute; card: Card };
   } | null>(null);
+  const openedLink = useRef<RecordRoute | undefined>(undefined);
   const [links, setLinks] = useState<CardLink[]>([]);
   const [trash, setTrash] = useState<Trash>({ cards: [], projects: [] });
   const [loading, setLoading] = useState(false);
@@ -271,21 +275,23 @@ export function App() {
   const visibleProjects = projects.filter((project) => !project.inbox);
   const projectRef = route.view === 'project' ? route.project : undefined;
   const folderRef = route.view === 'project' ? route.folder : undefined;
-  const loadKey = `${route.view}:${projectRef ?? ''}:${folderRef ?? ''}:${route.view === 'search' ? query : ''}`;
-  const currentBoard = route.view === 'project' && loadedKey === loadKey ? workspace : null;
+  const recordRoute = route.view === 'record' ? route : undefined;
+  const workspaceView = route.view === 'project' || route.view === 'record';
+  const loadKey = `${route.view}:${projectRef ?? recordRoute?.record ?? ''}:${folderRef ?? ''}:${route.view === 'search' ? query : ''}`;
+  const currentBoard = workspaceView && loadedKey === loadKey ? workspace : null;
   const selected = currentBoard?.project.id;
   const folder = currentBoard?.folder ?? null;
   const active = projects.find((project) => project.id === selected) ?? currentBoard?.project;
   const trail = currentBoard ? folderTrail(currentBoard.folders, folder) : [];
   const activeFolder = trail.at(-1);
-  const currentUrl =
-    currentBoard?.project.publicId && (folderRef === undefined || activeFolder)
-      ? urlFor({
-          view: 'project',
-          project: currentBoard.project.publicId,
-          folder: activeFolder?.publicId,
-        })
-      : urlFor(route);
+  const boardRoute: Route | null = currentBoard
+    ? {
+        view: 'project',
+        project: currentBoard.project.publicId ?? currentBoard.project.id,
+        folder: activeFolder?.publicId,
+      }
+    : null;
+  const currentUrl = urlFor(route.view === 'project' && boardRoute ? boardRoute : route);
   const drafts = user ? listDrafts(user.id) : [];
 
   useEffect(() => {
@@ -343,7 +349,7 @@ export function App() {
     setShortcutsOpen(false);
     pendingBlock.current = {};
     pendingPaste.current = null;
-  }, [route.view, projectRef, folderRef]);
+  }, [route.view, projectRef, folderRef, recordRoute]);
   useEffect(() => {
     if (!user || route.view === 'dashboard') return;
     const controller = new AbortController();
@@ -355,19 +361,31 @@ export function App() {
     const timer = window.setTimeout(
       () => {
         const load = async () => {
-          if (projectRef !== undefined) {
+          const signal = controller.signal;
+          let card = recordRoute ? await api.card(recordRoute.record, signal) : null;
+          if (card?.kind === 'folder') throw new Error('Запись недоступна.');
+          const openLink = recordRoute && openedLink.current !== recordRoute;
+          if (card && openLink) card = await api.visit(card.id, signal);
+          const projectRefForBoard = card?.project ?? projectRef;
+          if (projectRefForBoard !== undefined) {
             const [project, tree] = await Promise.all([
-              api.project(projectRef, controller.signal),
-              api.folders(projectRef, controller.signal),
+              api.project(projectRefForBoard, signal),
+              api.folders(projectRefForBoard, signal),
             ]);
+            const folderRefForBoard = card?.folder ?? folderRef;
             const target = tree.find(
-              (item) => item.publicId === folderRef || item.id === folderRef,
+              (item) => item.publicId === folderRefForBoard || item.id === folderRefForBoard,
             );
-            if (folderRef !== undefined && !target) throw new Error('Папка не найдена.');
+            if (folderRefForBoard !== undefined && !target) throw new Error('Папка не найдена.');
             const folder = target?.id ?? null;
-            const result = await api.cards(project.id, folder, controller.signal);
-            if (!controller.signal.aborted) {
-              setWorkspace({ project, folders: tree, folder });
+            const result = await api.cards(project.id, folder, signal);
+            if (!signal.aborted) {
+              setWorkspace({
+                project,
+                folders: tree,
+                folder,
+                linked: card && recordRoute && openLink ? { route: recordRoute, card } : undefined,
+              });
               setCards(result);
             }
           } else if (route.view === 'trash') {
@@ -404,7 +422,17 @@ export function App() {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [user, route.view, projectRef, folderRef, query, revision]);
+  }, [user, route.view, projectRef, folderRef, recordRoute, query, revision]);
+  useEffect(() => {
+    const linked = currentBoard?.linked;
+    if (!linked || linked.route !== recordRoute || openedLink.current === recordRoute || editing)
+      return;
+    openedLink.current = recordRoute;
+    setViewMode('board');
+    setFocusId(linked.card.id);
+    setOpenForEditing(false);
+    setEditing(linked.card);
+  }, [currentBoard, recordRoute, editing]);
   useEffect(() => {
     if (currentBoard && loaded && location.pathname !== currentUrl) {
       history.replaceState(history.state, '', currentUrl + location.search + location.hash);
@@ -623,7 +651,7 @@ export function App() {
         setCapturing(true);
       } else if (
         event.shiftKey &&
-        route.view === 'project' &&
+        workspaceView &&
         (event.code === 'KeyN' || event.code === 'KeyF')
       ) {
         event.preventDefault();
@@ -631,7 +659,7 @@ export function App() {
         createBlock(event.code === 'KeyN' ? 'record' : 'folder');
       } else if (
         event.shiftKey &&
-        route.view === 'project' &&
+        workspaceView &&
         (event.code === 'KeyB' || event.code === 'KeyV')
       ) {
         event.preventDefault();
@@ -882,7 +910,7 @@ export function App() {
     </>
   );
   const showingBoard =
-    route.view === 'project' && viewMode === 'board' && !loading && loaded && loadedKey === loadKey;
+    workspaceView && viewMode === 'board' && !loading && loaded && loadedKey === loadKey;
   const docking: CSSProperties & Record<'--memo-sidebar-width' | '--memo-record-width', string> = {
     '--memo-sidebar-width': `${panels.collapsed ? 62 : panels.left}px`,
     '--memo-record-width': `${panels.right}px`,
@@ -1029,6 +1057,7 @@ export function App() {
                   setProjects([]);
                   setCards([]);
                   setWorkspace(null);
+                  openedLink.current = undefined;
                   setLinks([]);
                   setTrash({ cards: [], projects: [] });
                   setQuery('');
@@ -1253,13 +1282,17 @@ export function App() {
           ) : !(showingProjects ? projectsStatus === 'ready' : loaded) ? (
             <div className="loading-screen">
               <p>
-                {showingProjects ? 'Не удалось загрузить проекты.' : 'Не удалось загрузить записи.'}
+                {recordRoute
+                  ? 'Не удалось открыть запись.'
+                  : showingProjects
+                    ? 'Не удалось загрузить проекты.'
+                    : 'Не удалось загрузить записи.'}
               </p>
               <button className="secondary" onClick={refresh}>
                 Повторить загрузку
               </button>
             </div>
-          ) : route.view === 'project' ? (
+          ) : workspaceView ? (
             viewMode === 'board' ? (
               <Board
                 key={`${user.id}:${selected}:${folder ?? 'root'}`}
@@ -1451,6 +1484,8 @@ export function App() {
               saved={replaceCard}
               deleted={(card) => {
                 setEditing(null);
+                if (recordRoute && recordRoute.record === card.publicId && boardRoute)
+                  navigate(boardRoute);
                 setDeletedItem({ id: card.id, type: 'card' });
                 setNotice(
                   card.kind === 'folder'

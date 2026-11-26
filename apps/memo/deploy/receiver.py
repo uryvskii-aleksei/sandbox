@@ -220,7 +220,7 @@ class Deployment:
                     raise DeployError("Public release marker mismatch.")
                 if json.loads(request("api/health")[1]).get("data", {}).get("status") != "ready":
                     raise DeployError("Public API is not ready.")
-                if request("")[0] != 200 or request("workplace/123")[0] != 200:
+                if request("")[0] != 200 or request("workspace/m" + "a" * 32)[0] != 200:
                     raise DeployError("Frontend or SPA route is unavailable.")
                 for relative in ["config.local.php", "backend/bootstrap.php", "database/schema.sql"]:
                     try:

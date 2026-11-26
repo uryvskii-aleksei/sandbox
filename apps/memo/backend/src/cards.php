@@ -4,9 +4,10 @@ namespace Memo;
 
 function project(int $id, int $owner, bool $lock = false): array
 {
-    $row = query('SELECT p.id,p.name,p.owner_id,COALESCE(d.inbox,0) AS inbox FROM projects p LEFT JOIN project_details d ON d.project_id=p.id WHERE p.id=? AND p.owner_id=? AND d.deleted_at IS NULL' . ($lock ? ' FOR UPDATE' : ''), [$id, $owner])->fetch();
+    $row = query('SELECT p.id,p.public_id,p.name,p.owner_id,COALESCE(d.inbox,0) AS inbox FROM projects p LEFT JOIN project_details d ON d.project_id=p.id WHERE p.id=? AND p.owner_id=? AND d.deleted_at IS NULL' . ($lock ? ' FOR UPDATE' : ''), [$id, $owner])->fetch();
     if (!$row) fail(404, 'Проект не найден.');
-    return ['id' => (int) $row['id'], 'name' => $row['name'], 'inbox' => (bool) $row['inbox'], 'deletedAt' => null];
+    return ['id' => (int) $row['id'], 'publicId' => ensurePublicId('projects', $row),
+        'name' => $row['name'], 'inbox' => (bool) $row['inbox'], 'deletedAt' => null];
 }
 
 function cardRow(int $id, int $owner, bool $includeDeleted = false): array
@@ -33,7 +34,8 @@ function cardOutput(array $row): array
                 'order' => (int) $field['sort_order'], 'value' => json_decode($field['values_json'], true, 64, JSON_THROW_ON_ERROR),
             ], $fields)];
     }
-    return ['id' => (int) $row['id'], 'project' => (int) $row['project_id'], 'name' => $row['name'],
+    return ['id' => (int) $row['id'], 'publicId' => ensurePublicId('cards', $row),
+        'project' => (int) $row['project_id'], 'name' => $row['name'],
         'kind' => $row['kind'], 'folder' => $row['folder_id'] === null ? null : (int) $row['folder_id'],
         'parent' => $parent === null ? null : (int) $parent,
         'pinned' => (bool) ($details['pinned'] ?? false), 'deletedAt' => $details['deleted_at'] ?? null,
@@ -207,6 +209,7 @@ function saveContent(int $cardId, mixed $content): void
 
 function saveCard(int $id, int $owner, array $body, bool $positionOnly = false): array
 {
+    unset($body['publicId']);
     return receipted($owner, ($positionOnly ? 'position:' : 'save:') . $id, $body, static function () use ($id, $owner, $body, $positionOnly): array {
         $row = cardRow($id, $owner);
         project((int) $row['project_id'], $owner, true);

@@ -93,6 +93,18 @@ test('folders scope nested boards without changing the directed graph or old rec
   const folder = await capture({ kind: 'folder', name: 'Команда' });
   const nested = await capture({ kind: 'folder', name: 'Ретро', folder: folder.id });
   const note = await capture({ name: 'План встречи', text: 'Сверить решения', folder: nested.id });
+  const publicIds = [project, other, record, folder, nested, note].map((item) => item.publicId);
+  for (const id of publicIds) assert.match(id, /^m[a-f0-9]{32}$/);
+  assert.equal(new Set(publicIds).size, publicIds.length);
+  assert.deepEqual(
+    await owner(`/projects/${project.publicId}`),
+    await owner(`/projects/${project.id}`),
+  );
+  assert.deepEqual(await owner(`/cards/${note.publicId}`), await owner(`/cards/${note.id}`));
+  const folders = await owner(`/projects/${project.publicId}/folders`);
+  assert.equal(folders.find(({ id }) => id === nested.id).publicId, nested.publicId);
+  await outsider(`/projects/${project.publicId}`, 'GET', undefined, 404);
+  await outsider(`/cards/${note.publicId}`, 'GET', undefined, 404);
   await capture({ name: 'Не папка', folder: record.id }, 422);
   await capture({ name: 'Папка другого проекта', folder: folder.id, project: other.id }, 422);
   await outsider(cards + `?folder=${folder.id}`, 'GET', undefined, 404);
@@ -154,6 +166,7 @@ test('folders scope nested boards without changing the directed graph or old rec
   const copied = await owner(copyRoute, 'POST', destination, 201);
   assert.deepEqual(await owner(copyRoute, 'POST', destination, 201), copied);
   assert.equal(copied.name, folder.name);
+  assert.notEqual(copied.publicId, folder.publicId);
   assert.deepEqual(copied.coordinates, destination.coordinates);
   assert.deepEqual(copied.size, folder.size);
   const board = `/projects/${other.id}`;
@@ -163,6 +176,7 @@ test('folders scope nested boards without changing the directed graph or old rec
   );
   const subfolder = (await owner(board + '/folders')).find(({ folder }) => folder === copied.id);
   const [copiedNote] = await owner(board + '/cards?folder=' + subfolder.id);
+  assert.notEqual(copiedNote.publicId, note.publicId);
   assert.equal(copiedNote.name, note.name);
   assert.notEqual(copiedNote.content[0].fields[0].id, note.content[0].fields[0].id);
   assert.deepEqual(copiedNote.content[0].fields[0].value, ['Сверить решения']);
@@ -833,8 +847,10 @@ test('capture and autosave deduplicate a lost response, retain trash, search con
       },
     ],
   };
-  const saved = await a(`/cards/${first.id}`, 'PUT', attempt);
-  assert.deepEqual(await a(`/cards/${first.id}`, 'PUT', attempt), saved);
+  const { publicId, ...legacyAttempt } = attempt;
+  const saved = await a(`/cards/${first.id}`, 'PUT', legacyAttempt);
+  assert.equal(saved.publicId, publicId);
+  assert.deepEqual(await a(`/cards/${publicId}`, 'PUT', attempt), saved);
   await a(`/cards/${first.id}`, 'PUT', { ...attempt, name: 'Другой запрос' }, 409);
   await a(`/cards/${first.id}`, 'PUT', { ...first, requestId: randomUUID() }, 409);
   const invalid = {

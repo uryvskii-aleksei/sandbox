@@ -44,11 +44,11 @@ function projectList(int $owner, bool $trash = false): array
 {
     $deleted = $trash ? 'IS NOT NULL' : 'IS NULL';
     $order = $trash ? 'p.id DESC' : 'COALESCE(p.updated_at,p.created_at) DESC,p.id DESC';
-    $rows = query("SELECT p.id,p.name,COALESCE(d.inbox,0) AS inbox,d.deleted_at,
+    $rows = query("SELECT p.id,p.public_id,p.name,COALESCE(d.inbox,0) AS inbox,d.deleted_at,
         (SELECT COUNT(*) FROM cards c LEFT JOIN card_details cd ON cd.card_id=c.id WHERE c.project_id=p.id AND cd.deleted_at IS NULL) AS cards
         FROM projects p LEFT JOIN project_details d ON d.project_id=p.id
         WHERE p.owner_id=? AND d.deleted_at $deleted ORDER BY COALESCE(d.inbox,0) DESC,$order", [$owner])->fetchAll();
-    return array_map(static fn(array $row): array => ['id' => (int) $row['id'], 'name' => $row['name'],
+    return array_map(static fn(array $row): array => ['id' => (int) $row['id'], 'publicId' => ensurePublicId('projects', $row), 'name' => $row['name'],
         'inbox' => (bool) $row['inbox'], 'deletedAt' => $row['deleted_at'], 'cards' => (int) $row['cards']], $rows);
 }
 
@@ -56,7 +56,7 @@ function inboxProject(int $owner): int
 {
     $row = query('SELECT p.id FROM projects p JOIN project_details d ON d.project_id=p.id WHERE p.owner_id=? AND d.inbox=1', [$owner])->fetch();
     if ($row) return (int) $row['id'];
-    query('INSERT INTO projects(owner_id,name) VALUES(?,?)', [$owner, 'Входящие']);
+    query('INSERT INTO projects(public_id,owner_id,name) VALUES(?,?,?)', [newPublicId(), $owner, 'Входящие']);
     $id = (int) database()->lastInsertId();
     query('INSERT INTO project_details(project_id,inbox) VALUES(?,1)', [$id]);
     return $id;
@@ -92,9 +92,9 @@ function validateFolder(?int $folder, int $project, int $owner): void
 
 function projectFolders(int $project): array
 {
-    $rows = query("SELECT c.id,c.name,c.folder_id FROM cards c LEFT JOIN card_details d ON d.card_id=c.id
+    $rows = query("SELECT c.id,c.public_id,c.name,c.folder_id FROM cards c LEFT JOIN card_details d ON d.card_id=c.id
         WHERE c.project_id=? AND c.kind='folder' AND d.deleted_at IS NULL ORDER BY c.name,c.id", [$project])->fetchAll();
-    return array_map(static fn(array $row): array => ['id' => (int) $row['id'], 'name' => $row['name'],
+    return array_map(static fn(array $row): array => ['id' => (int) $row['id'], 'publicId' => ensurePublicId('cards', $row), 'name' => $row['name'],
         'folder' => folderId($row['folder_id'])], $rows);
 }
 
@@ -340,7 +340,7 @@ function captureCard(int $owner, array $body): array
         $name = text($body['name'] ?? $shortTitle, 128, true);
         if ($name === '') $name = $kind === 'folder' ? 'Новая папка' : 'Новая запись';
         $point = isset($body['coordinates']) ? coordinates($body['coordinates']) : nextCardPosition($projectId, $folder);
-        query('INSERT INTO cards(project_id,folder_id,kind,name,x,y) VALUES(?,?,?,?,?,?)', [$projectId, $folder, $kind, $name, $point['x'], $point['y']]);
+        query('INSERT INTO cards(public_id,project_id,folder_id,kind,name,x,y) VALUES(?,?,?,?,?,?,?)', [newPublicId(), $projectId, $folder, $kind, $name, $point['x'], $point['y']]);
         $id = (int) database()->lastInsertId();
         $content = $body['content'] ?? [['id' => -1, 'name' => 'Заметка', 'fields' => [
             ['id' => -1, 'type' => 'textarea', 'title' => '', 'value' => [$note]],
@@ -379,8 +379,8 @@ function copyBoardCard(int $source, int $owner, array $body): array
             if (isset($copies[$original])) continue;
             $top = $original === $source;
             $destination = $top ? $folder : $copies[$row['folder_id']];
-            query('INSERT INTO cards(project_id,folder_id,kind,name,x,y,width,height) VALUES(?,?,?,?,?,?,?,?)',
-                [$project, $destination, $row['kind'], $row['name'], $top ? $point['x'] : $row['x'],
+            query('INSERT INTO cards(public_id,project_id,folder_id,kind,name,x,y,width,height) VALUES(?,?,?,?,?,?,?,?,?)',
+                [newPublicId(), $project, $destination, $row['kind'], $row['name'], $top ? $point['x'] : $row['x'],
                     $top ? $point['y'] : $row['y'], $row['width'], $row['height']]);
             $id = (int) database()->lastInsertId();
             $copies[$original] = $id;
@@ -443,7 +443,7 @@ function templateProject(int $owner, array $body): array
     $template = text($body['template'] ?? 'blank', 16);
     if (!in_array($template, ['blank', 'family', 'outline', 'retro', 'tasks'], true)) fail(422, 'Неизвестный шаблон.');
     return receipted($owner, 'create-project', $body, static function () use ($owner, $name, $template): array {
-        query('INSERT INTO projects(owner_id,name,updated_at) VALUES(?,?,CURRENT_TIMESTAMP(6))', [$owner, $name]);
+        query('INSERT INTO projects(public_id,owner_id,name,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP(6))', [newPublicId(), $owner, $name]);
         $projectId = (int) database()->lastInsertId();
         $nodes = match ($template) {
             'family' => [['Родитель 1', 40, 60, 'Имя, даты жизни и воспоминания.'], ['Родитель 2', 420, 60, 'Имя, даты жизни и воспоминания.'], ['Ребёнок', 230, 360, 'Замените примеры участниками вашей семьи.']],
@@ -454,7 +454,7 @@ function templateProject(int $owner, array $body): array
         };
         $ids = [];
         foreach ($nodes as [$title, $x, $y, $note]) {
-            query('INSERT INTO cards(project_id,name,x,y) VALUES(?,?,?,?)', [$projectId, $title, $x, $y]);
+            query('INSERT INTO cards(public_id,project_id,name,x,y) VALUES(?,?,?,?,?)', [newPublicId(), $projectId, $title, $x, $y]);
             $id = (int) database()->lastInsertId(); $ids[] = $id;
             saveContent($id, [['id' => -1, 'name' => $template === 'family' ? 'О человеке' : 'Заметка', 'fields' => [['id' => -1, 'type' => 'textarea', 'value' => [$note]]]]]);
             touchCard($id);

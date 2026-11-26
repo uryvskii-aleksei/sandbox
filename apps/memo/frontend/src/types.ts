@@ -12,6 +12,7 @@ export interface Session {
 }
 export interface Project {
   id: number;
+  publicId?: string;
   name: string;
   cards?: number;
   inbox?: boolean;
@@ -35,6 +36,7 @@ export interface FieldGroup {
 }
 export interface Card {
   id: number;
+  publicId?: string;
   project: number;
   name: string;
   parent: number | null;
@@ -75,6 +77,7 @@ export interface BoardSelection {
 export type BoardMove = { destination: number } | { offset: Card['coordinates'] };
 export interface Folder {
   id: number;
+  publicId: string;
   name: string;
   folder: number | null;
 }

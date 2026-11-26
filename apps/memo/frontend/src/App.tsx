@@ -272,7 +272,8 @@ export function App() {
     null,
   );
   const searchInput = useRef<HTMLInputElement>(null);
-  const shortcutsButton = useRef<HTMLButtonElement>(null);
+  const searchButton = useRef<HTMLButtonElement>(null);
+  const [searchOpen, setSearchOpen] = useState(() => currentRoute().view === 'search');
   const settingsButton = useRef<HTMLButtonElement>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [markToolsSlot, setMarkToolsSlot] = useState<HTMLSpanElement | null>(null);
@@ -323,6 +324,7 @@ export function App() {
   }, [user, revision]);
   useEffect(() => {
     setProjectSettingsOpen(false);
+    setShortcutsOpen(false);
     pendingBlock.current = {};
     pendingPaste.current = null;
   }, [route.view, selected, folder]);
@@ -501,12 +503,21 @@ export function App() {
       await refreshLinks();
     });
   };
+  const dismissSettings = () => {
+    setProjectSettingsOpen(false);
+    setShortcutsOpen(false);
+  };
+  const openSearch = () => {
+    dismissSettings();
+    setSearchOpen(true);
+    searchInput.current?.focus();
+  };
   const createBlock = (kind: BlockKind, coordinates?: Card['coordinates']) => {
     if (!active || busy || !loaded || loadedKey !== loadKey) return;
     const pending = pendingBlock.current;
     const operation = pending[kind] ?? { requestId: crypto.randomUUID(), coordinates };
     pending[kind] = operation;
-    setProjectSettingsOpen(false);
+    dismissSettings();
     run(async () => {
       const created = await api.capture({
         ...operation,
@@ -541,8 +552,7 @@ export function App() {
         event.code === 'KeyK'
       ) {
         event.preventDefault();
-        setShortcutsOpen(false);
-        searchInput.current?.focus();
+        openSearch();
         return;
       }
       if (event.key === 'Escape' && editing && !isTextInput(event)) {
@@ -554,11 +564,14 @@ export function App() {
         return;
       if (event.shiftKey && event.code === 'KeyH') {
         event.preventDefault();
-        setShortcutsOpen((open) => !open);
-        shortcutsButton.current?.focus();
+        setSearchOpen(false);
+        setProjectSettingsOpen(true);
+        setShortcutsOpen(true);
+        settingsButton.current?.focus();
       } else if (event.code === 'KeyN' && !event.shiftKey && !busy) {
         event.preventDefault();
-        setShortcutsOpen(false);
+        dismissSettings();
+        setSearchOpen(false);
         setCapturing(true);
       } else if (
         event.shiftKey &&
@@ -996,98 +1009,117 @@ export function App() {
                 )}
               </div>
             )}
-            <div className="global-search">
-              <label className="search-label">
-                <input
-                  ref={searchInput}
-                  type="search"
-                  maxLength={128}
-                  aria-label="Поиск по всем записям"
-                  aria-keyshortcuts="Meta+K Control+K"
-                  placeholder="Найти · ⌘ / Ctrl K"
-                  value={query}
-                  onChange={(event) => {
-                    setQuery(event.target.value);
-                    if (route.view !== 'search') navigate({ view: 'search' });
-                  }}
-                />
-                <Icon name="search" size={16} />
-              </label>
-              <IconButton
-                ref={shortcutsButton}
-                icon="keyboard"
-                label="Сочетания клавиш"
-                aria-keyshortcuts="Alt+Shift+H"
-                aria-expanded={shortcutsOpen}
-                aria-controls="keyboard-shortcuts"
-                onClick={() => setShortcutsOpen((open) => !open)}
-              />
-              {shortcutsOpen && (
-                <Popover
-                  className="shortcut-panel"
-                  role="region"
-                  trigger={shortcutsButton}
-                  onDismiss={() => setShortcutsOpen(false)}
-                  id="keyboard-shortcuts"
-                  aria-label="Сочетания клавиш"
-                >
-                  <dl>
-                    {shortcutHelp.map(([action, keys]) => (
-                      <div key={action}>
-                        <dt>{action}</dt>
-                        <dd>
-                          <kbd>{keys}</kbd>
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
-                </Popover>
-              )}
-            </div>
             {active && (
-              <>
-                <div className="view-switch" role="group" aria-label="Вид проекта">
-                  <IconButton
-                    label="Полотно"
-                    tooltip="Полотно · Alt+Shift+B"
-                    aria-keyshortcuts="Alt+Shift+B"
-                    icon="board"
-                    aria-pressed={viewMode === 'board'}
-                    onClick={() => setViewMode('board')}
+              <div className="view-switch" role="group" aria-label="Вид проекта">
+                <IconButton
+                  label="Полотно"
+                  tooltip="Полотно · Alt+Shift+B"
+                  aria-keyshortcuts="Alt+Shift+B"
+                  icon="board"
+                  aria-pressed={viewMode === 'board'}
+                  onClick={() => setViewMode('board')}
+                />
+                <IconButton
+                  label="Список"
+                  tooltip="Список · Alt+Shift+V"
+                  aria-keyshortcuts="Alt+Shift+V"
+                  icon="list"
+                  aria-pressed={viewMode === 'list'}
+                  onClick={() => setViewMode('list')}
+                />
+              </div>
+            )}
+            <IconButton
+              ref={searchButton}
+              className={`primary search-toggle ${active ? '' : 'search-toggle-end'}`}
+              icon="search"
+              label="Поиск"
+              tooltip="Поиск · ⌘ / Ctrl K"
+              aria-keyshortcuts="Meta+K Control+K"
+              aria-expanded={searchOpen}
+              aria-controls={searchOpen ? 'memo-search' : undefined}
+              onClick={() => (searchOpen ? setSearchOpen(false) : openSearch())}
+            />
+            {searchOpen && (
+              <Popover
+                id="memo-search"
+                role="search"
+                className="search-popover"
+                trigger={searchButton}
+                onDismiss={() => setSearchOpen(false)}
+              >
+                <label className="search-label">
+                  <input
+                    autoFocus
+                    ref={searchInput}
+                    type="search"
+                    maxLength={128}
+                    aria-label="Поиск по всем записям"
+                    placeholder="Найти · ⌘ / Ctrl K"
+                    value={query}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      if (route.view !== 'search') navigate({ view: 'search' });
+                    }}
                   />
-                  <IconButton
-                    label="Список"
-                    tooltip="Список · Alt+Shift+V"
-                    aria-keyshortcuts="Alt+Shift+V"
-                    icon="list"
-                    aria-pressed={viewMode === 'list'}
-                    onClick={() => setViewMode('list')}
-                  />
-                </div>
-                <div className="project-settings">
-                  <IconButton
-                    ref={settingsButton}
-                    icon="settings"
-                    label="Настройки проекта"
-                    tooltip="Настройки проекта"
-                    aria-expanded={projectSettingsOpen}
-                    aria-controls="project-settings-panel"
-                    onClick={() => setProjectSettingsOpen((open) => !open)}
-                  />
-                  {projectSettingsOpen && (
-                    <Popover
-                      id="project-settings-panel"
-                      role="region"
-                      aria-label="Настройки проекта"
-                      trigger={settingsButton}
-                      onDismiss={() => setProjectSettingsOpen(false)}
-                      className="project-settings-panel"
-                    >
+                  <Icon name="search" size={16} />
+                </label>
+              </Popover>
+            )}
+            <div className="project-settings">
+              <IconButton
+                ref={settingsButton}
+                icon="settings"
+                label={active ? 'Настройки проекта' : 'Настройки Memo'}
+                tooltip="Настройки"
+                aria-expanded={projectSettingsOpen}
+                aria-controls={projectSettingsOpen ? 'project-settings-panel' : undefined}
+                onClick={() =>
+                  projectSettingsOpen ? dismissSettings() : setProjectSettingsOpen(true)
+                }
+              />
+              {projectSettingsOpen && (
+                <Popover
+                  id="project-settings-panel"
+                  role="region"
+                  aria-label={active ? 'Настройки проекта' : 'Настройки Memo'}
+                  trigger={settingsButton}
+                  onDismiss={dismissSettings}
+                  className={
+                    shortcutsOpen
+                      ? 'project-settings-panel has-shortcuts'
+                      : 'project-settings-panel'
+                  }
+                >
+                  <Button
+                    variant="text"
+                    icon="keyboard"
+                    aria-expanded={shortcutsOpen}
+                    aria-controls={shortcutsOpen ? 'keyboard-shortcuts' : undefined}
+                    aria-keyshortcuts="Alt+Shift+H"
+                    onClick={() => setShortcutsOpen((open) => !open)}
+                  >
+                    Сочетания клавиш
+                  </Button>
+                  {shortcutsOpen && (
+                    <dl className="shortcut-list" id="keyboard-shortcuts">
+                      {shortcutHelp.map(([action, keys]) => (
+                        <div key={action}>
+                          <dt>{action}</dt>
+                          <dd>
+                            <kbd>{keys}</kbd>
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                  {active && (
+                    <>
                       <Button
                         variant="text"
                         disabled={busy}
                         onClick={() => {
-                          setProjectSettingsOpen(false);
+                          dismissSettings();
                           exportActive();
                         }}
                       >
@@ -1099,17 +1131,17 @@ export function App() {
                         disabled={busy || active.inbox}
                         onClick={() => {
                           settingsButton.current?.focus();
-                          setProjectSettingsOpen(false);
+                          dismissSettings();
                           requestDelete({ project: active });
                         }}
                       >
                         В корзину
                       </Button>
-                    </Popover>
+                    </>
                   )}
-                </div>
-              </>
-            )}
+                </Popover>
+              )}
+            </div>
           </div>
           {loading || loadedKey !== loadKey ? (
             <div className="loading-screen" role="status">
@@ -1133,7 +1165,7 @@ export function App() {
                 markToolsSlot={markToolsSlot}
                 locate={locate}
                 busy={busy || modal}
-                keyboardDisabled={shortcutsOpen}
+                keyboardDisabled={projectSettingsOpen || searchOpen}
                 storageKey={`memo:${user.id}:camera:${selected}${folder === null ? '' : `:${folder}`}`}
                 focusId={focusId}
                 clipboard={boardClipboard}

@@ -11,7 +11,7 @@
   --stage-gap: 0.75rem;
   --panel-gap: 0.65rem;
   --control-radius: 0.625rem;
-  --bar-surface: #1c151cea;
+  --bar-surface: 28 21 28;
 }
 
 :root.has-clip {
@@ -91,7 +91,7 @@ button:disabled {
 .deck-panel {
   position: relative;
   z-index: 2;
-  background: var(--bar-surface);
+  background: rgb(var(--bar-surface) / 0.92);
 }
 
 .page-header {
@@ -170,6 +170,12 @@ button:disabled {
   min-height: 0;
   min-width: 0;
   box-shadow: 0 0 18px #0b070c85;
+  transform: translateY(calc(var(--panel-height, 0px) / 2));
+}
+
+.has-clip .deck {
+  transform: translateY(0);
+  transition: transform 300ms ease-out;
 }
 
 .screen {
@@ -214,7 +220,7 @@ button:disabled {
   aspect-ratio: 1;
   border: 1px solid var(--line);
   border-radius: 50%;
-  background: transparent;
+  background: rgb(var(--bar-surface));
   color: #fff;
   box-shadow: 0 4px 14px #0b070c70;
 }
@@ -247,7 +253,7 @@ button:disabled {
     opacity 260ms ease-out;
 }
 
-.deck-panel.is-visible {
+.has-clip .deck-panel {
   visibility: visible;
   opacity: 1;
   transform: translateY(0);
@@ -309,6 +315,7 @@ button:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .has-clip .deck,
   .deck-panel {
     transition: none;
   }

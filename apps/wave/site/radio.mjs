@@ -4,6 +4,7 @@ import { setupSoundscape } from './soundscape.mjs';
 
 const get = (id) => document.getElementById(id);
 const panel = get('deck-panel');
+const station = panel.parentElement;
 const toggle = get('toggle');
 const previous = get('previous');
 const next = get('next');
@@ -41,7 +42,6 @@ function render() {
   get('toggle-icon').className = 'symbol ' + (pause ? 'pause' : 'play');
   toggle.setAttribute('aria-label', label);
   toggle.dataset.tooltip = label + ' · Пробел';
-  panel.classList.toggle('is-visible', Boolean(clip));
   panel.inert = !clip;
   toggle.disabled = splash.disabled = !catalog.length && !catalogFailed;
   previous.disabled = position <= 0;
@@ -220,4 +220,10 @@ video.addEventListener('error', () => {
   render();
 });
 
+function measurePanel() {
+  station.style.setProperty('--panel-height', panel.getBoundingClientRect().height + 'px');
+}
+
+measurePanel();
+new ResizeObserver(measurePanel).observe(panel);
 void loadCatalog();

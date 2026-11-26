@@ -108,7 +108,7 @@ export function LinkControl({
           <IconButton
             label={`Изменить подпись связи ${name}`}
             icon="pencil"
-            iconSize={27}
+            iconSize={22.5}
             disabled={busy}
             onClick={() => {
               cancelling.current = false;
@@ -121,7 +121,7 @@ export function LinkControl({
             label={`Удалить связь ${name}`}
             className="canvas-trash"
             icon="trash"
-            iconSize={27}
+            iconSize={22.5}
             disabled={busy}
             onClick={() => void remove(link).catch(() => setError('Не удалось удалить связь.'))}
           />

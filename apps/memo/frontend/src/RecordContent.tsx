@@ -1,15 +1,15 @@
 import { Fragment } from 'react';
 import type { ReactNode } from 'react';
-import type { JSONContent } from '@tiptap/core';
 import { resolveMediaUrl } from './api';
-import { documentUrl, hasSectionContent } from './document';
+import { documentUrl, hasSectionContent, sectionText } from './document';
 import type { RecordSection } from './document';
+import type { DocumentNode } from './types';
 
-function contentNodes(nodes: JSONContent[] = []): ReactNode {
+function contentNodes(nodes: DocumentNode[] = []): ReactNode {
   return nodes.map((node, index) => <Fragment key={index}>{contentNode(node)}</Fragment>);
 }
 
-function contentNode(node: JSONContent): ReactNode {
+function contentNode(node: DocumentNode): ReactNode {
   switch (node.type) {
     case 'text':
       return (
@@ -75,6 +75,7 @@ export function RecordContent({
   index: number;
   edit?: () => void;
 }) {
+  const text = sectionText(section);
   return (
     <section
       className={edit ? 'record-content editable-section' : 'record-content'}
@@ -97,7 +98,9 @@ export function RecordContent({
       }}
     >
       {section.title && <h2>{section.title}</h2>}
-      {contentNodes(section.document.content)}
+      {text === null
+        ? contentNodes(section.document.content)
+        : text && <p className="record-plain-text">{text}</p>}
       {!hasSectionContent(section) && <p className="help-text">Пустой блок</p>}
     </section>
   );

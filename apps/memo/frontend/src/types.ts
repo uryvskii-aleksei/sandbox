@@ -1,6 +1,12 @@
-import type { JSONContent } from '@tiptap/core';
+export interface DocumentNode {
+  type?: string;
+  attrs?: Record<string, unknown>;
+  content?: DocumentNode[];
+  marks?: { type: string; attrs?: Record<string, unknown> }[];
+  text?: string;
+}
 
-export type MemoDocument = JSONContent & { type: 'doc'; content: JSONContent[] };
+export type MemoDocument = DocumentNode & { type: 'doc'; content: DocumentNode[] };
 
 export interface User {
   id: number;

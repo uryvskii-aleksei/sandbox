@@ -6,10 +6,9 @@ import { CardEditor } from './CardEditor';
 import { PanelDivider } from './PanelDivider';
 import { ProjectCreateDialog } from './ProjectCreateDialog';
 import { childPosition, excerpt } from './graph';
-import { QuickCapture } from './QuickCapture';
 import { parseRoute, routeUrl } from './routes';
 import type { EntityRef, Route } from './routes';
-import { isTextInput, shortcutHelp } from './shortcuts';
+import { isTextInput, markTools, shortcutHelp } from './shortcuts';
 import { draftKey, listDrafts, readLocal, removeLocal, writeLocal } from './storage';
 import { folderTrail } from './types';
 import type {
@@ -237,7 +236,6 @@ export function App() {
   const [loadedKey, setLoadedKey] = useState('');
   const [editing, setEditing] = useState<Card | null>(null);
   const [openForEditing, setOpenForEditing] = useState(false);
-  const [capturing, setCapturing] = useState(false);
   const [projectCreateOpen, setProjectCreateOpen] = useState(false);
   const projectCreateButton = useRef<HTMLButtonElement>(null);
   const [query, setQuery] = useState('');
@@ -265,12 +263,22 @@ export function App() {
   const settingsButton = useRef<HTMLButtonElement>(null);
   const shortcutsButton = useRef<HTMLButtonElement>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [markToolsSlot, setMarkToolsSlot] = useState<HTMLSpanElement | null>(null);
+  const [boardAddOpen, setBoardAddOpen] = useState(false);
+  const boardAddButton = useRef<HTMLButtonElement>(null);
+  const [drawingTool, setDrawingTool] = useState<(typeof markTools)[number]['kind'] | null>(null);
+  const draw = (kind: NonNullable<typeof drawingTool>) => {
+    setViewMode('board');
+    setDrawingTool(kind);
+  };
+  const chooseAddAction = (action: () => void) => {
+    boardAddButton.current?.focus();
+    setBoardAddOpen(false);
+    action();
+  };
   const [panels, setPanels] = useState(panelPreferences);
   useEffect(() => {
     writeLocal(panelKey, panels);
   }, [panels]);
-  const modal = capturing || projectCreateOpen;
   const showingProjects = route.view === 'dashboard';
   const visibleProjects = projects.filter((project) => !project.inbox);
   const projectRef = route.view === 'project' ? route.project : undefined;
@@ -440,25 +448,21 @@ export function App() {
   }, [currentBoard, currentUrl, loaded]);
   useEffect(() => {
     const update = () => {
-      if (capturing) {
-        const closeButton = document.getElementById('close-capture');
-        if (closeButton instanceof HTMLButtonElement && closeButton.disabled) {
-          history.pushState(null, '', currentUrl);
-          return;
-        }
-        closeButton?.click();
-      }
       if (editing) document.getElementById('close-editor')?.click();
       setRoute(currentRoute());
+      setBoardAddOpen(false);
+      setDrawingTool(null);
       setFocusId(null);
     };
     window.addEventListener('popstate', update);
     return () => window.removeEventListener('popstate', update);
-  }, [capturing, editing, currentUrl]);
+  }, [editing]);
   const navigate = (next: Route, focus: number | null = null) => {
     if (editing) document.getElementById('close-editor')?.click();
     history.pushState(null, '', urlFor(next));
     setRoute(next);
+    setBoardAddOpen(false);
+    setDrawingTool(null);
     setFocusId(focus);
     setError('');
   };
@@ -619,7 +623,7 @@ export function App() {
   };
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
-      if (!user || modal || event.defaultPrevented || event.isComposing) return;
+      if (!user || projectCreateOpen || event.defaultPrevented || event.isComposing) return;
       if (event.target instanceof Element && event.target.closest('dialog[open]')) return;
       if (
         (event.ctrlKey || event.metaKey) &&
@@ -638,17 +642,23 @@ export function App() {
       }
       if (!event.altKey || event.ctrlKey || event.metaKey || event.repeat || isTextInput(event))
         return;
-      if (event.shiftKey && event.code === 'KeyH') {
+      const tool =
+        event.shiftKey && !busy && workspaceView && active && loaded && loadedKey === loadKey
+          ? markTools.find(({ key }) => event.code === `Key${key}`)
+          : undefined;
+      if (tool) {
+        event.preventDefault();
+        setSearchOpen(false);
+        setShortcutsOpen(false);
+        dismissSettings();
+        setBoardAddOpen(false);
+        draw(tool.kind);
+      } else if (event.shiftKey && event.code === 'KeyH') {
         event.preventDefault();
         setSearchOpen(false);
         setProjectSettingsOpen(false);
         setShortcutsOpen(true);
         shortcutsButton.current?.focus();
-      } else if (event.code === 'KeyN' && !event.shiftKey && !busy) {
-        event.preventDefault();
-        dismissSettings();
-        setSearchOpen(false);
-        setCapturing(true);
       } else if (
         event.shiftKey &&
         workspaceView &&
@@ -656,6 +666,7 @@ export function App() {
       ) {
         event.preventDefault();
         setShortcutsOpen(false);
+        setBoardAddOpen(false);
         createBlock(event.code === 'KeyN' ? 'record' : 'folder');
       } else if (
         event.shiftKey &&
@@ -920,7 +931,7 @@ export function App() {
       <div
         className={`application ${editing ? 'has-record-dock' : ''}`}
         style={docking}
-        inert={modal}
+        inert={projectCreateOpen}
       >
         <aside
           className={`sidebar ${panels.collapsed ? 'sidebar-collapsed' : ''}`}
@@ -992,18 +1003,6 @@ export function App() {
               </Popover>
             )}
           </div>
-          <button
-            className="capture-button"
-            aria-label="Быстрая запись"
-            title={panels.collapsed ? 'Быстрая запись' : undefined}
-            aria-keyshortcuts="Alt+N"
-            disabled={busy}
-            onClick={() => setCapturing(true)}
-          >
-            <span aria-hidden="true">＋</span>
-            <span className="sidebar-label">Быстрая запись</span>
-            <kbd>Alt+N</kbd>
-          </button>
           <p className="nav-section">ЛИЧНОЕ ПРОСТРАНСТВО</p>
           <nav className="main-navigation" aria-label="Личное пространство">
             {navigation.map((item) => (
@@ -1022,27 +1021,31 @@ export function App() {
               </button>
             ))}
           </nav>
-          <p className="nav-section">ПРОЕКТЫ</p>
-          <nav className="project-navigation" aria-label="Проекты">
-            {visibleProjects.map((project) => (
-              <button
-                key={project.id}
-                className={`nav-item ${selected === project.id ? 'selected' : ''}`}
-                disabled={busy}
-                onClick={() =>
-                  navigate({ view: 'project', project: project.publicId ?? project.id })
-                }
-                aria-label={project.name}
-                title={panels.collapsed ? project.name : undefined}
-              >
-                <span className="project-dot" aria-hidden="true">
-                  <span>{project.name.slice(0, 1).toLocaleUpperCase('ru')}</span>
-                </span>
-                <span className="sidebar-label">{project.name}</span>
-                <small>{project.cards ?? 0}</small>
-              </button>
-            ))}
-          </nav>
+          {visibleProjects.length > 0 && (
+            <>
+              <p className="nav-section">ПРОЕКТЫ</p>
+              <nav className="project-navigation" aria-label="Проекты">
+                {visibleProjects.map((project) => (
+                  <button
+                    key={project.id}
+                    className={`nav-item ${selected === project.id ? 'selected' : ''}`}
+                    disabled={busy}
+                    onClick={() =>
+                      navigate({ view: 'project', project: project.publicId ?? project.id })
+                    }
+                    aria-label={project.name}
+                    title={panels.collapsed ? project.name : undefined}
+                  >
+                    <span className="project-dot" aria-hidden="true">
+                      <span>{project.name.slice(0, 1).toLocaleUpperCase('ru')}</span>
+                    </span>
+                    <span className="sidebar-label">{project.name}</span>
+                    <small>{project.cards ?? 0}</small>
+                  </button>
+                ))}
+              </nav>
+            </>
+          )}
           <div className="sidebar-bottom">
             <span className="avatar">{user.email[0].toUpperCase()}</span>
             <span title={user.email}>{user.email}</span>
@@ -1065,7 +1068,6 @@ export function App() {
                   setDeletedItem(null);
                   setNotice('');
                   setEditing(null);
-                  setCapturing(false);
                 })
               }
             >
@@ -1123,42 +1125,92 @@ export function App() {
                 <h1>{active?.name ?? names[route.view]}</h1>
               )}
             </div>
-            <div className="workspace-shortcuts">
-              <IconButton
-                ref={shortcutsButton}
-                icon="keyboard"
-                iconSize={22}
-                label="Сочетания клавиш"
-                aria-expanded={shortcutsOpen}
-                aria-controls={shortcutsOpen ? 'keyboard-shortcuts' : undefined}
-                aria-keyshortcuts="Alt+Shift+H"
-                onClick={() => {
-                  setProjectSettingsOpen(false);
-                  setShortcutsOpen((open) => !open);
-                }}
-              />
-              {shortcutsOpen && (
-                <Popover
-                  id="keyboard-shortcuts"
-                  className="shortcuts-panel"
-                  role="region"
-                  aria-labelledby="shortcuts-title"
-                  trigger={shortcutsButton}
-                  onDismiss={() => setShortcutsOpen(false)}
-                >
-                  <h2 id="shortcuts-title">Сочетания клавиш</h2>
-                  <dl className="shortcut-list">
-                    {shortcutHelp.map(([action, keys]) => (
-                      <div key={action}>
-                        <dt>{action}</dt>
-                        <dd>
-                          <kbd>{keys}</kbd>
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
-                </Popover>
+            <div className="workspace-header-actions">
+              {active && (
+                <div className="project-settings">
+                  <IconButton
+                    ref={settingsButton}
+                    icon="settings"
+                    label="Действия с проектом"
+                    aria-expanded={projectSettingsOpen}
+                    aria-controls={projectSettingsOpen ? 'project-settings-panel' : undefined}
+                    onClick={() => {
+                      setShortcutsOpen(false);
+                      setProjectSettingsOpen((open) => !open);
+                    }}
+                  />
+                  {projectSettingsOpen && (
+                    <Popover
+                      id="project-settings-panel"
+                      role="region"
+                      aria-label="Действия с проектом"
+                      trigger={settingsButton}
+                      onDismiss={dismissSettings}
+                      className="project-settings-panel"
+                    >
+                      <Button
+                        variant="text"
+                        disabled={busy}
+                        onClick={() => {
+                          dismissSettings();
+                          exportActive();
+                        }}
+                      >
+                        Экспорт
+                      </Button>
+                      <Button
+                        variant="text"
+                        className="danger"
+                        disabled={busy || active.inbox}
+                        onClick={() => {
+                          settingsButton.current?.focus();
+                          dismissSettings();
+                          requestDelete({ project: active });
+                        }}
+                      >
+                        В корзину
+                      </Button>
+                    </Popover>
+                  )}
+                </div>
               )}
+              <div className="workspace-shortcuts">
+                <IconButton
+                  ref={shortcutsButton}
+                  icon="keyboard"
+                  iconSize={22}
+                  label="Сочетания клавиш"
+                  aria-expanded={shortcutsOpen}
+                  aria-controls={shortcutsOpen ? 'keyboard-shortcuts' : undefined}
+                  aria-keyshortcuts="Alt+Shift+H"
+                  onClick={() => {
+                    setProjectSettingsOpen(false);
+                    setShortcutsOpen((open) => !open);
+                  }}
+                />
+                {shortcutsOpen && (
+                  <Popover
+                    id="keyboard-shortcuts"
+                    className="shortcuts-panel"
+                    role="region"
+                    aria-labelledby="shortcuts-title"
+                    trigger={shortcutsButton}
+                    onDismiss={() => setShortcutsOpen(false)}
+                  >
+                    <h2 id="shortcuts-title">Сочетания клавиш</h2>
+                    <dl className="shortcut-list">
+                      {shortcutHelp.map(([action, keys]) => (
+                        <div key={action}>
+                          <dt>{action}</dt>
+                          <dd>
+                            <kbd>{keys}</kbd>
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </Popover>
+                )}
+              </div>
             </div>
           </header>
           <div className="project-toolbar">
@@ -1178,27 +1230,56 @@ export function App() {
               </Button>
             )}
             {active && (
-              <div className="board-add" role="group" aria-label="Добавить на полотно">
+              <div className="board-add">
                 <IconButton
+                  ref={boardAddButton}
                   className="primary"
-                  icon="record"
-                  label="Добавить запись"
-                  tooltip="Добавить запись · Alt+Shift+N"
-                  aria-keyshortcuts="Alt+Shift+N"
+                  icon="plus"
+                  label="Добавить на полотно"
                   disabled={busy || !loaded || loadedKey !== loadKey}
-                  onClick={() => createBlock('record')}
+                  aria-expanded={boardAddOpen}
+                  aria-controls={boardAddOpen ? 'board-add-actions' : undefined}
+                  onClick={() => setBoardAddOpen((open) => !open)}
                 />
-                <IconButton
-                  className="primary"
-                  icon="folder"
-                  label="Добавить папку"
-                  tooltip="Добавить папку · Alt+Shift+F"
-                  aria-keyshortcuts="Alt+Shift+F"
-                  disabled={busy || !loaded || loadedKey !== loadKey}
-                  onClick={() => createBlock('folder')}
-                />
-                {viewMode === 'board' && (
-                  <span className="mark-tools-slot" ref={setMarkToolsSlot} />
+                {boardAddOpen && (
+                  <Popover
+                    id="board-add-actions"
+                    className="board-add-popover"
+                    role="region"
+                    aria-label="Добавить на полотно"
+                    trigger={boardAddButton}
+                    onDismiss={() => setBoardAddOpen(false)}
+                  >
+                    {(
+                      [
+                        { icon: 'record', label: 'Запись', key: 'N' },
+                        { icon: 'folder', label: 'Папка', key: 'F' },
+                      ] as const
+                    ).map(({ icon, label, key }) => (
+                      <Button
+                        key={icon}
+                        variant="text"
+                        icon={icon}
+                        aria-keyshortcuts={`Alt+Shift+${key}`}
+                        onClick={() => chooseAddAction(() => createBlock(icon))}
+                      >
+                        <span>{label}</span>
+                        <kbd aria-hidden="true">Alt + Shift + {key}</kbd>
+                      </Button>
+                    ))}
+                    {markTools.map(({ icon, shortLabel, key, kind }) => (
+                      <Button
+                        key={kind}
+                        variant="text"
+                        icon={icon}
+                        aria-keyshortcuts={`Alt+Shift+${key}`}
+                        onClick={() => chooseAddAction(() => draw(kind))}
+                      >
+                        <span>{shortLabel}</span>
+                        <kbd aria-hidden="true">Alt + Shift + {key}</kbd>
+                      </Button>
+                    ))}
+                  </Popover>
                 )}
               </div>
             )}
@@ -1220,55 +1301,6 @@ export function App() {
                   aria-pressed={viewMode === 'list'}
                   onClick={() => setViewMode('list')}
                 />
-              </div>
-            )}
-            {active && (
-              <div className="project-settings">
-                <IconButton
-                  ref={settingsButton}
-                  icon="more"
-                  label="Действия с проектом"
-                  tooltip="Действия с проектом"
-                  aria-expanded={projectSettingsOpen}
-                  aria-controls={projectSettingsOpen ? 'project-settings-panel' : undefined}
-                  onClick={() => {
-                    setShortcutsOpen(false);
-                    setProjectSettingsOpen((open) => !open);
-                  }}
-                />
-                {projectSettingsOpen && (
-                  <Popover
-                    id="project-settings-panel"
-                    role="region"
-                    aria-label="Действия с проектом"
-                    trigger={settingsButton}
-                    onDismiss={dismissSettings}
-                    className="project-settings-panel"
-                  >
-                    <Button
-                      variant="text"
-                      disabled={busy}
-                      onClick={() => {
-                        dismissSettings();
-                        exportActive();
-                      }}
-                    >
-                      Экспорт
-                    </Button>
-                    <Button
-                      variant="text"
-                      className="danger"
-                      disabled={busy || active.inbox}
-                      onClick={() => {
-                        settingsButton.current?.focus();
-                        dismissSettings();
-                        requestDelete({ project: active });
-                      }}
-                    >
-                      В корзину
-                    </Button>
-                  </Popover>
-                )}
               </div>
             )}
             {!showingBoard && toasts && (
@@ -1300,10 +1332,11 @@ export function App() {
                 links={links}
                 projectId={selected ?? 0}
                 folderId={folder}
-                markToolsSlot={markToolsSlot}
+                drawingTool={drawingTool}
+                consumeDrawingTool={() => setDrawingTool(null)}
                 notifications={toasts}
                 locate={locate}
-                busy={busy || modal}
+                busy={busy || projectCreateOpen}
                 keyboardDisabled={projectSettingsOpen || shortcutsOpen || searchOpen}
                 storageKey={`memo:${user.id}:camera:${selected}${folder === null ? '' : `:${folder}`}`}
                 focusId={focusId}
@@ -1429,15 +1462,15 @@ export function App() {
             </section>
           ) : (
             <section className="library-panel">
-              <p className="lead">
-                {route.view === 'inbox'
-                  ? 'Здесь хранятся быстрые записи из входящих.'
-                  : route.view === 'search'
+              {route.view !== 'inbox' && (
+                <p className="lead">
+                  {route.view === 'search'
                     ? query
                       ? `Результаты по запросу «${query}»`
                       : 'Поиск по названиям, тексту и ссылкам во всех проектах.'
                     : 'Недавно открытые и новые записи.'}
-              </p>
+                </p>
+              )}
               <CardList
                 cards={cards}
                 projects={projects}
@@ -1452,11 +1485,6 @@ export function App() {
                       ? 'Ничего не найдено. Попробуйте другое слово.'
                       : 'Здесь пока нет записей.'}
                   </p>
-                  {route.view === 'inbox' && (
-                    <button className="primary" onClick={() => setCapturing(true)}>
-                      Записать первую мысль
-                    </button>
-                  )}
                 </div>
               )}
               {hasMore && (
@@ -1520,19 +1548,6 @@ export function App() {
           error={deleteError}
           dismiss={() => setConfirmDelete(null)}
           confirm={deleteConfirmed}
-        />
-      )}
-      {capturing && (
-        <QuickCapture
-          userId={user.id}
-          projects={projects}
-          close={() => setCapturing(false)}
-          saved={(card) => {
-            setCapturing(false);
-            setNotice('Запись сохранена.');
-            if (selected === card.project && folder === (card.folder ?? null)) setFocusId(card.id);
-            refresh();
-          }}
         />
       )}
     </>

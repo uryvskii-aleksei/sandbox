@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from './api';
-import { RichEditor } from './RichEditor';
-import { hasSectionContent, recordSections, sectionDocument } from './document';
+import {
+  hasSectionContent,
+  recordSections,
+  sectionDocument,
+  sectionText,
+  textDocument,
+  withoutEmptySections,
+} from './document';
 import type { RecordSection } from './document';
 import { RecordContent } from './RecordContent';
 import { contentSignature, copiedContent, excerpt, reconcileSaved } from './graph';
@@ -34,10 +40,13 @@ export function CardEditor({
   copied,
 }: Props) {
   const [titleDraft, setTitleDraft] = useState<string | null>(() =>
-    initiallyEditing ? card.name : null,
+    initiallyEditing && card.kind === 'folder' ? card.name : null,
   );
-  const [activeSection, setActiveSection] = useState<string | null>(null);
-  const sectionEditor = useRef<HTMLFieldSetElement>(null);
+  const [editingSections, setEditingSections] = useState<string[]>(() => {
+    if (!initiallyEditing || card.kind === 'folder') return [];
+    const first = recordSections(card).find((section) => sectionText(section) !== null);
+    return first ? [first.id] : [];
+  });
   const [edit, renderEdit] = useState(() => structuredClone(card));
   const editRef = useRef(edit);
   editRef.current = edit;
@@ -54,7 +63,6 @@ export function CardEditor({
   const [error, setError] = useState('');
   const [copyLinkStatus, setCopyLinkStatus] = useState<'idle' | 'copied' | 'manual'>('idle');
   const [localFailure, setLocalFailure] = useState(false);
-  const [fieldPending, setFieldPending] = useState(0);
   const [working, setWorking] = useState(false);
   const [confirmTrash, setConfirmTrash] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -80,7 +88,10 @@ export function CardEditor({
   const copyKey = useRef(`draft-copy-${card.id}-${recovery?.savedAt ?? Date.now()}`);
   const savedCallback = useRef(saved);
   savedCallback.current = saved;
-  const dirty = contentSignature(edit) !== contentSignature(base.current);
+  const savedContent = contentSignature(base.current);
+  const dirty = contentSignature(edit) !== savedContent;
+  const bodyDirty =
+    dirty && contentSignature({ ...edit, name: base.current.name }) !== savedContent;
   useEffect(() => {
     if (
       card.version <= base.current.version ||
@@ -110,15 +121,28 @@ export function CardEditor({
     setError('');
     if (!saving.current && status !== 'conflict') setStatus(attempt.current ? 'error' : 'pending');
   };
-  const saveNow = async () => {
-    if (saving.current || working || fieldPending > 0 || recovery || status === 'conflict') return;
-    if (!attempt.current && contentSignature(editRef.current) === contentSignature(base.current))
+  const saveNow = async (finishEditing = true) => {
+    if (saving.current || working || recovery || status === 'conflict') return;
+    const name = finishEditing ? titleDraft?.trim() : undefined;
+    const current = name ? { ...editRef.current, name } : editRef.current;
+    const prepared = finishEditing && !attempt.current ? withoutEmptySections(current) : current;
+    if (finishEditing && titleDraft !== null) setTitleDraft(null);
+    if (prepared !== editRef.current) {
+      editRef.current = prepared;
+      renderEdit(prepared);
+    }
+    if (!attempt.current && contentSignature(prepared) === contentSignature(base.current)) {
+      removeLocal(draftKey(userId, card.id));
+      setLocalFailure(false);
+      setStatus('saved');
+      if (finishEditing) setEditingSections([]);
       return;
+    }
     saving.current = true;
     setStatus('saving');
     setError('');
     const sent = attempt.current ?? {
-      card: structuredClone(editRef.current),
+      card: structuredClone(prepared),
       requestId: crypto.randomUUID(),
     };
     attempt.current = sent;
@@ -135,6 +159,7 @@ export function CardEditor({
         removeLocal(draftKey(userId, card.id));
         setStatus('saved');
         setLocalFailure(false);
+        if (finishEditing) setEditingSections([]);
       } else {
         persist(next);
         setStatus('pending');
@@ -158,10 +183,11 @@ export function CardEditor({
   useEffect(() => {
     if (recovery) return;
     if (dirty || attempt.current) persist();
-    if ((!dirty && !attempt.current) || status !== 'pending' || fieldPending > 0 || working) return;
-    const timer = window.setTimeout(() => void saveRef.current(), 800);
+    else if (status === 'pending') removeLocal(draftKey(userId, card.id));
+    if (!dirty || bodyDirty || attempt.current || status !== 'pending' || working) return;
+    const timer = window.setTimeout(() => void saveRef.current(false), 800);
     return () => window.clearTimeout(timer);
-  }, [edit, status, fieldPending, recovery, working]);
+  }, [edit, status, recovery, working]);
   useEffect(() => {
     const online = () => {
       if (attempt.current) void saveRef.current();
@@ -178,13 +204,12 @@ export function CardEditor({
     };
   }, []);
   const closeEditor = () => {
-    if (saving.current || working || fieldPending > 0) return;
+    if (saving.current || working) return;
     if (!recovery && (dirty || attempt.current) && !persist()) setConfirmDiscard(true);
     else close();
   };
   const dismissRef = useRef(closeEditor);
-  dismissRef.current =
-    activeSection && !working && fieldPending === 0 ? () => setActiveSection(null) : closeEditor;
+  dismissRef.current = closeEditor;
   useEffect(() => {
     const previous = document.activeElement;
     const keydown = (event: KeyboardEvent) => {
@@ -210,16 +235,6 @@ export function CardEditor({
       if (previous instanceof HTMLElement) previous.focus();
     };
   }, []);
-  useEffect(() => {
-    if (!activeSection || working || fieldPending > 0) return;
-    const outside = (event: PointerEvent) => {
-      if (event.button !== 0 || !(event.target instanceof Element)) return;
-      if (!event.target.closest('dialog[open]') && !sectionEditor.current?.contains(event.target))
-        setActiveSection(null);
-    };
-    document.addEventListener('pointerdown', outside);
-    return () => document.removeEventListener('pointerdown', outside);
-  }, [activeSection, working, fieldPending]);
   const commitTitle = () => {
     const next = titleDraft?.trim();
     setTitleDraft(null);
@@ -234,20 +249,14 @@ export function CardEditor({
     updateSections((current) =>
       current.map((section) => (section.id === id ? { ...section, ...change } : section)),
     );
+  const editSection = (id: string) => {
+    setEditingSections((current) => [...current.filter((item) => item !== id), id]);
+  };
   const addSection = () => {
     const id = crypto.randomUUID();
-    setActiveSection(id);
-    updateSections((current) => [
-      ...current.filter((section) => section.id !== 'legacy' || hasSectionContent(section)),
-      {
-        id,
-        title: '',
-        document: { type: 'doc', content: [{ type: 'paragraph' }] },
-      },
-    ]);
+    setEditingSections((current) => [...(empty ? [sections[0].id] : current), id]);
+    updateSections((current) => [...current, { id, title: '', document: textDocument('') }]);
   };
-  const fieldActivity = (pending: boolean) =>
-    setFieldPending((count) => Math.max(0, count + (pending ? 1 : -1)));
   const work = async (operation: () => Promise<void>) => {
     setWorking(true);
     setError('');
@@ -274,16 +283,12 @@ export function CardEditor({
       removeLocal(draftKey(userId, card.id));
       copied(result);
     });
-  const locked = working || fieldPending > 0;
-  const canEdit = !locked && !recovery && status !== 'conflict';
+  const canEdit = !working && !recovery && status !== 'conflict';
   const visibleSections = sections.filter(
-    (section) => section.id !== 'legacy' || hasSectionContent(section),
+    (section) => hasSectionContent(section) || editingSections.includes(section.id),
   );
-  const finishSection = async () => {
-    await saveNow();
-    if (!attempt.current && contentSignature(editRef.current) === contentSignature(base.current))
-      setActiveSection((current) => (current === activeSection ? null : current));
-  };
+  const empty = !visibleSections.length;
+  const textSections = empty ? sections.slice(0, 1) : visibleSections;
   return (
     <>
       <section ref={dialog} className="editor" aria-label={edit.name}>
@@ -343,7 +348,7 @@ export function CardEditor({
                 id="close-editor"
                 icon="close"
                 label="Закрыть редактор"
-                disabled={locked || status === 'saving'}
+                disabled={working || status === 'saving'}
                 onClick={closeEditor}
               />
             </div>
@@ -390,6 +395,11 @@ export function CardEditor({
                         attempt.current = recovery.attempt;
                         editRef.current = recovery.card;
                         renderEdit(recovery.card);
+                        setEditingSections(
+                          recordSections(recovery.card)
+                            .filter((section) => sectionText(section) !== null)
+                            .map(({ id }) => id),
+                        );
                         setRecovery(null);
                         setStatus('pending');
                       }}
@@ -456,6 +466,7 @@ export function CardEditor({
                         base.current = latest;
                         editRef.current = latest;
                         renderEdit(latest);
+                        setEditingSections([]);
                         savedCallback.current(latest);
                         setStatus('saved');
                       })
@@ -468,72 +479,40 @@ export function CardEditor({
             )}
             {card.kind !== 'folder' && (
               <div className="editor-body record-sections">
-                {visibleSections.map((section, index) =>
-                  activeSection === section.id ? (
-                    <fieldset
-                      ref={sectionEditor}
-                      className="record-section-editor"
-                      key={section.id}
-                      disabled={!canEdit}
-                      aria-label={`Текстовый блок ${index + 1}`}
-                    >
-                      <div className="record-section-header">
-                        <input
-                          type="text"
-                          placeholder="Заголовок блока"
-                          aria-label={`Заголовок блока ${index + 1}`}
-                          value={section.title}
-                          maxLength={128}
-                          onChange={(event) =>
-                            updateSection(section.id, { title: event.target.value })
-                          }
-                        />
-                      </div>
-                      <RichEditor
-                        label={`Текст блока ${index + 1}`}
-                        document={section.document}
-                        disabled={!canEdit}
-                        autoFocus
-                        change={(next) => updateSection(section.id, { document: next })}
-                        activity={fieldActivity}
+                {textSections.map((section, index) => {
+                  const text = sectionText(section);
+                  if (text !== null && (empty || editingSections.includes(section.id))) {
+                    return (
+                      <textarea
+                        key={section.id}
+                        className="record-text-input"
+                        aria-label={`Текст ${index + 1}`}
+                        placeholder="Введите текст"
+                        rows={4}
+                        autoFocus={canEdit && (empty || editingSections.at(-1) === section.id)}
+                        value={text}
+                        readOnly={!canEdit || status === 'saving'}
+                        onChange={(event) => {
+                          if (empty) editSection(section.id);
+                          updateSection(section.id, { document: textDocument(event.target.value) });
+                        }}
                       />
-                      <div className="record-section-actions">
-                        <IconButton
-                          icon="trash"
-                          label="Удалить блок"
-                          className="danger"
-                          onClick={() => {
-                            setActiveSection(null);
-                            updateSections((current) =>
-                              current.filter(({ id }) => id !== section.id),
-                            );
-                          }}
-                        />
-                        <Button
-                          variant="primary"
-                          disabled={status === 'saving'}
-                          onClick={() => void finishSection()}
-                        >
-                          Сохранить
-                        </Button>
-                      </div>
-                    </fieldset>
-                  ) : (
+                    );
+                  }
+                  return (
                     <RecordContent
                       key={section.id}
                       section={section}
-                      edit={canEdit ? () => setActiveSection(section.id) : undefined}
+                      edit={canEdit && text !== null ? () => editSection(section.id) : undefined}
                       index={index}
                     />
-                  ),
-                )}
-                {!visibleSections.length && <p className="empty-message">Пока без содержания</p>}
+                  );
+                })}
                 <IconButton
                   icon="plus"
                   className="primary"
-                  label="Добавить блок"
-                  tooltip="Добавить блок"
-                  disabled={!canEdit}
+                  label="Добавить текст"
+                  disabled={!canEdit || status === 'saving'}
                   onClick={addSection}
                 />
               </div>
@@ -547,18 +526,24 @@ export function CardEditor({
               disabled={!canEdit || status === 'saving' || dirty || attempt.current !== undefined}
               onClick={() => setConfirmTrash(true)}
             >
-              В корзину
+              Удалить
             </Button>
-            {status === 'error' && (
-              <Button type="submit" variant="primary" disabled={!canEdit}>
-                Повторить сохранение
-              </Button>
-            )}
-            {(status === 'saving' || fieldPending > 0) && (
+            {status === 'saving' && (
               <p className="save-status" role="status">
-                {fieldPending > 0 ? 'Загружаем материал…' : 'Сохраняем…'}
+                Сохраняем…
               </p>
             )}
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={
+                !canEdit ||
+                status === 'saving' ||
+                (!dirty && !attempt.current && !editingSections.length)
+              }
+            >
+              {status === 'error' ? 'Повторить сохранение' : 'Сохранить'}
+            </Button>
           </footer>
         </form>
       </section>

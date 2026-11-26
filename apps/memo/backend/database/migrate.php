@@ -28,6 +28,14 @@ if (!$pdo->query("SHOW COLUMNS FROM board_marks WHERE Field = 'label_scale'")->f
 if (!$pdo->query("SHOW COLUMNS FROM projects WHERE Field = 'updated_at'")->fetch()) {
     $pdo->exec('ALTER TABLE projects ADD COLUMN updated_at DATETIME(6) NULL');
 }
+foreach (['projects', 'cards'] as $table) {
+    if (!$pdo->query("SHOW COLUMNS FROM $table WHERE Field = 'public_id'")->fetch()) {
+        $pdo->exec("ALTER TABLE $table ADD COLUMN public_id CHAR(33) CHARACTER SET ascii COLLATE ascii_bin NULL UNIQUE");
+    }
+    while ($rows = $pdo->query("SELECT id,public_id FROM $table WHERE public_id IS NULL ORDER BY id LIMIT 500")->fetchAll()) {
+        foreach ($rows as $row) \Memo\ensurePublicId($table, $row);
+    }
+}
 $pdo->beginTransaction();
 try {
     $marker = $pdo->prepare('INSERT IGNORE INTO schema_migrations(name) VALUES(?)');

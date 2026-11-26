@@ -176,11 +176,11 @@ function importLegacy(PDO $pdo, array $input, string $email, string $orphanPolic
         $pdo->beginTransaction();
         $projects = []; $cards = [];
         foreach ($normalized['content']['projects'] as $project) {
-            execute($pdo, 'INSERT INTO projects(owner_id,name) VALUES(?,?)', [$owner, $project['name']]);
+            execute($pdo, 'INSERT INTO projects(public_id,owner_id,name) VALUES(?,?,?)', [\Memo\newPublicId(), $owner, $project['name']]);
             $projects[$project['key']] = (int) $pdo->lastInsertId();
         }
         foreach ($normalized['content']['cards'] as $card) {
-            execute($pdo, 'INSERT INTO cards(project_id,parent_id,name,x,y) VALUES(?,NULL,?,?,?)', [$projects[$card['projectKey']], $card['name'], $card['coordinates']['x'], $card['coordinates']['y']]);
+            execute($pdo, 'INSERT INTO cards(public_id,project_id,parent_id,name,x,y) VALUES(?,?,NULL,?,?,?)', [\Memo\newPublicId(), $projects[$card['projectKey']], $card['name'], $card['coordinates']['x'], $card['coordinates']['y']]);
             $id = (int) $pdo->lastInsertId(); $cards[$card['legacyId']] = $id;
             foreach ($card['content'] as $order => $group) {
                 execute($pdo, 'INSERT INTO field_groups(card_id,name,sort_order,collapsed) VALUES(?,?,?,?)', [$id, $group['name'], $order, (int) $group['collapsed']]);

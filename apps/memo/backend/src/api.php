@@ -8,6 +8,20 @@ require_once __DIR__ . '/cards.php';
 require_once __DIR__ . '/workspace.php';
 require_once __DIR__ . '/preview.php';
 
+function resolvePublicPath(string $path, int $owner): string
+{
+    if (!preg_match('~^/(projects|cards)/(m[a-f0-9]{32})(/.*)?$~D', $path, $match)) return $path;
+    [, $entity, $publicId] = $match;
+    if ($entity === 'projects') {
+        $id = query('SELECT id FROM projects WHERE public_id=? AND owner_id=?', [$publicId, $owner])->fetchColumn();
+        if ($id === false) fail(404, 'Проект не найден.');
+    } else {
+        $id = query('SELECT c.id FROM cards c JOIN projects p ON p.id=c.project_id WHERE c.public_id=? AND p.owner_id=?', [$publicId, $owner])->fetchColumn();
+        if ($id === false) fail(404, 'Карточка не найдена.');
+    }
+    return "/$entity/$id" . ($match[3] ?? '');
+}
+
 function route(): never
 {
     header('Content-Type: application/json; charset=utf-8');
@@ -50,6 +64,7 @@ function route(): never
         respond(['user' => null, 'csrfToken' => $_SESSION['csrf']]);
     }
     $user = requireUser(); $owner = $user['id'];
+    $path = resolvePublicPath($path, $owner);
     if ($path === '/search' && $method === 'GET') respond(searchCards($owner));
     if ($path === '/trash' && $method === 'GET') respond(trashContents($owner));
     if ($path === '/capture' && $method === 'POST') respond(captureCard($owner, jsonBody()), 201);
@@ -140,7 +155,7 @@ function route(): never
             $parent = empty($body['parent']) ? null : positiveId($body['parent']);
             $created = ownedTransaction($owner, static function () use ($id, $owner, $parent, $point, $body): array {
                 project($id, $owner, true); validateParent($parent, $id, null);
-                query('INSERT INTO cards(project_id,parent_id,name,x,y) VALUES(?,?,?,?,?)', [$id, $parent, text($body['name'] ?? 'Без имени'), $point['x'], $point['y']]);
+                query('INSERT INTO cards(public_id,project_id,parent_id,name,x,y) VALUES(?,?,?,?,?,?)', [newPublicId(), $id, $parent, text($body['name'] ?? 'Без имени'), $point['x'], $point['y']]);
                 $cardId = (int) database()->lastInsertId();
                 if ($parent !== null) putLink($owner, ['source' => $parent, 'target' => $cardId]);
                 touchCard($cardId);

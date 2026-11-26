@@ -67,7 +67,7 @@ try {
     timeout: 30000,
   });
   if (migration.error || migration.status !== 0)
-    throw new Error('Не прошла проверка миграции связей.');
+    throw new Error('Не прошла проверка миграции Memo.');
   run(process.execPath, ['--test', 'tests/api.test.mjs'], {
     ...process.env,
     MEMO_TEST_URL: `http://127.0.0.1:${port}/api`,
@@ -122,9 +122,15 @@ try {
   assert.equal(unchanged.status, 304);
   assert.match(unchanged.headers.get('cache-control') ?? '', /no-cache/);
   assert.match(index, /<title>Memo/);
-  const deepPage = await fetch(`${base}/workplace/123`);
-  assert.equal(await deepPage.text(), index, 'SPA-маршрут должен обновляться.');
-  assert.match(deepPage.headers.get('cache-control') ?? '', /no-cache/);
+  for (const route of [
+    `workspace/m${'a'.repeat(32)}/folder/m${'b'.repeat(32)}`,
+    'workplace/123/folder/456',
+  ]) {
+    const deepPage = await fetch(`${base}/${route}`);
+    assert.equal(deepPage.status, 200);
+    assert.equal(await deepPage.text(), index, `Apache должен обслуживать SPA-маршрут ${route}.`);
+    assert.match(deepPage.headers.get('cache-control') ?? '', /no-cache/);
+  }
   for (const match of index.matchAll(/(?:src|href)="(\/memo\/assets\/[^\"]+)"/g)) {
     assert.equal((await fetch(`http://127.0.0.1:${artifactPort}${match[1]}`)).status, 200);
   }

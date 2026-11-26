@@ -7,6 +7,8 @@ import { PanelDivider } from './PanelDivider';
 import { ProjectCreateDialog } from './ProjectCreateDialog';
 import { childPosition, excerpt } from './graph';
 import { QuickCapture } from './QuickCapture';
+import { parseRoute, routeUrl } from './routes';
+import type { EntityRef, Route } from './routes';
 import { isTextInput, shortcutHelp } from './shortcuts';
 import { draftKey, listDrafts, readLocal, removeLocal, writeLocal } from './storage';
 import { folderTrail } from './types';
@@ -47,34 +49,10 @@ function panelPreferences() {
   };
 }
 
-type View = 'dashboard' | 'project' | 'inbox' | 'recent' | 'search' | 'trash' | 'drafts';
-interface Route {
-  view: View;
-  project?: number;
-  folder?: number;
-}
-function currentRoute(): Route {
-  const project = location.pathname.match(/\/workplace\/(\d+)(?:\/folder\/(\d+))?\/?$/);
-  if (project)
-    return {
-      view: 'project',
-      project: Number(project[1]),
-      folder: project[2] ? Number(project[2]) : undefined,
-    };
-  const view = location.pathname.split('/').filter(Boolean).at(-1);
-  return {
-    view:
-      view === 'inbox' ||
-      view === 'recent' ||
-      view === 'search' ||
-      view === 'trash' ||
-      view === 'drafts'
-        ? view
-        : 'dashboard',
-  };
-}
-const routeUrl = (route: Route) =>
-  `${import.meta.env.BASE_URL}${route.view === 'project' ? `workplace/${route.project}${route.folder ? `/folder/${route.folder}` : ''}` : route.view}`;
+type View = Route['view'];
+const base = import.meta.env.BASE_URL;
+const currentRoute = () => parseRoute(location.pathname, base);
+const urlFor = (route: Route) => routeUrl(base, route);
 const reasonText = (reason: unknown) =>
   reason instanceof Error ? reason.message : 'Не удалось выполнить действие.';
 
@@ -180,7 +158,7 @@ const names: Record<View, string> = {
   trash: 'Корзина',
   drafts: 'Черновики на устройстве',
 };
-const navigation: { view: View; icon: string; label: string }[] = [
+const navigation: { view: Exclude<View, 'project'>; icon: string; label: string }[] = [
   { view: 'dashboard', icon: '▦', label: 'Мои проекты' },
   { view: 'inbox', icon: '↓', label: 'Входящие' },
   { view: 'recent', icon: '◷', label: 'Недавние' },
@@ -243,7 +221,11 @@ export function App() {
   const [projectsStatus, setProjectsStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [route, setRoute] = useState<Route>(currentRoute);
   const [cards, setCards] = useState<Card[]>([]);
-  const [folders, setFolders] = useState<Folder[]>([]);
+  const [workspace, setWorkspace] = useState<{
+    project: Project;
+    folders: Folder[];
+    folder: number | null;
+  } | null>(null);
   const [links, setLinks] = useState<CardLink[]>([]);
   const [trash, setTrash] = useState<Trash>({ cards: [], projects: [] });
   const [loading, setLoading] = useState(false);
@@ -287,12 +269,23 @@ export function App() {
   const modal = capturing || projectCreateOpen;
   const showingProjects = route.view === 'dashboard';
   const visibleProjects = projects.filter((project) => !project.inbox);
-  const selected = route.view === 'project' ? route.project : undefined;
-  const folder = route.view === 'project' ? (route.folder ?? null) : null;
-  const loadKey = `${route.view}:${selected ?? ''}:${folder ?? ''}:${route.view === 'search' ? query : ''}`;
-  const active = projects.find((project) => project.id === selected);
-  const trail = loadedKey === loadKey ? folderTrail(folders, folder) : [];
+  const projectRef = route.view === 'project' ? route.project : undefined;
+  const folderRef = route.view === 'project' ? route.folder : undefined;
+  const loadKey = `${route.view}:${projectRef ?? ''}:${folderRef ?? ''}:${route.view === 'search' ? query : ''}`;
+  const currentBoard = route.view === 'project' && loadedKey === loadKey ? workspace : null;
+  const selected = currentBoard?.project.id;
+  const folder = currentBoard?.folder ?? null;
+  const active = projects.find((project) => project.id === selected) ?? currentBoard?.project;
+  const trail = currentBoard ? folderTrail(currentBoard.folders, folder) : [];
   const activeFolder = trail.at(-1);
+  const currentUrl =
+    currentBoard?.project.publicId && (folderRef === undefined || activeFolder)
+      ? urlFor({
+          view: 'project',
+          project: currentBoard.project.publicId,
+          folder: activeFolder?.publicId,
+        })
+      : urlFor(route);
   const drafts = user ? listDrafts(user.id) : [];
 
   useEffect(() => {
@@ -350,7 +343,7 @@ export function App() {
     setShortcutsOpen(false);
     pendingBlock.current = {};
     pendingPaste.current = null;
-  }, [route.view, selected, folder]);
+  }, [route.view, projectRef, folderRef]);
   useEffect(() => {
     if (!user || route.view === 'dashboard') return;
     const controller = new AbortController();
@@ -362,11 +355,21 @@ export function App() {
     const timer = window.setTimeout(
       () => {
         const load = async () => {
-          if (route.view === 'project' && selected !== undefined) {
-            const tree = await api.folders(selected, controller.signal);
-            if (!controller.signal.aborted) setFolders(tree);
-            const result = await api.cards(selected, folder, controller.signal);
-            if (!controller.signal.aborted) setCards(result);
+          if (projectRef !== undefined) {
+            const [project, tree] = await Promise.all([
+              api.project(projectRef, controller.signal),
+              api.folders(projectRef, controller.signal),
+            ]);
+            const target = tree.find(
+              (item) => item.publicId === folderRef || item.id === folderRef,
+            );
+            if (folderRef !== undefined && !target) throw new Error('Папка не найдена.');
+            const folder = target?.id ?? null;
+            const result = await api.cards(project.id, folder, controller.signal);
+            if (!controller.signal.aborted) {
+              setWorkspace({ project, folders: tree, folder });
+              setCards(result);
+            }
           } else if (route.view === 'trash') {
             const result = await api.trash();
             if (!controller.signal.aborted) setTrash(result);
@@ -401,13 +404,18 @@ export function App() {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [user, route.view, selected, folder, query, revision]);
+  }, [user, route.view, projectRef, folderRef, query, revision]);
+  useEffect(() => {
+    if (currentBoard && loaded && location.pathname !== currentUrl) {
+      history.replaceState(history.state, '', currentUrl + location.search + location.hash);
+    }
+  }, [currentBoard, currentUrl, loaded]);
   useEffect(() => {
     const update = () => {
       if (capturing) {
         const closeButton = document.getElementById('close-capture');
         if (closeButton instanceof HTMLButtonElement && closeButton.disabled) {
-          history.pushState(null, '', routeUrl(route));
+          history.pushState(null, '', currentUrl);
           return;
         }
         closeButton?.click();
@@ -418,10 +426,10 @@ export function App() {
     };
     window.addEventListener('popstate', update);
     return () => window.removeEventListener('popstate', update);
-  }, [capturing, editing, route]);
+  }, [capturing, editing, currentUrl]);
   const navigate = (next: Route, focus: number | null = null) => {
     if (editing) document.getElementById('close-editor')?.click();
-    history.pushState(null, '', routeUrl(next));
+    history.pushState(null, '', urlFor(next));
     setRoute(next);
     setFocusId(focus);
     setError('');
@@ -459,8 +467,14 @@ export function App() {
     replaceCard(renamed);
     setEditing((current) => (current?.id === renamed.id ? renamed : current));
     if (renamed.kind === 'folder')
-      setFolders((items) =>
-        items.map((item) => (item.id === renamed.id ? { ...item, name: renamed.name } : item)),
+      setWorkspace(
+        (current) =>
+          current && {
+            ...current,
+            folders: current.folders.map((item) =>
+              item.id === renamed.id ? { ...item, name: renamed.name } : item,
+            ),
+          },
       );
     return renamed;
   };
@@ -472,6 +486,9 @@ export function App() {
     const renamed = await api.renameProject(project.id, name);
     setProjects((items) =>
       items.map((item) => (item.id === renamed.id ? { ...item, ...renamed } : item)),
+    );
+    setWorkspace((current) =>
+      current?.project.id === renamed.id ? { ...current, project: renamed } : current,
     );
   };
   const openId = (id: number, edit = false) => {
@@ -490,14 +507,23 @@ export function App() {
   };
   const locate = (card: Card) => {
     setViewMode('board');
-    navigate({ view: 'project', project: card.project, folder: card.folder ?? undefined }, card.id);
+    const project = projects.find((item) => item.id === card.project);
+    navigate(
+      {
+        view: 'project',
+        project: project?.publicId ?? card.project,
+        folder: card.folder ?? undefined,
+      },
+      card.id,
+    );
   };
-  const enterFolder = (id: number, project: number) => {
+  const enterFolder = (id: EntityRef, projectId: number) => {
     setViewMode('board');
-    navigate({ view: 'project', project, folder: id });
+    const project = projects.find((item) => item.id === projectId);
+    navigate({ view: 'project', project: project?.publicId ?? projectId, folder: id });
   };
   const openFromList = (card: Card) => {
-    if (card.kind === 'folder') enterFolder(card.id, card.project);
+    if (card.kind === 'folder') enterFolder(card.publicId ?? card.id, card.project);
     else openId(card.id);
   };
   const authenticate = (event: FormEvent<HTMLFormElement>) => {
@@ -518,7 +544,7 @@ export function App() {
     setProjects((items) => [result, ...items.filter((item) => item.id !== result.id)]);
     setProjectCreateOpen(false);
     setViewMode('board');
-    navigate({ view: 'project', project: result.id });
+    navigate({ view: 'project', project: result.publicId ?? result.id });
     refresh();
   };
   const dismissProjectCreate = () => {
@@ -876,7 +902,7 @@ export function App() {
             <a
               className="brand"
               aria-label="Memo"
-              href={routeUrl({ view: 'dashboard' })}
+              href={urlFor({ view: 'dashboard' })}
               onClick={(event) => {
                 event.preventDefault();
                 navigate({ view: 'dashboard' });
@@ -975,7 +1001,9 @@ export function App() {
                 key={project.id}
                 className={`nav-item ${selected === project.id ? 'selected' : ''}`}
                 disabled={busy}
-                onClick={() => navigate({ view: 'project', project: project.id })}
+                onClick={() =>
+                  navigate({ view: 'project', project: project.publicId ?? project.id })
+                }
                 aria-label={project.name}
                 title={panels.collapsed ? project.name : undefined}
               >
@@ -1000,6 +1028,7 @@ export function App() {
                   setUser(null);
                   setProjects([]);
                   setCards([]);
+                  setWorkspace(null);
                   setLinks([]);
                   setTrash({ cards: [], projects: [] });
                   setQuery('');
@@ -1032,7 +1061,9 @@ export function App() {
                 <nav className="board-breadcrumbs" aria-label="Путь к папке">
                   <button
                     title={active.name}
-                    onClick={() => navigate({ view: 'project', project: active.id })}
+                    onClick={() =>
+                      navigate({ view: 'project', project: active.publicId ?? active.id })
+                    }
                   >
                     {active.name}
                   </button>
@@ -1041,7 +1072,10 @@ export function App() {
                     .filter((item) => item.id !== folder)
                     .map((item) => (
                       <span key={item.id}>
-                        <button title={item.name} onClick={() => enterFolder(item.id, active.id)}>
+                        <button
+                          title={item.name}
+                          onClick={() => enterFolder(item.publicId, active.id)}
+                        >
                           {item.name}
                         </button>
                         <span aria-hidden="true">/</span>
@@ -1248,7 +1282,7 @@ export function App() {
                 pasteCard={pasteCard}
                 createBlock={createBlock}
                 open={(card, edit) => openId(card.id, edit)}
-                enter={(card) => enterFolder(card.id, card.project)}
+                enter={(card) => enterFolder(card.publicId ?? card.id, card.project)}
                 rename={renameCard}
                 moveSelection={moveSelection}
                 removeSelection={removeSelection}
@@ -1274,7 +1308,9 @@ export function App() {
                       <button
                         className="project-row"
                         disabled={busy}
-                        onClick={() => navigate({ view: 'project', project: project.id })}
+                        onClick={() =>
+                          navigate({ view: 'project', project: project.publicId ?? project.id })
+                        }
                       >
                         <span className="project-row-name">{project.name}</span>
                         <span className="project-row-count">Записей: {project.cards ?? 0}</span>

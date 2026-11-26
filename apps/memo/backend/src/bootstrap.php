@@ -76,6 +76,22 @@ function text(mixed $value, int $maximum = 128, bool $empty = false): string
     return $value;
 }
 
+function newPublicId(): string
+{
+    return 'm' . bin2hex(random_bytes(16));
+}
+
+function ensurePublicId(string $table, array $row): string
+{
+    if ($row['public_id'] !== null) return $row['public_id'];
+    // Предыдущий релиз может создать строку без ID во время переключения или после отката.
+    $id = newPublicId();
+    if (query("UPDATE $table SET public_id=? WHERE id=? AND public_id IS NULL", [$id, $row['id']])->rowCount()) return $id;
+    $existing = query("SELECT public_id FROM $table WHERE id=? FOR UPDATE", [$row['id']])->fetchColumn();
+    if (!is_string($existing)) fail(404, 'Запись не найдена.');
+    return $existing;
+}
+
 function positiveId(mixed $value): int
 {
     $id = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 4294967295]]);

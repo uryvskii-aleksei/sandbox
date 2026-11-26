@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { linkPort, routeBoardLinks, routeConnection } from '../frontend/src/connectionRoutes.ts';
+import { parseRoute, routeUrl } from '../frontend/src/routes.ts';
 import {
   branchIds,
   canConnect,
@@ -33,6 +34,28 @@ const group = (id, field, value) => ({
   order: 0,
   collapsed: false,
   fields: [{ id: field, type: 'textarea', title: '', order: 0, value: [value] }],
+});
+
+test('workspace routes round-trip opaque IDs and still resolve numeric bookmarks', () => {
+  const base = '/memo/';
+  const project = `m${'a'.repeat(32)}`;
+  const folder = `m${'0'.repeat(32)}`;
+  const current = { view: 'project', project, folder };
+  assert.equal(routeUrl(base, current), `${base}workspace/${project}/folder/${folder}`);
+  assert.deepEqual(parseRoute(routeUrl(base, current), base), current);
+  assert.deepEqual(parseRoute(`${base}workplace/123/folder/456/`, base), {
+    view: 'project',
+    project: 123,
+    folder: 456,
+  });
+  assert.deepEqual(parseRoute(`${base}workspace/${project}/folder/456`, base), {
+    view: 'project',
+    project,
+    folder: 456,
+  });
+  assert.deepEqual(parseRoute(`${base}workspace/${project}/folder/invalid`, base), {
+    view: 'dashboard',
+  });
 });
 
 const block = (id, x, y, width, height) => ({ id, x, y, width, height });

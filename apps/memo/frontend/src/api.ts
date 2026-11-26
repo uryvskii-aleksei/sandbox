@@ -1,4 +1,6 @@
 import { fieldTypes } from './types';
+import { isPublicId } from './routes';
+import type { EntityRef } from './routes';
 import type {
   Card,
   CardLink,
@@ -53,9 +55,11 @@ const isSession = (value: unknown): value is Session =>
   record(value) &&
   (value.user === null || isUser(value.user)) &&
   typeof value.csrfToken === 'string';
+// Старые квитанции и локальные черновики могли сохраниться без publicId.
 const isProject = (value: unknown): value is Project =>
   record(value) &&
   number(value.id) &&
+  (value.publicId === undefined || isPublicId(value.publicId)) &&
   typeof value.name === 'string' &&
   (value.cards === undefined || number(value.cards)) &&
   (value.inbox === undefined || typeof value.inbox === 'boolean') &&
@@ -65,6 +69,7 @@ const isProject = (value: unknown): value is Project =>
 const isFolder = (value: unknown): value is Folder =>
   record(value) &&
   number(value.id) &&
+  isPublicId(value.publicId) &&
   typeof value.name === 'string' &&
   (value.folder === null || number(value.folder));
 const isField = (value: unknown): value is Field =>
@@ -87,6 +92,7 @@ const isGroup = (value: unknown): value is FieldGroup =>
 export const isCard = (value: unknown): value is Card =>
   record(value) &&
   number(value.id) &&
+  (value.publicId === undefined || isPublicId(value.publicId)) &&
   number(value.project) &&
   typeof value.name === 'string' &&
   (value.parent === null || number(value.parent)) &&
@@ -200,6 +206,8 @@ export const api = {
     session(`/auth/${mode}`, { method: 'POST', body: JSON.stringify({ email, password }) }),
   logout: () => session('/auth/logout', { method: 'POST', body: '{}' }),
   projects: (signal?: AbortSignal) => request('/projects', array(isProject), { signal }),
+  project: (id: EntityRef, signal?: AbortSignal) =>
+    request(`/projects/${id}`, isProject, { signal }),
   createProject: (name: string, template: Template, requestId: string) =>
     request('/projects', isProject, {
       method: 'POST',
@@ -210,7 +218,7 @@ export const api = {
   deleteProject: (id: number) => request(`/projects/${id}`, isNull, { method: 'DELETE' }),
   cards: (project: number, folder: number | null, signal?: AbortSignal) =>
     request(`/projects/${project}/cards?folder=${folder ?? 'root'}`, array(isCard), { signal }),
-  folders: (project: number, signal?: AbortSignal) =>
+  folders: (project: EntityRef, signal?: AbortSignal) =>
     request(`/projects/${project}/folders`, array(isFolder), { signal }),
   createCard: (project: number, parent: number | null, coordinates: Card['coordinates']) =>
     request(`/projects/${project}/cards`, isCard, {
@@ -218,7 +226,7 @@ export const api = {
       body: JSON.stringify({ name: 'Новая мысль', parent, coordinates }),
     }),
   saveCard: (card: Card, requestId: string) => {
-    const { parent: _parent, ...body } = card;
+    const { parent: _parent, publicId: _publicId, ...body } = card;
     return request(`/cards/${card.id}`, isCard, {
       method: 'PUT',
       body: JSON.stringify({

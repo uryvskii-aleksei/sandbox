@@ -10,6 +10,8 @@ try {
     // В отдельной тестовой БД воспроизводим схему прежнего релиза.
     foreach (['projects', 'cards'] as $table) query("ALTER TABLE $table DROP COLUMN public_id");
     query('ALTER TABLE cards ALTER COLUMN height SET DEFAULT 190');
+    query('ALTER TABLE cards ALTER COLUMN width SET DEFAULT 240');
+    query('ALTER TABLE cards DROP COLUMN auto_height');
     query('INSERT INTO projects(owner_id,name) VALUES(?,?)', [$owner, 'Legacy migration fixture']);
     $project = (int) database()->lastInsertId();
     query('INSERT INTO cards(project_id,name) VALUES(?,?)', [$project, 'Parent']);
@@ -19,10 +21,14 @@ try {
     query("UPDATE projects SET created_at='2024-01-01 00:00:00' WHERE id=?", [$project]);
     query("INSERT INTO card_details(card_id,updated_at) VALUES(?,'2024-02-01 00:00:00.123456')", [$parent]);
     query("INSERT INTO card_details(card_id,updated_at,opened_at) VALUES(?,'2024-03-01 00:00:00.000000','2024-03-01 00:00:00.000000')", [$child]);
-    query("DELETE FROM schema_migrations WHERE name IN ('card-links-v1','project-activity-v1','compact-card-height-v1')");
+    query("DELETE FROM schema_migrations WHERE name IN ('card-links-v1','project-activity-v1','compact-card-height-v1','growing-card-title-v1')");
     require '/var/www/memo/database/migrate.php';
     $sizes = query('SELECT height FROM cards WHERE project_id=? ORDER BY id', [$project])->fetchAll(PDO::FETCH_COLUMN);
     if (array_map('intval', $sizes) !== [70,248]) throw new RuntimeException('Default card height did not compact or a custom height was changed');
+    $geometry = query('SELECT width,auto_height FROM cards WHERE project_id=? ORDER BY id', [$project])->fetchAll(PDO::FETCH_NUM);
+    if (array_map(static fn(array $row): array => array_map('intval', $row), $geometry) !== [[240,1],[240,0]])
+        throw new RuntimeException('The title height mode did not preserve the prior resize');
+
     query('INSERT INTO cards(project_id,name) VALUES(?,?)', [$project, 'New default']);
     $newCard = (int) database()->lastInsertId();
     if ((int) query('SELECT height FROM cards WHERE id=?', [$newCard])->fetchColumn() !== 70) throw new RuntimeException('New cards still use the old height');

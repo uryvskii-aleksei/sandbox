@@ -33,6 +33,101 @@ function client() {
   };
 }
 
+test('guest transfer is private, preserves a complete board and deduplicates retries', async () => {
+  const owner = client();
+  const guest = client();
+  const outsider = client();
+  const payload = {
+    name: 'Гостевое полотно',
+    requestId: randomUUID(),
+    cards: [
+      {
+        id: 9,
+        kind: 'folder',
+        name: 'Папка',
+        coordinates: { x: 50, y: 60 },
+        size: { width: 280, height: 70 },
+      },
+      {
+        id: 2,
+        kind: 'record',
+        name: 'Первое\nНазвание',
+        folder: 9,
+        coordinates: { x: 71, y: 32 },
+        size: { width: 230, height: 75 },
+        autoHeight: false,
+        document: {
+          type: 'doc',
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Черновик записи' }] }],
+        },
+      },
+    ],
+    links: [{ source: 9, target: 2, label: 'Тема' }],
+    marks: [
+      { kind: 'circle', at: { x: 1, y: 2 }, end: { x: 31, y: 32 }, text: 'Фигура', folder: 9 },
+    ],
+  };
+  await guest('/session');
+  await guest('/projects/import-guest', 'POST', payload, 401);
+  for (const account of [owner, outsider]) {
+    await account('/session');
+    await account('/auth/register', 'POST', {
+      email: `guest-${randomUUID()}@example.test`,
+      password: 'Synthetic-guest-board-2026',
+    });
+  }
+  await owner('/projects/import-guest', 'POST', payload, 403, false);
+  const imported = await owner('/projects/import-guest', 'POST', payload, 201);
+  assert.deepEqual(await owner('/projects/import-guest', 'POST', payload, 201), imported);
+  await owner('/projects/import-guest', 'POST', { ...payload, name: 'Другой запрос' }, 409);
+  assert.equal((await owner('/projects')).filter(({ name }) => name === payload.name).length, 1);
+  assert.deepEqual(await outsider('/projects'), []);
+  await outsider('/projects/' + imported.publicId, 'GET', undefined, 404);
+  const folders = await owner('/projects/' + imported.id + '/folders');
+  const savedFolder = folders.find(({ name }) => name === 'Папка');
+  assert(savedFolder?.publicId);
+  const entries = await owner('/projects/' + imported.id + '/cards?folder=' + savedFolder.id);
+  assert.equal(entries[0].name, payload.cards[1].name);
+  assert.equal(entries[0].parent, savedFolder.id);
+  assert.equal(entries[0].autoHeight, false);
+  assert.deepEqual(entries[0].size, payload.cards[1].size);
+  assert.deepEqual(entries[0].document, payload.cards[1].document);
+  const links = await owner('/links');
+  assert(
+    links.some(
+      ({ source, target, label }) =>
+        source === savedFolder.id && target === entries[0].id && label === 'Тема',
+    ),
+  );
+  const marks = await owner('/projects/' + imported.id + '/marks?folder=' + savedFolder.id);
+  assert.deepEqual(
+    marks.map(({ id, ...mark }) => mark),
+    [Object.fromEntries(Object.entries(payload.marks[0]).filter(([key]) => key !== 'folder'))],
+  );
+
+  const bad = {
+    ...payload,
+    requestId: randomUUID(),
+    name: 'Ошибочный перенос',
+    marks: [{ ...payload.marks[0], folder: 100 }],
+  };
+  await owner('/projects/import-guest', 'POST', bad, 422);
+  assert.equal(
+    (await owner('/projects')).some(({ name }) => name === bad.name),
+    false,
+  );
+  const cycle = {
+    ...bad,
+    marks: [],
+    links: [...payload.links, { source: 2, target: 9, label: '' }],
+  };
+  await owner('/projects/import-guest', 'POST', cycle, 422);
+  assert.equal(
+    (await owner('/projects')).some(({ name }) => name === cycle.name),
+    false,
+  );
+});
+
 test('projects are ordered by saved edits and retries create one project', async () => {
   const owner = client();
   await owner('/session');

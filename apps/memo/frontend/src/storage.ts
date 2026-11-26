@@ -10,16 +10,25 @@ export interface Draft {
   attempt?: SaveAttempt;
   savedAt: number;
 }
+export const guestUserId = 0;
+const guestStorage = new Map<string, string>();
+const isGuestKey = (key: string) => key.startsWith(`memo:${guestUserId}:`);
+export const clearGuestStorage = () => guestStorage.clear();
+
 export function readLocal(key: string): unknown {
   try {
-    return JSON.parse(localStorage.getItem(key) ?? 'null');
+    return JSON.parse(
+      (isGuestKey(key) ? guestStorage.get(key) : localStorage.getItem(key)) ?? 'null',
+    );
   } catch {
     return null;
   }
 }
 export function writeLocal(key: string, value: unknown): boolean {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    const serialized = JSON.stringify(value);
+    if (isGuestKey(key)) guestStorage.set(key, serialized);
+    else localStorage.setItem(key, serialized);
     return true;
   } catch {
     return false;
@@ -27,7 +36,8 @@ export function writeLocal(key: string, value: unknown): boolean {
 }
 export function removeLocal(key: string): void {
   try {
-    localStorage.removeItem(key);
+    if (isGuestKey(key)) guestStorage.delete(key);
+    else localStorage.removeItem(key);
   } catch {
     /* Хранилище может быть недоступно. */
   }
@@ -65,6 +75,7 @@ export function readDraft(user: number, card: number): Draft | null {
 }
 export function listDrafts(user: number): Draft[] {
   const result: Draft[] = [];
+  if (user === guestUserId) return result;
   try {
     for (let index = 0; index < localStorage.length; index++) {
       const key = localStorage.key(index);

@@ -5,7 +5,6 @@ export type IconName =
   | 'trash'
   | 'board'
   | 'list'
-  | 'settings'
   | 'link'
   | 'linkSource'
   | 'linkTarget'
@@ -33,8 +32,6 @@ const paths: Record<IconName, string> = {
   trash: 'M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7',
   board: 'M3 3h7v7H3ZM14 3h7v7h-7ZM3 14h7v7H3ZM14 14h7v7h-7Z',
   list: 'M8 5h13M8 12h13M8 19h13M3 5h.01M3 12h.01M3 19h.01',
-  settings:
-    'M10 3h4l.8 2.7 2 .9 2.5-.9 2 3.5-2 1.8v2.2l2 1.8-2 3.5-2.5-.9-2 .9L14 21h-4l-.8-2.5-2-.9-2.5.9-2-3.5 2-1.8V11l-2-1.8 2-3.5 2.5.9 2-.9L10 3Zm5 9a3 3 0 1 0-6 0 3 3 0 0 0 6 0Z',
   link: 'M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2',
   linkSource: 'M9 12a3 3 0 1 0-6 0 3 3 0 0 0 6 0Zm0 0h12m-3-3 3 3-3 3',
   linkTarget: 'M21 12a3 3 0 1 0-6 0 3 3 0 0 0 6 0ZM3 12h12M6 9l-3 3 3 3',

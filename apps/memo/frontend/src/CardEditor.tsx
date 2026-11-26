@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, ApiError } from './api';
+import { ApiError } from './api';
+import { useWorkspaceClient } from './WorkspaceClient';
 import {
   hasSectionContent,
   recordSections,
@@ -12,7 +13,7 @@ import type { RecordSection } from './document';
 import { RecordContent } from './RecordContent';
 import { contentSignature, copiedContent, excerpt, reconcileSaved } from './graph';
 import { routeUrl } from './routes';
-import { draftKey, readDraft, removeLocal, writeLocal } from './storage';
+import { draftKey, guestUserId, readDraft, removeLocal, writeLocal } from './storage';
 import { TrashDialog } from './TrashDialog';
 import type { Draft, SaveAttempt } from './storage';
 import type { Card } from './types';
@@ -39,6 +40,7 @@ export function CardEditor({
   deleted,
   copied,
 }: Props) {
+  const api = useWorkspaceClient();
   const [titleDraft, setTitleDraft] = useState<string | null>(() =>
     initiallyEditing && card.kind === 'folder' ? card.name : null,
   );
@@ -189,6 +191,7 @@ export function CardEditor({
     return () => window.clearTimeout(timer);
   }, [edit, status, recovery, working]);
   useEffect(() => {
+    if (userId === guestUserId) return;
     const online = () => {
       if (attempt.current) void saveRef.current();
     };
@@ -301,8 +304,9 @@ export function CardEditor({
           <header className="editor-header">
             <div>
               {titleDraft !== null ? (
-                <input
+                <textarea
                   autoFocus
+                  rows={Math.min(4, titleDraft.split('\n').length)}
                   className="editor-title"
                   aria-label={card.kind === 'folder' ? 'Название папки' : 'Название записи'}
                   maxLength={128}
@@ -313,7 +317,7 @@ export function CardEditor({
                   onBlur={commitTitle}
                   onKeyDown={(event) => {
                     if (event.nativeEvent.isComposing) return;
-                    if (event.key === 'Enter') {
+                    if (event.key === 'Enter' && !event.shiftKey) {
                       event.preventDefault();
                       commitTitle();
                     } else if (event.key === 'Escape') {

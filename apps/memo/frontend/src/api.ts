@@ -12,6 +12,7 @@ import type {
   Field,
   FieldGroup,
   Folder,
+  GuestProjectSnapshot,
   LinkPreview,
   Project,
   SearchResult,
@@ -106,6 +107,7 @@ export const isCard = (value: unknown): value is Card =>
   value.content.every(isGroup) &&
   (value.size === undefined ||
     (record(value.size) && number(value.size.width) && number(value.size.height))) &&
+  (value.autoHeight === undefined || typeof value.autoHeight === 'boolean') &&
   (value.document === undefined || isDocument(value.document)) &&
   (value.pinned === undefined || typeof value.pinned === 'boolean') &&
   ['deletedAt', 'updatedAt', 'openedAt'].every(
@@ -212,6 +214,11 @@ export const api = {
     request('/projects', isProject, {
       method: 'POST',
       body: JSON.stringify({ name, template, requestId }),
+    }),
+  importGuest: (snapshot: GuestProjectSnapshot, requestId: string) =>
+    request('/projects/import-guest', isProject, {
+      method: 'POST',
+      body: JSON.stringify({ ...snapshot, requestId }),
     }),
   renameProject: (id: number, name: string) =>
     request(`/projects/${id}`, isProject, { method: 'PATCH', body: JSON.stringify({ name }) }),
@@ -334,6 +341,7 @@ export const api = {
       body: JSON.stringify({
         coordinates: card.coordinates,
         size: card.size,
+        autoHeight: card.autoHeight,
         version: card.version,
       }),
     }),

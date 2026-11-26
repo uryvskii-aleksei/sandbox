@@ -1,6 +1,6 @@
 import type { Card, CardLink, DocumentNode, FieldGroup } from './types';
 
-export const cardWidth = 240;
+export const cardWidth = 280;
 export const cardHeight = 70;
 export const cardDimensions = (card: Card) => card.size ?? { width: cardWidth, height: cardHeight };
 export const clampCardSize = (width: number, height: number) => ({
@@ -11,7 +11,7 @@ export const clampCardSize = (width: number, height: number) => ({
 export function childPosition(cards: Card[], parent: Card): Card['coordinates'] {
   for (let index = 0; index <= cards.length; index++) {
     const point = {
-      x: parent.coordinates.x + (index % 5) * 280,
+      x: parent.coordinates.x + (index % 5) * (cardWidth + 40),
       y: parent.coordinates.y + cardDimensions(parent).height + 90 + Math.floor(index / 5) * 260,
     };
     if (
@@ -25,7 +25,10 @@ export function childPosition(cards: Card[], parent: Card): Card['coordinates'] 
     )
       return point;
   }
-  return { x: parent.coordinates.x + 280, y: parent.coordinates.y + (cards.length + 1) * 260 };
+  return {
+    x: parent.coordinates.x + cardWidth + 40,
+    y: parent.coordinates.y + (cards.length + 1) * 260,
+  };
 }
 
 function documentText(node: DocumentNode): string {

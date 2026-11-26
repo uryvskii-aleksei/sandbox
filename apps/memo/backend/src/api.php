@@ -6,6 +6,7 @@ ini_set('display_errors', '0');
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/cards.php';
 require_once __DIR__ . '/workspace.php';
+require_once __DIR__ . '/guest.php';
 require_once __DIR__ . '/preview.php';
 
 function resolvePublicPath(string $path, int $owner): string
@@ -81,6 +82,7 @@ function route(): never
     if ($path === '/projects' && $method === 'GET') {
         respond(projectList($owner));
     }
+    if ($path === '/projects/import-guest' && $method === 'POST') respond(importGuestProject($owner, jsonBody()), 201);
     if ($path === '/projects' && $method === 'POST') {
         respond(templateProject($owner, jsonBody()), 201);
     }

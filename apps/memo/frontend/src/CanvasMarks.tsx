@@ -6,7 +6,7 @@ import type {
   ReactNode,
   SVGAttributes,
 } from 'react';
-import { api } from './api';
+import { useWorkspaceClient } from './WorkspaceClient';
 import type { markTools } from './shortcuts';
 import type { BoardMark, BoardMarkUpdate, Card, NewBoardMark, Sketch } from './types';
 import { IconButton } from './ui';
@@ -17,6 +17,8 @@ const shapeCaptionAnchor = ({ at, end }: Sketch): Point => ({
   x: (at.x + end.x) / 2,
   y: Math.min(at.y, end.y) - captionGap,
 });
+const shapeCaptionWidth = ({ at, end }: Sketch) =>
+  Math.max(120, Math.min(420, Math.abs(end.x - at.x)));
 const corners = ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const;
 type Corner = (typeof corners)[number];
 type Handle = 'at' | 'end' | 'body' | Corner;
@@ -112,6 +114,7 @@ function moveMark(
 }
 
 export function useCanvasMarks(project: number, folder: number | null) {
+  const api = useWorkspaceClient();
   const [items, setItems] = useState<BoardMark[]>([]);
   const [tool, setTool] = useState<(typeof markTools)[number]['kind'] | null>(null);
   const [draft, setDraft] = useState<{
@@ -321,7 +324,7 @@ function ShapeCaption({
   children: ReactNode;
 }) {
   const anchor = shapeCaptionAnchor(sketch);
-  const width = Math.max(120, Math.min(420, Math.abs(sketch.end.x - sketch.at.x))) + 66;
+  const width = shapeCaptionWidth(sketch) + 66;
   const height = 88;
   return (
     <foreignObject
@@ -530,6 +533,9 @@ export function MarkLayer({
     );
   const sketches = items.filter((mark) => mark.kind !== 'label');
   const actionsDisabled = busy || marks.locked || !!marks.tool;
+  const draft = marks.draft;
+  const draftShape =
+    draft && draft.kind !== 'label' ? sketches.find(({ id }) => id === draft.id) : undefined;
   const trash = (mark: BoardMark, label: string) => (
     <IconButton
       className="canvas-trash"
@@ -663,13 +669,13 @@ export function MarkLayer({
             </div>
           ),
       )}
-      {marks.draft && (
+      {draft && (
         <form
-          className={`canvas-label-editor ${marks.draft.kind === 'label' ? '' : 'shape-caption-editor'}`}
+          className={`canvas-label-editor ${draftShape ? 'shape-caption-editor' : ''}`}
           style={{
-            left: marks.draft.at.x,
-            top: marks.draft.at.y,
-            ...labelStyle(marks.draft.scale),
+            left: draft.at.x,
+            top: draft.at.y,
+            ...labelStyle(draft.scale),
           }}
           onPointerDown={(event) => event.stopPropagation()}
           onSubmit={(event) => {
@@ -677,20 +683,46 @@ export function MarkLayer({
             marks.saveLabel();
           }}
         >
-          <input
-            key={marks.draft.id}
-            autoFocus
-            className="canvas-label"
-            aria-label={marks.draft.kind === 'label' ? 'Текст подписи' : 'Подпись фигуры'}
-            placeholder={marks.draft.kind === 'label' ? undefined : 'Подпись фигуры'}
-            maxLength={128}
-            value={marks.draft.text}
-            readOnly={busy || marks.locked}
-            style={{
-              width: `clamp(calc(150px * var(--label-scale)), ${marks.draft.text.length + 1}ch, calc(380px * var(--label-scale)))`,
-            }}
-            onChange={(event) => marks.setText(event.target.value)}
-          />
+          {draftShape ? (
+            <div className="shape-caption-draft" style={{ width: shapeCaptionWidth(draftShape) }}>
+              <span className="shape-caption-mirror" aria-hidden="true">
+                {draft.text + '\u200b'}
+              </span>
+              <textarea
+                key={draft.id}
+                autoFocus
+                rows={1}
+                aria-label="Подпись фигуры"
+                maxLength={128}
+                value={draft.text}
+                readOnly={busy || marks.locked}
+                onFocus={({ currentTarget }) =>
+                  currentTarget.setSelectionRange(draft.text.length, draft.text.length)
+                }
+                onChange={(event) => marks.setText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing)
+                    return;
+                  event.preventDefault();
+                  marks.saveLabel();
+                }}
+              />
+            </div>
+          ) : (
+            <input
+              key={draft.id}
+              autoFocus
+              className="canvas-label"
+              aria-label="Текст подписи"
+              maxLength={128}
+              value={draft.text}
+              readOnly={busy || marks.locked}
+              style={{
+                width: `clamp(calc(150px * var(--label-scale)), ${draft.text.length + 1}ch, calc(380px * var(--label-scale)))`,
+              }}
+              onChange={(event) => marks.setText(event.target.value)}
+            />
+          )}
         </form>
       )}
     </>

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent, ReactNode } from 'react';
-import { api, ApiError } from './api';
+import { ApiError } from './api';
+import { useWorkspaceClient } from './WorkspaceClient';
 import { BoardContextMenu } from './BoardContextMenu';
 import type { BoardMenuItem } from './BoardContextMenu';
 import { MarkLayer, useCanvasMarks } from './CanvasMarks';
@@ -8,7 +9,7 @@ import { CardTitleEditor } from './CardTitleEditor';
 import { linkPort, routeBoardLinks, routeConnection } from './connectionRoutes';
 import { LinkControl } from './LinkControl';
 import { IconButton, Toast } from './ui';
-import { canConnect, cardDimensions, clampCardSize } from './graph';
+import { canConnect, cardDimensions, cardHeight, clampCardSize } from './graph';
 import { isTextInput, markTools } from './shortcuts';
 import { readLocal, writeLocal } from './storage';
 import { TrashDialog } from './TrashDialog';
@@ -41,7 +42,7 @@ interface Props {
   createBlock: (kind: 'record' | 'folder', at: Card['coordinates']) => void;
   open: (card: Card, editing?: boolean) => void;
   enter: (card: Card) => void;
-  rename: (id: number, name: string) => Promise<Card>;
+  rename: (id: number, name: string, height?: number) => Promise<Card>;
   moveSelection: (cards: Card[], marks: number[], move: BoardMove) => Promise<BoardMark[]>;
   remove: (card: Card) => Promise<void>;
   removeSelection: (selection: BoardSelection, requestId: string) => Promise<void>;
@@ -96,7 +97,11 @@ interface Drag {
 const emptySelection: BoardSelection = { cards: [], marks: [] };
 type MenuTarget = { card: Card } | { mark: BoardMark } | null;
 type MenuPosition = { clientX: number; clientY: number };
+const isAutoHeight = (card: Card) => card.autoHeight ?? cardDimensions(card).height === cardHeight;
 const coordinateLimit = 100000;
+// Вертикальные отступы карточки вместе с рамкой и высота строки названия.
+const cardVerticalInsets = 41;
+const cardTitleLineHeight = 25.3;
 
 function markAt(mark: NewBoardMark, point: Card['coordinates']): NewBoardMark {
   if (mark.kind === 'label') return { ...mark, at: point };
@@ -206,6 +211,7 @@ export function Board({
   disconnect,
   reconnect,
 }: Props) {
+  const api = useWorkspaceClient();
   const cached = readLocal(storageKey);
   const [camera, setCamera] = useState<Camera>(() =>
     cameraValue(cached) ? cached : { scale: defaultScale, x: 40, y: 60 },
@@ -279,16 +285,48 @@ export function Board({
     if (card.kind === 'folder') enter(card);
     else open(card);
   };
-  const saveTitle = async (id: number, name: string) => {
-    const renamed = await rename(id, name);
+  const saveTitle = async (id: number, name: string, height?: number) => {
+    const renamed = await rename(id, name, height);
     setExternal((items) => items.map((item) => (item.id === id ? renamed : item)));
   };
   const point = (card: Card) =>
     resizePreview?.id === card.id
       ? resizePreview.coordinates
       : (temporary[card.id] ?? card.coordinates);
+  const [autoHeights, setAutoHeights] = useState<Record<number, number>>({});
+  const observer = useRef<ResizeObserver | null>(null);
+  const observeCard = useCallback((element: HTMLElement | null) => {
+    if (!element) return;
+    const current = (observer.current ??= new ResizeObserver((entries) => {
+      setAutoHeights((previous) => {
+        const next = { ...previous };
+        let changed = false;
+        for (const entry of entries) {
+          if (
+            !(entry.target instanceof HTMLElement) ||
+            !entry.target.hasAttribute('data-auto-height')
+          )
+            continue;
+          const id = Number(entry.target.dataset.cardId);
+          const height = entry.target.offsetHeight;
+          if (height > 0 && height !== previous[id]) {
+            next[id] = height;
+            changed = true;
+          }
+        }
+        return changed ? next : previous;
+      });
+    }));
+    current.observe(element, { box: 'border-box' });
+    return () => current.unobserve(element);
+  }, []);
+  useEffect(() => () => observer.current?.disconnect(), []);
+  const displayedSize = (card: Card) => {
+    const saved = cardDimensions(card);
+    return isAutoHeight(card) ? { ...saved, height: autoHeights[card.id] ?? saved.height } : saved;
+  };
   const size = (card: Card) =>
-    resizePreview?.id === card.id ? resizePreview.size : cardDimensions(card);
+    resizePreview?.id === card.id ? resizePreview.size : displayedSize(card);
   const neededReferences = useMemo(() => {
     const localIds = new Set(cards.map((card) => card.id));
     const linked = links
@@ -324,7 +362,7 @@ export function Board({
   const visible = allCards;
   const blocks = useMemo(
     () => visible.map((card) => ({ id: card.id, ...point(card), ...size(card) })),
-    [visible, temporary, resizePreview],
+    [visible, temporary, resizePreview, autoHeights],
   );
   const routedLinks = useMemo(() => routeBoardLinks(links, blocks), [links, blocks]);
   useEffect(() => {
@@ -708,7 +746,7 @@ export function Board({
       (!pan &&
         !moveGroup &&
         event.target instanceof Element &&
-        event.target.closest('button:not(.card-title),select,input'))
+        event.target.closest('button:not(.card-title),select,input,textarea'))
     )
       return;
     event.stopPropagation();
@@ -743,7 +781,7 @@ export function Board({
     };
   };
   const resized = (event: PointerEvent<HTMLElement>, current: ResizeGesture): Bounds => {
-    const { width, height } = cardDimensions(current.card);
+    const { width, height } = displayedSize(current.card);
     const left = current.edge.includes('left');
     const top = current.edge.includes('top');
     const horizontal = left ? -1 : current.edge.includes('right') ? 1 : 0;
@@ -761,11 +799,11 @@ export function Board({
     };
   };
   const saveSize = async (card: Card, next: Bounds) => {
-    const original = cardDimensions(card);
+    const original = displayedSize(card);
     if (original.width === next.size.width && original.height === next.size.height) return;
     setResizePreview({ id: card.id, ...next });
     try {
-      await position({ ...card, ...next });
+      await position({ ...card, ...next, autoHeight: false });
     } catch {
       setNotice('Не удалось сохранить размер карточки.');
     } finally {
@@ -823,7 +861,7 @@ export function Board({
     };
   };
   const selectionTarget = (element: Element) => {
-    if (element.closest('input')) return null;
+    if (element.closest('input, textarea')) return null;
     const card = Number(
       element.closest('.mind-card:not(.reference-card)')?.getAttribute('data-card-id'),
     );
@@ -1026,7 +1064,7 @@ export function Board({
       } else if (current.card) {
         const card = current.card;
         const coordinates = { x: current.startX + offset.x, y: current.startY + offset.y };
-        if (onThisBoard(card)) await position({ ...card, coordinates });
+        if (onThisBoard(card)) await position({ ...card, size: displayedSize(card), coordinates });
         else
           setReferences((value) => ({
             ...value,
@@ -1407,13 +1445,25 @@ export function Board({
           const isFolder = card.kind === 'folder';
           const grouped = highlightedGroup.cards.includes(card.id);
           const cardSize = size(card);
+          const autoHeight = isAutoHeight(card) && resizePreview?.id !== card.id;
+          const style: CSSProperties & { '--card-title-lines': number } = {
+            left: point(card).x,
+            top: point(card).y,
+            width: cardSize.width,
+            height: autoHeight ? undefined : cardSize.height,
+            '--card-title-lines': Math.max(
+              1,
+              Math.floor((cardSize.height - cardVerticalInsets) / cardTitleLineHeight),
+            ),
+          };
           return (
             <article
               key={card.id}
+              ref={observeCard}
               data-card-id={card.id}
-              data-compact={cardSize.height < 92 || undefined}
+              data-auto-height={autoHeight || undefined}
               className={`mind-card ${local ? '' : 'reference-card'} ${connected ? (validTarget(source ?? card.id, card.id) ? 'valid-target' : 'invalid-target') : ''} ${grouped ? 'grouped-card' : selection === card.id ? 'focused-card' : neighbors.has(card.id) ? 'related-card' : ''} ${dropFolder?.id === card.id ? (dropFolder.allowed ? 'folder-drop-target' : 'folder-drop-rejected') : ''} ${temporary[card.id] ? 'dragging-card' : ''}`}
-              style={{ left: point(card).x, top: point(card).y, ...cardSize }}
+              style={style}
               onPointerDown={(event) => start(event, card)}
               onClick={(event) => {
                 const click = mouseClick.current;
@@ -1432,7 +1482,7 @@ export function Board({
               {titleCardId === card.id ? (
                 <CardTitleEditor
                   card={card}
-                  save={(name) => saveTitle(card.id, name)}
+                  save={(name, height) => saveTitle(card.id, name, height)}
                   close={() => setTitleCardId((id) => (id === card.id ? null : id))}
                 />
               ) : (

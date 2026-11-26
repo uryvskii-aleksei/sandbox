@@ -2,7 +2,7 @@ import { Fragment } from 'react';
 import type { ReactNode } from 'react';
 import type { JSONContent } from '@tiptap/core';
 import { resolveMediaUrl } from './api';
-import { documentUrl } from './document';
+import { documentUrl, hasSectionContent } from './document';
 import type { RecordSection } from './document';
 
 function contentNodes(nodes: JSONContent[] = []): ReactNode {
@@ -66,23 +66,39 @@ function contentNode(node: JSONContent): ReactNode {
   }
 }
 
-export function RecordContent({ sections }: { sections: RecordSection[] }) {
-  const visible = sections.filter(
-    ({ title, document }) =>
-      title || document.content.some((node) => node.type !== 'paragraph' || node.content?.length),
-  );
+export function RecordContent({
+  section,
+  index,
+  edit,
+}: {
+  section: RecordSection;
+  index: number;
+  edit?: () => void;
+}) {
   return (
-    <div className="record-content">
-      {visible.length ? (
-        visible.map(({ id, title, document }) => (
-          <section key={id}>
-            {title && <h2>{title}</h2>}
-            {contentNodes(document.content)}
-          </section>
-        ))
-      ) : (
-        <p className="empty-message">Пока без содержания</p>
-      )}
-    </div>
+    <section
+      className={edit ? 'record-content editable-section' : 'record-content'}
+      tabIndex={edit ? 0 : undefined}
+      aria-label={`${section.title || `Текстовый блок ${index + 1}`}${edit ? '. Enter для редактирования' : ''}`}
+      onClick={(event) => {
+        if (!(event.target instanceof Element) || event.target.closest('a, button, audio, video'))
+          return;
+        if (window.getSelection()?.isCollapsed !== false) edit?.();
+      }}
+      onKeyDown={(event) => {
+        if (
+          !edit ||
+          event.target !== event.currentTarget ||
+          (event.key !== 'Enter' && event.key !== ' ')
+        )
+          return;
+        event.preventDefault();
+        edit();
+      }}
+    >
+      {section.title && <h2>{section.title}</h2>}
+      {contentNodes(section.document.content)}
+      {!hasSectionContent(section) && <p className="help-text">Пустой блок</p>}
+    </section>
   );
 }

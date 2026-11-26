@@ -917,6 +917,27 @@ export function App() {
         <main className="workspace">
           <header className="workspace-header">
             <div className="workspace-heading">
+              {folder !== null && active && (
+                <nav className="board-breadcrumbs" aria-label="Путь к папке">
+                  <button
+                    title={active.name}
+                    onClick={() => navigate({ view: 'project', project: active.id })}
+                  >
+                    {active.name}
+                  </button>
+                  <span aria-hidden="true">/</span>
+                  {trail
+                    .filter((item) => item.id !== folder)
+                    .map((item) => (
+                      <span key={item.id}>
+                        <button title={item.name} onClick={() => enterFolder(item.id, active.id)}>
+                          {item.name}
+                        </button>
+                        <span aria-hidden="true">/</span>
+                      </span>
+                    ))}
+                </nav>
+              )}
               {active && (folder === null || activeFolder) ? (
                 <WorkspaceTitle
                   key={activeFolder ? `folder-${activeFolder.id}` : `project-${active.id}`}
@@ -926,23 +947,6 @@ export function App() {
                 />
               ) : (
                 <h1>{active?.name ?? names[route.view]}</h1>
-              )}
-              {folder !== null && active && (
-                <nav className="board-breadcrumbs" aria-label="Путь к папке">
-                  <button onClick={() => navigate({ view: 'project', project: active.id })}>
-                    {active.name}
-                  </button>
-                  {trail.map((item) => (
-                    <span key={item.id}>
-                      <span aria-hidden="true">/</span>
-                      {item.id === folder ? (
-                        <span aria-current="page">{item.name}</span>
-                      ) : (
-                        <button onClick={() => enterFolder(item.id, active.id)}>{item.name}</button>
-                      )}
-                    </span>
-                  ))}
-                </nav>
               )}
             </div>
           </header>

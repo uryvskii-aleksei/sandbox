@@ -14,6 +14,7 @@
   --accent-hover: #3458a7;
   --accent-active: #15306b;
   --border: #cbd5e6;
+  --workspace-header-height: 52px;
 }
 * {
   box-sizing: border-box;
@@ -359,7 +360,9 @@ button {
   height: 100dvh;
 }
 .workspace-header {
-  padding: 10px 30px;
+  flex: 0 0 var(--workspace-header-height);
+  min-height: var(--workspace-header-height);
+  padding: 0 30px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -368,16 +371,23 @@ button {
   color: #fff;
   border-bottom: 1px solid #fff;
   box-shadow: 0 2px 12px #10274f30;
-  z-index: 2;
+  position: relative;
+  z-index: 4;
 }
 .workspace-header h1 {
   font-size: 26px;
   letter-spacing: -0.8px;
   font-weight: 600;
   margin: 0;
-  overflow-wrap: anywhere;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.workspace-header > div {
+.workspace-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   min-width: 0;
 }
@@ -388,9 +398,12 @@ button {
 }
 .workspace-title-button {
   max-width: 100%;
+  display: block;
   cursor: text;
   text-align: left;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .workspace-title-button:hover {
   text-decoration: underline;
@@ -398,10 +411,18 @@ button {
 }
 .workspace-title-input {
   border: 0;
+  padding: 0 6px;
   color: var(--accent);
 }
 .workspace-title-error {
-  margin: 6px 0 0;
+  position: absolute;
+  top: 100%;
+  left: 12px;
+  z-index: 5;
+  margin: 0;
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: var(--accent);
   color: #fff;
   font-size: 12px;
 }
@@ -1581,9 +1602,7 @@ kbd {
     min-height: 0;
   }
   .workspace-header {
-    padding: 8px 16px;
-    gap: 12px;
-    align-items: center;
+    padding-inline: 16px;
   }
   .workspace-header h1 {
     font-size: 20px;
@@ -1783,17 +1802,21 @@ kbd {
 .board-breadcrumbs,
 .board-breadcrumbs > span {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  min-width: 0;
+  gap: 6px;
 }
 .board-breadcrumbs {
-  margin-top: 2px;
+  max-width: 47%;
   color: #dbe6ff;
   font-size: 12px;
 }
 .board-breadcrumbs button {
+  min-width: 0;
   padding: 4px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -2207,9 +2230,18 @@ select {
 .editor-heading {
   margin: 0;
   color: var(--accent);
-  font-size: clamp(22px, 4vw, 32px);
+  font-size: 23px;
   line-height: 1.18;
-  overflow-wrap: anywhere;
+}
+.editor-heading button {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  cursor: text;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .record-sections {
   display: grid;
@@ -2219,6 +2251,9 @@ select {
   display: grid;
   gap: 8px;
   min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 .record-section-header {
   display: flex;
@@ -2233,21 +2268,31 @@ select {
 .record-sections > button {
   justify-self: start;
 }
+.record-section-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
 .record-content {
-  display: grid;
-  gap: 14px;
-  padding: 20px clamp(16px, 4vw, 32px);
+  min-width: 0;
+  padding: 10px 8px;
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
-.record-content section + section {
-  padding-top: 14px;
+.editable-section {
+  cursor: text;
+  border-radius: 4px;
+}
+.editable-section:hover {
+  background: #e8eef9;
+}
+.record-content + .record-content {
   border-top: 1px solid var(--border);
 }
-.record-content section > :first-child {
+.record-content > :first-child {
   margin-top: 0;
 }
-.record-content section > :last-child {
+.record-content > :last-child {
   margin-bottom: 0;
 }
 .record-content h2 {
@@ -2484,11 +2529,14 @@ select {
   background: white;
   color: var(--accent);
   border-bottom: 1px solid var(--border);
-  padding: 18px 18px 16px;
+  flex: 0 0 var(--workspace-header-height);
+  align-items: center;
+  padding: 0 16px;
 }
 .record-dock .editor-title {
   color: var(--accent);
   font-size: 23px;
+  padding: 3px 6px;
 }
 .record-dock .save-status {
   color: var(--muted);

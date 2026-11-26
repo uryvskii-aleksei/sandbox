@@ -3,8 +3,8 @@
   font-family: 'Segoe UI', system-ui, sans-serif;
   color: #f7eeeb;
   background: #141116;
-  --accent: #1f408a;
-  --accent-button: var(--accent);
+  --accent: #c1acaf;
+  --accent-button: #402b36;
   --accent-hover: color-mix(in srgb, var(--accent-button) 92%, white);
   --muted: #c1acaf;
   --line: #3e3039;
@@ -139,7 +139,8 @@ button:disabled {
 }
 
 .text-button:hover:not(:disabled),
-.control:hover:not(:disabled) {
+.control:hover:not(:disabled),
+.splash:hover:not(:disabled) .poster-play {
   background-color: #402b36;
 }
 
@@ -168,8 +169,6 @@ button:disabled {
   aspect-ratio: 16 / 9;
   min-height: 0;
   min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--control-radius);
   box-shadow: 0 0 18px #0b070c85;
 }
 
@@ -178,7 +177,6 @@ button:disabled {
   isolation: isolate;
   min-height: 0;
   overflow: hidden;
-  border-radius: calc(var(--control-radius) - 1px);
   background: #100d1159;
 }
 
@@ -214,14 +212,11 @@ button:disabled {
   place-items: center;
   width: var(--play-size);
   aspect-ratio: 1;
+  border: 1px solid var(--line);
   border-radius: 50%;
-  background: var(--accent-button);
+  background: transparent;
   color: #fff;
   box-shadow: 0 4px 14px #0b070c70;
-}
-
-.splash:hover:not(:disabled) .poster-play {
-  background: var(--accent-hover);
 }
 
 .poster-play .symbol {

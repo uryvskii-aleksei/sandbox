@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "sshHost": "timeweb-sandbox",
+  "url": "https://amodu.ru/wave/",
+  "publicPath": "/home/c/cj999935/public_html/wave",
+  "dataPath": "/home/c/cj999935/wave-data",
+  "releaseRoot": "/home/c/cj999935/.sandbox/wave"
+}

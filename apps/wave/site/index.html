@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Wave — видеорадио с музыкальными клипами." />
+    <meta name="theme-color" content="#141116" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <title>Wave — видеорадио Amodu</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="./radio.mjs"></script>
+  </head>
+  <body>
+    <canvas class="soundscape" id="soundscape" aria-hidden="true"></canvas>
+    <header class="page-header">
+      <h1 class="wordmark">wave</h1>
+      <div class="account">
+        <span id="username" hidden></span>
+        <button class="text-button" id="account-button" type="button">Войти</button>
+      </div>
+      <p class="message account-message" id="account-message" role="status"></p>
+    </header>
+
+    <main class="station">
+      <div class="player-stage">
+        <section class="deck" aria-label="Плеер Wave">
+          <div class="screen">
+            <button
+              class="splash shortcut"
+              id="splash"
+              type="button"
+              aria-label="Включить клип"
+              aria-keyshortcuts="Space"
+              data-tooltip="Включить клип · Пробел"
+              disabled
+            >
+              <span class="poster-play" aria-hidden="true"><span class="symbol play"></span></span>
+            </button>
+            <video
+              class="video"
+              id="video"
+              controls
+              playsinline
+              crossorigin="anonymous"
+              preload="none"
+              aria-label="Музыкальный клип"
+              aria-keyshortcuts="F"
+              title="Полноэкранный режим · F"
+              hidden
+            ></video>
+            <p class="message player-message" id="player-message" role="status"></p>
+            <noscript
+              ><p class="message player-message">
+                Включите JavaScript, чтобы запустить видеорадио.
+              </p></noscript
+            >
+          </div>
+        </section>
+      </div>
+
+      <section class="deck-panel" id="deck-panel" aria-label="Управление плеером" inert>
+        <div class="track" aria-live="polite" aria-atomic="true">
+          <button
+            id="track-details"
+            class="track-details shortcut"
+            type="button"
+            aria-haspopup="dialog"
+            aria-controls="clip-details"
+            aria-keyshortcuts="I"
+            data-tooltip="О клипе · I"
+            hidden
+          >
+            <span class="track-artist" id="track-artist"></span>
+            <span class="track-title" id="track-title"></span>
+          </button>
+        </div>
+        <div class="transport" role="group" aria-label="Воспроизведение">
+          <button
+            id="previous"
+            class="control shortcut"
+            type="button"
+            aria-label="Предыдущий клип"
+            aria-keyshortcuts="ArrowLeft"
+            data-tooltip="Предыдущий клип · ←"
+            disabled
+          >
+            <span class="symbol previous" aria-hidden="true"></span>
+          </button>
+          <button
+            id="toggle"
+            class="control shortcut transport-play"
+            type="button"
+            aria-label="Воспроизвести"
+            aria-keyshortcuts="Space"
+            data-tooltip="Воспроизвести · Пробел"
+            disabled
+          >
+            <span class="symbol play" id="toggle-icon" aria-hidden="true"></span>
+          </button>
+          <button
+            id="next"
+            class="control shortcut"
+            type="button"
+            aria-label="Следующий клип"
+            aria-keyshortcuts="ArrowRight"
+            data-tooltip="Следующий клип · →"
+            disabled
+          >
+            <span class="symbol next" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div class="reactions" role="group" aria-label="Оценка клипа">
+          <button
+            id="dislike"
+            class="control shortcut reaction"
+            type="button"
+            aria-label="Не нравится"
+            aria-keyshortcuts="D"
+            data-tooltip="Не нравится · D"
+            aria-pressed="false"
+            disabled
+          >
+            <span class="symbol dislike" aria-hidden="true"></span>
+          </button>
+          <button
+            id="like"
+            class="control shortcut reaction"
+            type="button"
+            aria-label="Нравится"
+            aria-keyshortcuts="L"
+            data-tooltip="Нравится · L"
+            aria-pressed="false"
+            disabled
+          >
+            <span class="symbol like" aria-hidden="true"></span>
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="clip-details" aria-labelledby="clip-details-title">
+      <div class="dialog-header">
+        <h2 id="clip-details-title">О клипе</h2>
+        <form method="dialog">
+          <button class="control close" type="submit" aria-label="Закрыть">×</button>
+        </form>
+      </div>
+      <p id="clip-credit" class="clip-credit"></p>
+      <p class="clip-links">
+        <a id="video-source" target="_blank" rel="noopener">Wikimedia Commons</a>
+        <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener"
+          >CC BY 3.0</a
+        >
+      </p>
+    </dialog>
+
+    <dialog id="account-dialog" aria-labelledby="account-title">
+      <div class="dialog-header">
+        <h2 id="account-title">Войти</h2>
+        <form method="dialog">
+          <button class="control close" type="submit" aria-label="Закрыть">×</button>
+        </form>
+      </div>
+      <p id="account-description">Сохраняйте свои оценки и продолжайте на другом устройстве.</p>
+      <form class="account-form" id="account-form">
+        <label for="login">Имя пользователя</label>
+        <input id="login" name="login" autocomplete="username" required maxlength="24" autofocus />
+        <small id="login-hint" hidden
+          >От 3 до 24 латинских букв, цифр или знаков подчёркивания.</small
+        >
+        <label for="password">Пароль</label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          required
+          maxlength="72"
+        />
+        <small id="password-hint" hidden
+          >От 12 символов. Используйте пароль, который сможете сохранить.</small
+        >
+        <p class="message form-error" id="form-message" role="alert"></p>
+        <button class="submit" id="account-submit" type="submit">Войти</button>
+        <button class="text-button mode-button" id="account-mode" type="button">
+          Создать аккаунт
+        </button>
+      </form>
+    </dialog>
+  </body>
+</html>

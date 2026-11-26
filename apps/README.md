@@ -2,12 +2,13 @@
 
 ## 1. Состав
 
-| Приложение                        | Стек и команды                                               |
-| --------------------------------- | ------------------------------------------------------------ |
-| [Amodu](amodu/README.md)          | Статическая главная amodu.ru. `npm run build:sites -- amodu` |
-| [Purpur](purpur/README.md)        | HTML/CSS/JS + PHP-обработчики. `npm run dev:sites`           |
-| [Stone Haus](stonehaus/README.md) | Три статические концепции. `npm run dev:sites`               |
-| [Memo](memo/README.md)            | React + PHP + MySQL. `npm run dev:memo`                      |
+| Приложение                        | Стек и команды                                                      |
+| --------------------------------- | ------------------------------------------------------------------- |
+| [Amodu](amodu/README.md)          | Статическая главная amodu.ru. `npm run build:sites -- amodu`        |
+| [Wave](wave/README.md)            | Видеорадио. HTML/CSS/JS + PHP/SQLite. `npm run build:sites -- wave` |
+| [Purpur](purpur/README.md)        | HTML/CSS/JS + PHP-обработчики. `npm run dev:sites`                  |
+| [Stone Haus](stonehaus/README.md) | Три статические концепции. `npm run dev:sites`                      |
+| [Memo](memo/README.md)            | React + PHP + MySQL. `npm run dev:memo`                             |
 
 ## 2. Границы
 

@@ -8,6 +8,12 @@ export interface RecordSection {
   document: MemoDocument;
 }
 
+export function hasSectionContent({ title, document }: RecordSection): boolean {
+  return (
+    !!title || document.content.some((node) => node.type !== 'paragraph' || !!node.content?.length)
+  );
+}
+
 export function recordSections(card: Card): RecordSection[] {
   const document = card.document ?? legacyDocument(card);
   if (!document.content.every((node) => node.type === 'memoSection'))
@@ -23,6 +29,7 @@ export function recordSections(card: Card): RecordSection[] {
 }
 
 export function sectionDocument(sections: RecordSection[]): MemoDocument {
+  if (!sections.length) return { type: 'doc', content: [{ type: 'paragraph' }] };
   return {
     type: 'doc',
     content: sections.map(({ id, title, document }) => ({

@@ -4,6 +4,7 @@ import { quickContent } from './graph';
 import { readLocal, removeLocal, writeLocal } from './storage';
 import { safeUrl } from './types';
 import type { Card, LinkPreview, Project } from './types';
+import { Button, ConfirmDialog, IconButton, Modal, Select } from './ui';
 
 interface QuickAttempt {
   requestId: string;
@@ -65,7 +66,7 @@ export function QuickCapture({
   const [busy, setBusy] = useState(false);
   const [localFailure, setLocalFailure] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
-  const dialog = useRef<HTMLElement>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const url =
     /^https?:\/\//i.test(text.trim()) && safeUrl(text.trim()) && !/\s/.test(text.trim())
       ? text.trim()
@@ -100,44 +101,9 @@ export function QuickCapture({
   const closeDialog = () => {
     if (busy) return;
     const ok = writeLocal(key, { text, attempt });
-    if (
-      text &&
-      !ok &&
-      !window.confirm('Не удалось сохранить черновик на устройстве. Закрыть и потерять ввод?')
-    )
-      return;
-    close();
+    if (text && !ok) setConfirmDiscard(true);
+    else close();
   };
-  const closeRef = useRef(closeDialog);
-  closeRef.current = closeDialog;
-  useEffect(() => {
-    const previous = document.activeElement;
-    input.current?.focus();
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        closeRef.current();
-      }
-      if (event.key !== 'Tab') return;
-      const elements = dialog.current?.querySelectorAll<HTMLElement>(
-        'button:not(:disabled),textarea:not(:disabled),select:not(:disabled)',
-      );
-      const first = elements?.[0];
-      const last = elements?.[elements.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    };
-    document.addEventListener('keydown', keydown);
-    return () => {
-      document.removeEventListener('keydown', keydown);
-      if (previous instanceof HTMLElement) previous.focus();
-    };
-  }, []);
   const submit = async () => {
     if (busy || !text.trim()) return;
     const operation = attempt ?? {
@@ -175,28 +141,26 @@ export function QuickCapture({
     }
   };
   return (
-    <div className="capture-backdrop">
-      <section
-        ref={dialog}
+    <>
+      <Modal
         className="capture-dialog"
-        role="dialog"
-        aria-modal="true"
         aria-labelledby="capture-title"
+        locked={busy}
+        initialFocus={input}
+        dismiss={closeDialog}
       >
         <header>
           <div>
             <p className="eyebrow">ПОЙМАТЬ МЫСЛЬ · ALT+N</p>
             <h2 id="capture-title">Быстрая запись</h2>
           </div>
-          <button
+          <IconButton
             id="close-capture"
-            className="icon-button"
-            aria-label="Закрыть быструю запись"
+            label="Закрыть быструю запись"
+            icon="close"
             disabled={busy}
             onClick={closeDialog}
-          >
-            ×
-          </button>
+          />
         </header>
         <form
           onSubmit={(event) => {
@@ -223,34 +187,32 @@ export function QuickCapture({
               }}
             />
           </label>
-          <label>
-            Куда сохранить
-            <select
-              value={
-                attempt
-                  ? attempt.folder !== undefined
-                    ? `folder:${attempt.folder}`
-                    : attempt.project === undefined
-                      ? ''
-                      : String(attempt.project)
-                  : destination
-              }
-              disabled={busy || !!attempt}
-              onChange={(event) => setDestination(event.target.value)}
-            >
-              <option value="">Входящие</option>
-              {attempt?.folder !== undefined && (
-                <option value={`folder:${attempt.folder}`}>Папка из сохранённого запроса</option>
-              )}
-              {projects
-                .filter((item) => !item.inbox)
-                .map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-            </select>
-          </label>
+          <Select
+            label="Куда сохранить"
+            value={
+              attempt
+                ? attempt.folder !== undefined
+                  ? `folder:${attempt.folder}`
+                  : attempt.project === undefined
+                    ? ''
+                    : String(attempt.project)
+                : destination
+            }
+            disabled={busy || !!attempt}
+            onChange={(event) => setDestination(event.target.value)}
+          >
+            <option value="">Входящие</option>
+            {attempt?.folder !== undefined && (
+              <option value={`folder:${attempt.folder}`}>Папка из сохранённого запроса</option>
+            )}
+            {projects
+              .filter((item) => !item.inbox)
+              .map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+          </Select>
           {previewLoading && (
             <p className="help-text" role="status">
               Загружаем превью. Ссылку уже можно сохранить.
@@ -273,13 +235,22 @@ export function QuickCapture({
             </p>
           )}
           <div className="button-row">
-            <button className="primary" disabled={busy || !text.trim()}>
+            <Button variant="primary" type="submit" disabled={busy || !text.trim()}>
               {busy ? 'Сохраняем…' : attempt ? 'Повторить сохранение' : 'Сохранить запись'}
-            </button>
+            </Button>
             <span className="help-text">⌘ / Ctrl + Enter</span>
           </div>
         </form>
-      </section>
-    </div>
+      </Modal>
+      {confirmDiscard && (
+        <ConfirmDialog
+          title="Закрыть без сохранения?"
+          description="Черновик недоступен. Введённый текст будет потерян."
+          action="Закрыть"
+          dismiss={() => setConfirmDiscard(false)}
+          confirm={close}
+        />
+      )}
+    </>
   );
 }

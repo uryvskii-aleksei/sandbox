@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from './api';
 import { RichEditor } from './RichEditor';
-import { recordSections, sectionDocument } from './document';
+import { hasSectionContent, recordSections, sectionDocument } from './document';
 import type { RecordSection } from './document';
 import { RecordContent } from './RecordContent';
 import { contentSignature, copiedContent, excerpt, reconcileSaved } from './graph';
@@ -9,7 +9,7 @@ import { draftKey, readDraft, removeLocal, writeLocal } from './storage';
 import { TrashDialog } from './TrashDialog';
 import type { Draft, SaveAttempt } from './storage';
 import type { Card } from './types';
-import { Button, IconButton } from './ui';
+import { Button, ConfirmDialog, IconButton } from './ui';
 
 interface Props {
   card: Card;
@@ -32,7 +32,11 @@ export function CardEditor({
   deleted,
   copied,
 }: Props) {
-  const [editing, setEditing] = useState(initiallyEditing);
+  const [titleDraft, setTitleDraft] = useState<string | null>(() =>
+    initiallyEditing ? card.name : null,
+  );
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const sectionEditor = useRef<HTMLFieldSetElement>(null);
   const [edit, renderEdit] = useState(() => structuredClone(card));
   const editRef = useRef(edit);
   editRef.current = edit;
@@ -51,10 +55,9 @@ export function CardEditor({
   const [fieldPending, setFieldPending] = useState(0);
   const [working, setWorking] = useState(false);
   const [confirmTrash, setConfirmTrash] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const saving = useRef(false);
   const attempt = useRef<SaveAttempt | undefined>(undefined);
-  const heading = useRef<HTMLInputElement>(null);
-  const newSection = useRef<string | null>(null);
   const dialog = useRef<HTMLElement>(null);
   const sections = useMemo(() => recordSections(edit), [edit.document, edit.content]);
   const copyKey = useRef(`draft-copy-${card.id}-${recovery?.savedAt ?? Date.now()}`);
@@ -146,23 +149,17 @@ export function CardEditor({
   }, []);
   const closeEditor = () => {
     if (saving.current || working || fieldPending > 0) return;
-    if (
-      !recovery &&
-      (dirty || attempt.current) &&
-      !persist() &&
-      !window.confirm(
-        'Хранилище устройства недоступно. Закрыть запись и потерять несохранённый ввод?',
-      )
-    )
-      return;
-    close();
+    if (!recovery && (dirty || attempt.current) && !persist()) setConfirmDiscard(true);
+    else close();
   };
-  const closeRef = useRef(closeEditor);
-  closeRef.current = closeEditor;
+  const dismissRef = useRef(closeEditor);
+  dismissRef.current =
+    activeSection && !working && fieldPending === 0 ? () => setActiveSection(null) : closeEditor;
   useEffect(() => {
     const previous = document.activeElement;
     const keydown = (event: KeyboardEvent) => {
       if (
+        event.defaultPrevented ||
         !(event.target instanceof Element) ||
         !dialog.current?.contains(event.target) ||
         event.target.closest('dialog[open]')
@@ -170,7 +167,7 @@ export function CardEditor({
         return;
       if (event.key === 'Escape') {
         event.preventDefault();
-        closeRef.current();
+        dismissRef.current();
       }
       if (event.code === 'KeyS' && (event.ctrlKey || event.metaKey) && !event.altKey) {
         event.preventDefault();
@@ -184,11 +181,20 @@ export function CardEditor({
     };
   }, []);
   useEffect(() => {
-    if (editing) {
-      if (heading.current && !heading.current.disabled) heading.current.focus();
-      else dialog.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();
-    }
-  }, [editing]);
+    if (!activeSection || working || fieldPending > 0) return;
+    const outside = (event: PointerEvent) => {
+      if (event.button !== 0 || !(event.target instanceof Element)) return;
+      if (!event.target.closest('dialog[open]') && !sectionEditor.current?.contains(event.target))
+        setActiveSection(null);
+    };
+    document.addEventListener('pointerdown', outside);
+    return () => document.removeEventListener('pointerdown', outside);
+  }, [activeSection, working, fieldPending]);
+  const commitTitle = () => {
+    const next = titleDraft?.trim();
+    setTitleDraft(null);
+    if (next && next !== editRef.current.name) setEdit((current) => ({ ...current, name: next }));
+  };
   const updateSections = (change: (current: RecordSection[]) => RecordSection[]) =>
     setEdit((current) => ({
       ...current,
@@ -200,9 +206,9 @@ export function CardEditor({
     );
   const addSection = () => {
     const id = crypto.randomUUID();
-    newSection.current = id;
+    setActiveSection(id);
     updateSections((current) => [
-      ...current,
+      ...current.filter((section) => section.id !== 'legacy' || hasSectionContent(section)),
       {
         id,
         title: '',
@@ -239,9 +245,18 @@ export function CardEditor({
       copied(result);
     });
   const locked = working || fieldPending > 0;
+  const canEdit = !locked && !recovery && status !== 'conflict';
+  const visibleSections = sections.filter(
+    (section) => section.id !== 'legacy' || hasSectionContent(section),
+  );
+  const finishSection = async () => {
+    await saveNow();
+    if (!attempt.current && contentSignature(editRef.current) === contentSignature(base.current))
+      setActiveSection((current) => (current === activeSection ? null : current));
+  };
   return (
     <>
-      <section ref={dialog} className="editor" aria-label={editing ? 'Редактор записи' : edit.name}>
+      <section ref={dialog} className="editor" aria-label={edit.name}>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -250,49 +265,43 @@ export function CardEditor({
         >
           <header className="editor-header">
             <div>
-              {editing ? (
+              {titleDraft !== null ? (
                 <input
-                  ref={heading}
+                  autoFocus
                   className="editor-title"
                   aria-label={card.kind === 'folder' ? 'Название папки' : 'Название записи'}
-                  required
                   maxLength={128}
-                  value={edit.name}
-                  disabled={!!recovery || working}
-                  onChange={(event) =>
-                    setEdit((current) => ({ ...current, name: event.target.value }))
-                  }
+                  value={titleDraft}
+                  disabled={!canEdit}
+                  onFocus={(event) => event.currentTarget.select()}
+                  onChange={(event) => setTitleDraft(event.target.value)}
+                  onBlur={commitTitle}
+                  onKeyDown={(event) => {
+                    if (event.nativeEvent.isComposing) return;
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      commitTitle();
+                    } else if (event.key === 'Escape') {
+                      event.preventDefault();
+                      setTitleDraft(null);
+                    }
+                  }}
                 />
               ) : (
-                <h1 className="editor-heading">{edit.name}</h1>
-              )}
-              {editing && (
-                <p className="save-status" role="status">
-                  {recovery
-                    ? 'Найден черновик на этом устройстве'
-                    : fieldPending
-                      ? 'Загружаем материал…'
-                      : status === 'saved'
-                        ? 'Все изменения сохранены'
-                        : status === 'saving'
-                          ? 'Сохраняем…'
-                          : status === 'pending'
-                            ? 'Есть изменения · автосохранение'
-                            : status === 'conflict'
-                              ? 'Нужен разбор изменений'
-                              : 'Нет подтверждения сохранения'}
-                </p>
+                <h1 className="editor-heading">
+                  <button
+                    type="button"
+                    data-edit-record=""
+                    title={edit.name}
+                    disabled={!canEdit}
+                    onClick={() => setTitleDraft(edit.name)}
+                  >
+                    {edit.name}
+                  </button>
+                </h1>
               )}
             </div>
             <div className="editor-header-actions">
-              {!editing && (
-                <IconButton
-                  data-edit-record=""
-                  icon="pencil"
-                  label="Редактировать"
-                  onClick={() => setEditing(true)}
-                />
-              )}
               <IconButton
                 id="close-editor"
                 icon="close"
@@ -324,7 +333,6 @@ export function CardEditor({
                         editRef.current = recovery.card;
                         renderEdit(recovery.card);
                         setRecovery(null);
-                        setEditing(true);
                         setStatus('pending');
                       }}
                     >
@@ -400,108 +408,111 @@ export function CardEditor({
                 </div>
               </div>
             )}
-            {card.kind !== 'folder' &&
-              (editing ? (
-                <fieldset
-                  className="editor-body record-sections"
-                  disabled={locked || !!recovery || status === 'conflict'}
-                >
-                  {sections.map(({ id, title, document }, index) => (
-                    <section
+            {card.kind !== 'folder' && (
+              <div className="editor-body record-sections">
+                {visibleSections.map((section, index) =>
+                  activeSection === section.id ? (
+                    <fieldset
+                      ref={sectionEditor}
                       className="record-section-editor"
-                      key={id}
+                      key={section.id}
+                      disabled={!canEdit}
                       aria-label={`Текстовый блок ${index + 1}`}
                     >
                       <div className="record-section-header">
                         <input
-                          autoFocus={newSection.current === id}
                           type="text"
                           placeholder="Заголовок блока"
                           aria-label={`Заголовок блока ${index + 1}`}
-                          value={title}
+                          value={section.title}
                           maxLength={128}
-                          onChange={(event) => updateSection(id, { title: event.target.value })}
+                          onChange={(event) =>
+                            updateSection(section.id, { title: event.target.value })
+                          }
                         />
-                        {sections.length > 1 && (
-                          <IconButton
-                            icon="trash"
-                            label={`Удалить текстовый блок ${index + 1}`}
-                            onClick={() =>
-                              updateSections((current) =>
-                                current.filter((section) => section.id !== id),
-                              )
-                            }
-                          />
-                        )}
                       </div>
                       <RichEditor
                         label={`Текст блока ${index + 1}`}
-                        document={document}
-                        disabled={locked || !!recovery || status === 'conflict'}
-                        change={(next) => updateSection(id, { document: next })}
+                        document={section.document}
+                        disabled={!canEdit}
+                        autoFocus
+                        change={(next) => updateSection(section.id, { document: next })}
                         activity={fieldActivity}
                       />
-                    </section>
-                  ))}
-                  <Button icon="plus" onClick={addSection}>
-                    Добавить текстовый блок
-                  </Button>
-                </fieldset>
-              ) : (
-                <RecordContent sections={sections} />
-              ))}
+                      <div className="record-section-actions">
+                        <IconButton
+                          icon="trash"
+                          label="Удалить блок"
+                          className="danger"
+                          onClick={() => {
+                            setActiveSection(null);
+                            updateSections((current) =>
+                              current.filter(({ id }) => id !== section.id),
+                            );
+                          }}
+                        />
+                        <Button
+                          variant="primary"
+                          disabled={status === 'saving'}
+                          onClick={() => void finishSection()}
+                        >
+                          Сохранить
+                        </Button>
+                      </div>
+                    </fieldset>
+                  ) : (
+                    <RecordContent
+                      key={section.id}
+                      section={section}
+                      edit={canEdit ? () => setActiveSection(section.id) : undefined}
+                      index={index}
+                    />
+                  ),
+                )}
+                {!visibleSections.length && <p className="empty-message">Пока без содержания</p>}
+                <IconButton
+                  icon="plus"
+                  className="primary"
+                  label="Добавить блок"
+                  tooltip="Добавить блок"
+                  disabled={!canEdit}
+                  onClick={addSection}
+                />
+              </div>
+            )}
           </div>
-          {editing && (
-            <footer className="editor-footer">
-              <Button
-                type="button"
-                variant="secondary"
-                className="danger"
-                icon="trash"
-                disabled={
-                  locked ||
-                  status === 'saving' ||
-                  !!recovery ||
-                  dirty ||
-                  attempt.current !== undefined ||
-                  status === 'conflict'
-                }
-                onClick={() => setConfirmTrash(true)}
-              >
-                В корзину
+          <footer className="editor-footer">
+            <Button
+              variant="secondary"
+              className="danger"
+              icon="trash"
+              disabled={!canEdit || status === 'saving' || dirty || attempt.current !== undefined}
+              onClick={() => setConfirmTrash(true)}
+            >
+              В корзину
+            </Button>
+            {status === 'error' && (
+              <Button type="submit" variant="primary" disabled={!canEdit}>
+                Повторить сохранение
               </Button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={locked || status === 'saving'}
-                onClick={async () => {
-                  if (dirty || attempt.current) await saveNow();
-                  if (
-                    !attempt.current &&
-                    contentSignature(editRef.current) === contentSignature(base.current)
-                  )
-                    setEditing(false);
-                }}
-              >
-                Просмотр
-              </button>
-              <button
-                className="primary"
-                aria-keyshortcuts="Meta+S Control+S"
-                disabled={
-                  locked ||
-                  status === 'saving' ||
-                  !!recovery ||
-                  status === 'conflict' ||
-                  (!dirty && !attempt.current)
-                }
-              >
-                {status === 'error' ? 'Повторить сохранение' : 'Сохранить сейчас'}
-              </button>
-            </footer>
-          )}
+            )}
+            {(status === 'saving' || fieldPending > 0) && (
+              <p className="save-status" role="status">
+                {fieldPending > 0 ? 'Загружаем материал…' : 'Сохраняем…'}
+              </p>
+            )}
+          </footer>
         </form>
       </section>
+      {confirmDiscard && (
+        <ConfirmDialog
+          title="Закрыть запись без сохранения?"
+          description="Черновик недоступен. Несохранённый ввод будет потерян."
+          action="Закрыть"
+          dismiss={() => setConfirmDiscard(false)}
+          confirm={close}
+        />
+      )}
       {confirmTrash && (
         <TrashDialog
           card={card}

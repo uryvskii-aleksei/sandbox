@@ -246,6 +246,67 @@ function captureCard(int $owner, array $body): array
     });
 }
 
+function copyBoardCard(int $source, int $owner, array $body): array
+{
+    return receipted($owner, 'copy-card:' . $source, $body, static function () use ($source, $owner, $body): array {
+        $root = cardRow($source, $owner);
+        $project = positiveId($body['project'] ?? null);
+        $folder = folderId($body['folder'] ?? null);
+        project($project, $owner);
+        validateFolder($folder, $project, $owner);
+        $point = coordinates($body['coordinates'] ?? null);
+        $children = [];
+        if ($root['kind'] === 'folder') {
+            $rows = query('SELECT c.* FROM cards c LEFT JOIN card_details d ON d.card_id=c.id
+                WHERE c.project_id=? AND c.folder_id IS NOT NULL AND d.deleted_at IS NULL ORDER BY c.id',
+                [$root['project_id']])->fetchAll();
+            foreach ($rows as $row) $children[$row['folder_id']][] = $row;
+        }
+        $copies = [];
+        $pending = [$root];
+        for ($index = 0; $index < count($pending); $index++) {
+            $row = $pending[$index];
+            $original = (int) $row['id'];
+            if (isset($copies[$original])) continue;
+            $top = $original === $source;
+            $destination = $top ? $folder : $copies[$row['folder_id']];
+            query('INSERT INTO cards(project_id,folder_id,kind,name,x,y,width,height) VALUES(?,?,?,?,?,?,?,?)',
+                [$project, $destination, $row['kind'], $row['name'], $top ? $point['x'] : $row['x'],
+                    $top ? $point['y'] : $row['y'], $row['width'], $row['height']]);
+            $id = (int) database()->lastInsertId();
+            $copies[$original] = $id;
+            touchCard($id);
+            query('INSERT INTO card_documents(card_id,document,search_text)
+                SELECT ?,document,search_text FROM card_documents WHERE card_id=?', [$id, $original]);
+            foreach (query('SELECT * FROM field_groups WHERE card_id=? ORDER BY sort_order,id', [$original])->fetchAll() as $group) {
+                query('INSERT INTO field_groups(card_id,name,sort_order,collapsed) VALUES(?,?,?,?)',
+                    [$id, $group['name'], $group['sort_order'], $group['collapsed']]);
+                $groupId = (int) database()->lastInsertId();
+                query('INSERT INTO fields(group_id,type,title,values_json,sort_order)
+                    SELECT ?,type,title,values_json,sort_order FROM fields WHERE group_id=? ORDER BY sort_order,id',
+                    [$groupId, $group['id']]);
+            }
+            if ($row['kind'] === 'folder') {
+                query('INSERT INTO board_marks(project_id,folder_id,kind,label,label_scale,x,y,end_x,end_y)
+                    SELECT ?,?,kind,label,label_scale,x,y,end_x,end_y FROM board_marks WHERE folder_id=?',
+                    [$project, $id, $original]);
+                foreach ($children[$original] ?? [] as $child) $pending[] = $child;
+            }
+        }
+        if (count($copies) > 1) {
+            // Связи между копиями повторяют рёбра исходного ациклического графа.
+            foreach (linkRows($owner) as $link) {
+                if (!isset($copies[$link['source']], $copies[$link['target']])) continue;
+                $from = $copies[$link['source']];
+                $to = $copies[$link['target']];
+                query('INSERT INTO card_links(source_id,target_id,label) VALUES(?,?,?)', [$from, $to, $link['label']]);
+                query('UPDATE cards SET parent_id=COALESCE(parent_id,?) WHERE id=?', [$from, $to]);
+            }
+        }
+        return cardOutput(cardRow($copies[$source], $owner));
+    });
+}
+
 function searchCards(int $owner): array
 {
     $term = text($_GET['q'] ?? '', 128, true);
@@ -390,8 +451,10 @@ function validateMarkGeometry(string $kind, array $at, array $end): void
     $height = abs($end['y'] - $at['y']);
     if ($kind === 'line') {
         if (hypot($width, $height) < 1) fail(422, 'У линии должны быть разные начало и конец.');
-    } elseif ($width < 1 || abs($width - $height) > 0.001) {
-        fail(422, 'У фигуры должны быть одинаковые ширина и высота.');
+    } elseif ($width < 1 || $height < 1) {
+        fail(422, 'У фигуры должны быть положительные ширина и высота.');
+    } elseif ($kind === 'circle' && abs($width - $height) > 0.001) {
+        fail(422, 'У круга должны быть одинаковые ширина и высота.');
     }
 }
 
@@ -407,14 +470,16 @@ function createBoardMark(int $project, int $owner, array $body): array
         $end = $kind === 'label' ? null : coordinates($body['end'] ?? null);
         if ($end) validateMarkGeometry($kind, $at, $end);
         $label = $kind === 'label' ? text($body['text'] ?? '') : '';
-        return insertBoardMark($project, $folder, $kind, $at, $end, $label);
+        $scale = $body['scale'] ?? 1;
+        if ($kind === 'label' && ((!is_float($scale) && !is_int($scale)) || !is_finite($scale) || $scale < 0.4 || $scale > 4)) fail(422, 'Недопустимый размер подписи.');
+        return insertBoardMark($project, $folder, $kind, $at, $end, $label, $kind === 'label' ? $scale : 1);
     });
 }
 
-function insertBoardMark(int $project, ?int $folder, string $kind, array $at, ?array $end, string $label): array
+function insertBoardMark(int $project, ?int $folder, string $kind, array $at, ?array $end, string $label, float $scale = 1): array
 {
-    query('INSERT INTO board_marks(project_id,folder_id,kind,label,x,y,end_x,end_y) VALUES(?,?,?,?,?,?,?,?)',
-        [$project, $folder, $kind, $label, $at['x'], $at['y'], $end['x'] ?? null, $end['y'] ?? null]);
+    query('INSERT INTO board_marks(project_id,folder_id,kind,label,label_scale,x,y,end_x,end_y) VALUES(?,?,?,?,?,?,?,?,?)',
+        [$project, $folder, $kind, $label, $scale, $at['x'], $at['y'], $end['x'] ?? null, $end['y'] ?? null]);
     $id = (int) database()->lastInsertId();
     return boardMarkOutput(query('SELECT * FROM board_marks WHERE id=?', [$id])->fetch());
 }

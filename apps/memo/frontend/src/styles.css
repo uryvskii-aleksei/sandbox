@@ -304,6 +304,7 @@ button {
 }
 .workspace-header {
   --header-inset: 30px;
+  --header-button-size: 36px;
   flex: 0 0 var(--workspace-header-height);
   min-height: var(--workspace-header-height);
   padding-inline: var(--header-inset);
@@ -661,9 +662,13 @@ button {
   min-height: 1.15em;
   padding: 0;
   border: 0;
+  background: transparent;
   height: 100%;
   resize: none;
   user-select: text;
+}
+.card-title-draft .card-title-input:focus {
+  outline: none;
 }
 .card-title-mirror {
   max-height: 719px;
@@ -691,8 +696,8 @@ button {
   position: absolute;
   z-index: 1;
   left: 50%;
-  bottom: calc(100% + 4px);
-  transform: translateX(-50%);
+  bottom: calc(100% + 2px);
+  transform: translate(-50%, 50%);
   display: flex;
   gap: 4px;
   visibility: hidden;
@@ -1641,6 +1646,8 @@ kbd {
 .board-add > .ui-button {
   min-height: 36px;
   padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 400;
 }
 .board-add-popover {
   position: absolute;
@@ -1878,7 +1885,9 @@ kbd {
   text-align: center;
   overflow-wrap: anywhere;
 }
-.shape-caption-text > span {
+.shape-caption-text > span,
+.shape-caption-mirror {
+  white-space: pre-wrap;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
@@ -1986,9 +1995,36 @@ kbd {
   cursor: text;
   outline-offset: 1px;
 }
-.shape-caption-editor input.canvas-label {
+.shape-caption-editor {
   transform: translate(-50%, -100%);
+}
+.shape-caption-draft {
+  display: grid;
+  color: var(--accent);
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.18;
   text-align: center;
+}
+.shape-caption-draft :is(textarea, .shape-caption-mirror) {
+  grid-area: 1 / 1;
+  overflow-wrap: anywhere;
+}
+.shape-caption-mirror {
+  visibility: hidden;
+}
+.shape-caption-draft textarea {
+  height: 100%;
+  min-height: 1.18em;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: center;
+  resize: none;
+}
+.shape-caption-draft textarea:focus {
+  outline: none;
 }
 .workspace-header-actions {
   display: flex;
@@ -1996,8 +2032,13 @@ kbd {
   gap: 4px;
   flex: none;
 }
+@media (pointer: coarse) {
+  .workspace-header {
+    --header-button-size: 44px;
+  }
+}
 .workspace-search {
-  width: 36px;
+  width: var(--header-button-size);
 }
 .workspace-search > button[hidden] {
   display: none;
@@ -2005,7 +2046,7 @@ kbd {
 .workspace-search-field {
   position: absolute;
   z-index: 1;
-  inset-inline-end: calc(var(--header-inset) + 40px);
+  inset-inline-end: calc(var(--header-inset) + var(--header-button-size) + 4px);
   inset-inline-start: var(--header-inset);
   top: 50%;
   margin-inline-start: auto;
@@ -2015,7 +2056,7 @@ kbd {
 }
 @keyframes expand-workspace-search {
   from {
-    inset-inline-start: calc(100% - var(--header-inset) - 76px);
+    inset-inline-start: calc(100% - var(--header-inset) - 2 * var(--header-button-size) - 4px);
   }
 }
 .workspace-search-field input {
@@ -2045,8 +2086,8 @@ kbd {
 }
 .workspace-header-actions .icon-button {
   color: inherit;
-  width: 36px;
-  height: 36px;
+  width: var(--header-button-size);
+  height: var(--header-button-size);
 }
 .workspace-header-actions .icon-button:hover,
 .workspace-header-actions .icon-button[aria-expanded='true'] {

@@ -61,7 +61,7 @@ export function CardTitleEditor({
         maxLength={128}
         readOnly={saving}
         value={draft}
-        onFocus={(event) => event.currentTarget.select()}
+        onFocus={({ currentTarget }) => currentTarget.setSelectionRange(draft.length, draft.length)}
         onChange={(event) => {
           setDraft(event.target.value);
           setError('');

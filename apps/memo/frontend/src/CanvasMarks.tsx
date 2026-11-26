@@ -6,7 +6,7 @@ import type {
   ReactNode,
   SVGAttributes,
 } from 'react';
-import { api } from './api';
+import { useWorkspaceClient } from './WorkspaceClient';
 import type { markTools } from './shortcuts';
 import type { BoardMark, BoardMarkUpdate, Card, NewBoardMark, Sketch } from './types';
 import { IconButton } from './ui';
@@ -112,6 +112,7 @@ function moveMark(
 }
 
 export function useCanvasMarks(project: number, folder: number | null) {
+  const api = useWorkspaceClient();
   const [items, setItems] = useState<BoardMark[]>([]);
   const [tool, setTool] = useState<(typeof markTools)[number]['kind'] | null>(null);
   const [draft, setDraft] = useState<{

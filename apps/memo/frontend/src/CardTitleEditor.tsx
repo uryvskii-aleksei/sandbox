@@ -7,7 +7,7 @@ export function CardTitleEditor({
   close,
 }: {
   card: Card;
-  save: (name: string) => Promise<void>;
+  save: (name: string, height?: number) => Promise<void>;
   close: () => void;
 }) {
   const [draft, setDraft] = useState(card.name);
@@ -15,13 +15,13 @@ export function CardTitleEditor({
   const [error, setError] = useState('');
   const pending = useRef(false);
   const errorId = useId();
-  const finish = (input: HTMLInputElement) => {
+  const finish = (input: HTMLTextAreaElement) => {
     const article = input === document.activeElement ? input.closest('article') : null;
     close();
     if (article)
       requestAnimationFrame(() => article.querySelector<HTMLButtonElement>('.card-title')?.focus());
   };
-  const commit = async (input: HTMLInputElement) => {
+  const commit = async (input: HTMLTextAreaElement) => {
     if (pending.current) return;
     const next = input.value.trim();
     if (!next) {
@@ -36,7 +36,8 @@ export function CardTitleEditor({
     setSaving(true);
     setError('');
     try {
-      await save(next);
+      const article = input.closest<HTMLElement>('article[data-auto-height]');
+      await save(next, article?.offsetHeight);
       finish(input);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Не удалось сохранить название.');
@@ -47,7 +48,11 @@ export function CardTitleEditor({
   };
   return (
     <div className="card-title-draft">
-      <input
+      <span className="card-title-mirror" aria-hidden="true">
+        {draft + '\u200b'}
+      </span>
+      <textarea
+        rows={1}
         autoFocus
         className="card-title-input"
         aria-label={card.kind === 'folder' ? 'Название папки' : 'Название записи'}
@@ -65,7 +70,7 @@ export function CardTitleEditor({
         onBlur={(event) => void commit(event.currentTarget)}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
-          if (event.key === 'Enter') {
+          if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
             void commit(event.currentTarget);
           } else if (event.key === 'Escape') {

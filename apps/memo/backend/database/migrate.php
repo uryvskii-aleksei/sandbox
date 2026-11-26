@@ -13,13 +13,16 @@ if (!$pdo->query("SHOW COLUMNS FROM cards WHERE Field = 'kind'")->fetch()) {
 if (!$pdo->query("SHOW COLUMNS FROM cards WHERE Field = 'folder_id'")->fetch()) {
     $pdo->exec('ALTER TABLE cards ADD COLUMN folder_id INT UNSIGNED NULL, ADD INDEX card_board (project_id, folder_id)');
 }
-foreach (['width' => 240, 'height' => 70] as $column => $default) {
+foreach (['width' => 280, 'height' => 70] as $column => $default) {
     $definition = $pdo->query("SHOW COLUMNS FROM cards WHERE Field = '$column'")->fetch();
     if (!$definition) {
         $pdo->exec("ALTER TABLE cards ADD COLUMN $column SMALLINT UNSIGNED NOT NULL DEFAULT $default");
-    } elseif ($column === 'height' && (int) $definition['Default'] !== $default) {
-        $pdo->exec("ALTER TABLE cards ALTER COLUMN height SET DEFAULT $default");
+    } elseif ((int) $definition['Default'] !== $default) {
+        $pdo->exec("ALTER TABLE cards ALTER COLUMN $column SET DEFAULT $default");
     }
+}
+if (!$pdo->query("SHOW COLUMNS FROM cards WHERE Field = 'auto_height'")->fetch()) {
+    $pdo->exec('ALTER TABLE cards ADD COLUMN auto_height TINYINT(1) NOT NULL DEFAULT 1');
 }
 $markKind = $pdo->query("SHOW COLUMNS FROM board_marks WHERE Field = 'kind'")->fetch();
 if ($markKind && $markKind['Type'] === "enum('label','line')") {
@@ -45,6 +48,10 @@ try {
     $marker->execute(['compact-card-height-v1']);
     if ($marker->rowCount() === 1) {
         $pdo->exec('UPDATE cards SET height=70,version=version+1 WHERE height=190');
+    }
+    $marker->execute(['growing-card-title-v1']);
+    if ($marker->rowCount() === 1) {
+        $pdo->exec('UPDATE cards SET auto_height=0 WHERE height<>70');
     }
     $marker->execute(['card-links-v1']);
     if ($marker->rowCount() === 1) {

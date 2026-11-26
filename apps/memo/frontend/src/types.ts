@@ -50,6 +50,7 @@ export interface Card {
   folder?: number | null;
   coordinates: { x: number; y: number };
   size?: { width: number; height: number };
+  autoHeight?: boolean;
   version: number;
   content: FieldGroup[];
   document?: MemoDocument;
@@ -70,6 +71,15 @@ export type NewBoardMark =
   { kind: 'label'; at: Card['coordinates']; text: string; scale?: number } | Sketch;
 export type BoardMark = NewBoardMark & { id: number };
 export type BoardClipboard = { cardId: number } | { mark: NewBoardMark };
+export interface GuestProjectSnapshot {
+  name: string;
+  cards: Pick<
+    Card,
+    'id' | 'name' | 'kind' | 'folder' | 'coordinates' | 'size' | 'autoHeight' | 'document'
+  >[];
+  links: Pick<CardLink, 'source' | 'target' | 'label'>[];
+  marks: (BoardMark & { folder: number | null })[];
+}
 export interface BoardMarkUpdate {
   at?: Card['coordinates'];
   end?: Card['coordinates'];

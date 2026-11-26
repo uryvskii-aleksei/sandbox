@@ -217,8 +217,8 @@ function nextCardPosition(int $projectId, ?int $folder = null): array
     $rows = (int) floor((100000 - 80) / 280);
     $occupied = [];
     foreach ($points as $point) {
-        $left = max(0, (int) ceil(((float) $point['x'] - 280 - 80) / 320));
-        $right = min($columns, (int) floor(((float) $point['x'] + $point['width'] + 40 - 80) / 320));
+        $left = max(0, (int) floor(((float) $point['x'] - 320 - 80) / 320) + 1);
+        $right = min($columns, (int) ceil(((float) $point['x'] + $point['width'] + 40 - 80) / 320) - 1);
         $top = max(0, (int) ceil(((float) $point['y'] - 230 - 80) / 280));
         $bottom = min($rows, (int) floor(((float) $point['y'] + $point['height'] + 40 - 80) / 280));
         for ($row = $top; $row <= $bottom; $row++) for ($column = $left; $column <= $right; $column++) $occupied[$row * ($columns + 1) + $column] = true;
@@ -379,9 +379,9 @@ function copyBoardCard(int $source, int $owner, array $body): array
             if (isset($copies[$original])) continue;
             $top = $original === $source;
             $destination = $top ? $folder : $copies[$row['folder_id']];
-            query('INSERT INTO cards(public_id,project_id,folder_id,kind,name,x,y,width,height) VALUES(?,?,?,?,?,?,?,?,?)',
+            query('INSERT INTO cards(public_id,project_id,folder_id,kind,name,x,y,width,height,auto_height) VALUES(?,?,?,?,?,?,?,?,?,?)',
                 [newPublicId(), $project, $destination, $row['kind'], $row['name'], $top ? $point['x'] : $row['x'],
-                    $top ? $point['y'] : $row['y'], $row['width'], $row['height']]);
+                    $top ? $point['y'] : $row['y'], $row['width'], $row['height'], $row['auto_height']]);
             $id = (int) database()->lastInsertId();
             $copies[$original] = $id;
             touchCard($id);
@@ -448,7 +448,7 @@ function templateProject(int $owner, array $body): array
         $nodes = match ($template) {
             'family' => [['Родитель 1', 40, 60, 'Имя, даты жизни и воспоминания.'], ['Родитель 2', 420, 60, 'Имя, даты жизни и воспоминания.'], ['Ребёнок', 230, 360, 'Замените примеры участниками вашей семьи.']],
             'outline' => [['Тема', 280, 40, 'Главная мысль конспекта.'], ['Основные идеи', 0, 350, 'Запишите ключевые тезисы.'], ['Источники', 300, 350, 'Ссылки и материалы.'], ['Вопросы', 600, 350, 'Что хочется изучить дальше?']],
-            'retro' => [['Что мешало', 110, 225, 'Что стоит изменить в следующий раз?'], ['Что получилось', 720, 225, 'Что помогло и что стоит повторить?'], ['Что было ожидаемо', 990, 225, 'Что прошло по плану?'], ['Следующие шаги', 110, 764, 'Действие, ответственный и срок.']],
+            'retro' => [['Что мешало', 110, 225, 'Что стоит изменить в следующий раз?'], ['Что получилось', 720, 225, 'Что помогло и что стоит повторить?'], ['Что было ожидаемо', 1030, 225, 'Что прошло по плану?'], ['Следующие шаги', 110, 764, 'Действие, ответственный и срок.']],
             'tasks' => [['Собрать требования', 40, 145, 'Опишите результат и укажите срок.'], ['Подготовить черновик', 360, 145, 'Запишите текущий шаг.'], ['Согласовать план', 680, 145, 'Укажите результат или ссылку.']],
             default => [],
         };
@@ -467,10 +467,10 @@ function templateProject(int $owner, array $body): array
         foreach ($pairs as [$source, $target]) putLink($owner, ['source' => $ids[$source], 'target' => $ids[$target]]);
         if ($template === 'retro') {
             $frames = [
-                [$name, 40, 95, 1300, 1000],
+                [$name, 40, 95, 1370, 1000],
                 ['Плохо', 76, 175, 654, 650],
-                ['Хорошо', 686, 175, 1264, 650],
-                ['Что будем делать?', 76, 730, 1264, 964],
+                ['Хорошо', 686, 175, 1334, 650],
+                ['Что будем делать?', 76, 730, 1334, 964],
             ];
             foreach ($frames as [$label, $left, $top, $right, $bottom]) {
                 insertBoardMark($projectId, null, 'square', ['x' => $left, 'y' => $top], ['x' => $right, 'y' => $bottom], $label);
@@ -582,16 +582,21 @@ function createBoardMark(int $project, int $owner, array $body): array
         project($project, $owner);
         $folder = folderId($body['folder'] ?? null);
         validateFolder($folder, $project, $owner);
-        $at = coordinates($body['at'] ?? null);
-        $kind = $body['kind'] ?? '';
-        if (!in_array($kind, ['label', 'line', 'square', 'circle'], true)) fail(422, 'Неизвестный элемент полотна.');
-        $end = $kind === 'label' ? null : coordinates($body['end'] ?? null);
-        if ($end) validateMarkGeometry($kind, $at, $end);
-        $label = $kind === 'line' ? '' : text($body['text'] ?? '', 128, $kind !== 'label');
-        $scale = $body['scale'] ?? 1;
-        if ($kind === 'label' && ((!is_float($scale) && !is_int($scale)) || !is_finite($scale) || $scale < 0.4 || $scale > 4)) fail(422, 'Недопустимый размер подписи.');
-        return insertBoardMark($project, $folder, $kind, $at, $end, $label, $kind === 'label' ? $scale : 1);
+        return storeBoardMark($project, $folder, $body);
     });
+}
+
+function storeBoardMark(int $project, ?int $folder, array $body): array
+{
+    $at = coordinates($body['at'] ?? null);
+    $kind = $body['kind'] ?? '';
+    if (!in_array($kind, ['label', 'line', 'square', 'circle'], true)) fail(422, 'Неизвестный элемент полотна.');
+    $end = $kind === 'label' ? null : coordinates($body['end'] ?? null);
+    if ($end) validateMarkGeometry($kind, $at, $end);
+    $label = $kind === 'line' ? '' : text($body['text'] ?? '', 128, $kind !== 'label');
+    $scale = $body['scale'] ?? 1;
+    if ($kind === 'label' && ((!is_float($scale) && !is_int($scale)) || !is_finite($scale) || $scale < 0.4 || $scale > 4)) fail(422, 'Недопустимый размер подписи.');
+    return insertBoardMark($project, $folder, $kind, $at, $end, $label, $kind === 'label' ? $scale : 1);
 }
 
 function insertBoardMark(int $project, ?int $folder, string $kind, array $at, ?array $end, string $label, float $scale = 1): array

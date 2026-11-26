@@ -42,6 +42,7 @@ function cardOutput(array $row): array
         'updatedAt' => $details['updated_at'] ?? null, 'openedAt' => $details['opened_at'] ?? null,
         'coordinates' => ['x' => (float) $row['x'], 'y' => (float) $row['y']],
         'size' => ['width' => (int) $row['width'], 'height' => (int) $row['height']],
+        'autoHeight' => (bool) $row['auto_height'],
         ...($document === false ? [] : ['document' => json_decode($document, true, 64, JSON_THROW_ON_ERROR)]),
         'version' => (int) $row['version'], 'content' => $content];
 }
@@ -151,6 +152,12 @@ function saveDocument(int $id, mixed $document): void
         [$id, $value, implode(' ', $index)]);
 }
 
+function cardAutoHeight(mixed $value): bool
+{
+    if (!is_bool($value)) fail(422, 'Некорректный режим высоты карточки.');
+    return $value;
+}
+
 function cardSize(mixed $value): array
 {
     if (!is_array($value)) fail(422, 'Укажите размер карточки.');
@@ -218,7 +225,10 @@ function saveCard(int $id, int $owner, array $body, bool $positionOnly = false):
         $point = coordinates($body['coordinates'] ?? null);
         if ($positionOnly) {
             $size = array_key_exists('size', $body) ? cardSize($body['size']) : $row;
-            query('UPDATE cards SET x=?,y=?,width=?,height=?,version=version+1 WHERE id=?', [$point['x'], $point['y'], $size['width'], $size['height'], $id]);
+            $sizeChanged = (int) $row['width'] !== (int) $size['width'] || (int) $row['height'] !== (int) $size['height'];
+            $autoHeight = array_key_exists('autoHeight', $body)
+                ? cardAutoHeight($body['autoHeight']) : (bool) $row['auto_height'] && !$sizeChanged;
+            query('UPDATE cards SET x=?,y=?,width=?,height=?,auto_height=?,version=version+1 WHERE id=?', [$point['x'], $point['y'], $size['width'], $size['height'], (int) $autoHeight, $id]);
         }
         else {
             $name = text($body['name'] ?? '');
@@ -228,7 +238,8 @@ function saveCard(int $id, int $owner, array $body, bool $positionOnly = false):
                 if ($row['parent_id'] !== null) query("DELETE FROM card_links WHERE source_id=? AND target_id=?", [$row['parent_id'], $id]);
                 if ($parent !== null) putLink($owner, ['source' => $parent, 'target' => $id]);
             }
-            query('UPDATE cards SET name=?,parent_id=?,x=?,y=?,version=version+1 WHERE id=?', [$name, $parent, $point['x'], $point['y'], $id]);
+            $height = $row['auto_height'] && array_key_exists('size', $body) ? cardSize($body['size'])['height'] : $row['height'];
+            query('UPDATE cards SET name=?,parent_id=?,x=?,y=?,height=?,version=version+1 WHERE id=?', [$name, $parent, $point['x'], $point['y'], $height, $id]);
             if ($row['kind'] === 'record') {
                 if (isset($body['document'])) saveDocument($id, $body['document']);
                 elseif (query('SELECT 1 FROM card_documents WHERE card_id=?', [$id])->fetch()) fail(409, 'Обновите Memo, чтобы сохранить визуальный документ.');

@@ -3,13 +3,24 @@ import type { CSSProperties, FormEvent } from 'react';
 import { api } from './api';
 import { Board } from './Board';
 import { CardEditor } from './CardEditor';
+import { GuestAuthDialog } from './GuestAuthDialog';
+import { createGuestWorkspace, guestProjectId } from './guestWorkspace';
 import { PanelDivider } from './PanelDivider';
+import { ProjectActions } from './ProjectActions';
 import { ProjectCreateDialog } from './ProjectCreateDialog';
-import { childPosition, excerpt } from './graph';
+import { cardDimensions, childPosition, clampCardSize, excerpt } from './graph';
 import { parseRoute, routeUrl } from './routes';
 import type { EntityRef, Route } from './routes';
 import { isTextInput, markTools, shortcutHelp } from './shortcuts';
-import { draftKey, listDrafts, readLocal, removeLocal, writeLocal } from './storage';
+import {
+  clearGuestStorage,
+  draftKey,
+  guestUserId,
+  listDrafts,
+  readLocal,
+  removeLocal,
+  writeLocal,
+} from './storage';
 import { folderTrail } from './types';
 import type {
   BoardSelection,
@@ -18,12 +29,14 @@ import type {
   Card,
   CardLink,
   Folder,
+  GuestProjectSnapshot,
   Project,
   Template,
   Trash,
   User,
 } from './types';
 import { Button, ConfirmDialog, Icon, IconButton, Popover, Toast } from './ui';
+import { WorkspaceClient } from './WorkspaceClient';
 
 type BlockKind = 'record' | 'folder';
 
@@ -51,6 +64,9 @@ function panelPreferences() {
 type View = Route['view'];
 type RecordRoute = Extract<Route, { view: 'record' }>;
 const base = import.meta.env.BASE_URL;
+const guestRoute: Route = { view: 'project', project: guestProjectId };
+const guestIdentity: User = { id: guestUserId, email: '' };
+type PendingTransfer = { account: User; snapshot: GuestProjectSnapshot; requestId: string };
 const currentRoute = () => parseRoute(location.pathname, base);
 const urlFor = (route: Route) => routeUrl(base, route);
 const reasonText = (reason: unknown) =>
@@ -214,7 +230,15 @@ function CardList({
 
 export function App() {
   const [ready, setReady] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
+  const [account, setAccount] = useState<User | null>(null);
+  const [guest, setGuest] = useState(createGuestWorkspace);
+  const guestMode = !account;
+  const user = account ?? (ready ? guestIdentity : null);
+  const workspaceApi = guestMode ? guest.client : api;
+  const entryRoute = useRef(currentRoute());
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [transfer, setTransfer] = useState<PendingTransfer | null>(null);
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -248,7 +272,6 @@ export function App() {
   >({});
   const [boardClipboard, setBoardClipboard] = useState<BoardClipboard | null>(null);
   const pendingPaste = useRef<{ requestId: string; coordinates: Card['coordinates'] } | null>(null);
-  const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{ project: Project } | { draft: Card } | null>(
     null,
   );
@@ -260,7 +283,6 @@ export function App() {
   const searchInput = useRef<HTMLInputElement>(null);
   const searchButton = useRef<HTMLButtonElement>(null);
   const [searchOpen, setSearchOpen] = useState(() => currentRoute().view === 'search');
-  const settingsButton = useRef<HTMLButtonElement>(null);
   const shortcutsButton = useRef<HTMLButtonElement>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [boardAddOpen, setBoardAddOpen] = useState(false);
@@ -304,13 +326,25 @@ export function App() {
 
   useEffect(() => {
     let live = true;
+    const enterGuest = () => {
+      setRoute(guestRoute);
+      setSearchOpen(false);
+      if (entryRoute.current.view === 'project' || entryRoute.current.view === 'record') {
+        setAuthOpen(true);
+      }
+    };
     void api
       .session()
       .then((session) => {
-        if (live) setUser(session.user);
+        if (!live) return;
+        if (session.user) setAccount(session.user);
+        else enterGuest();
       })
       .catch((reason: unknown) => {
-        if (live) setError(reasonText(reason));
+        if (live) {
+          setAuthError(reasonText(reason));
+          enterGuest();
+        }
       })
       .finally(() => {
         if (live) setReady(true);
@@ -323,7 +357,7 @@ export function App() {
     if (!user) return;
     const controller = new AbortController();
     setProjectsStatus('loading');
-    void api
+    void workspaceApi
       .projects(controller.signal)
       .then((items) => {
         if (!controller.signal.aborted) {
@@ -342,7 +376,7 @@ export function App() {
   useEffect(() => {
     if (!user) return;
     const controller = new AbortController();
-    void api
+    void workspaceApi
       .links(controller.signal)
       .then((edges) => {
         if (!controller.signal.aborted) setLinks(edges);
@@ -353,7 +387,6 @@ export function App() {
     return () => controller.abort();
   }, [user, revision]);
   useEffect(() => {
-    setProjectSettingsOpen(false);
     setShortcutsOpen(false);
     pendingBlock.current = {};
     pendingPaste.current = null;
@@ -370,15 +403,15 @@ export function App() {
       () => {
         const load = async () => {
           const signal = controller.signal;
-          let card = recordRoute ? await api.card(recordRoute.record, signal) : null;
+          let card = recordRoute ? await workspaceApi.card(recordRoute.record, signal) : null;
           if (card?.kind === 'folder') throw new Error('Запись недоступна.');
           const openLink = recordRoute && openedLink.current !== recordRoute;
-          if (card && openLink) card = await api.visit(card.id, signal);
+          if (card && openLink) card = await workspaceApi.visit(card.id, signal);
           const projectRefForBoard = card?.project ?? projectRef;
           if (projectRefForBoard !== undefined) {
             const [project, tree] = await Promise.all([
-              api.project(projectRefForBoard, signal),
-              api.folders(projectRefForBoard, signal),
+              workspaceApi.project(projectRefForBoard, signal),
+              workspaceApi.folders(projectRefForBoard, signal),
             ]);
             const folderRefForBoard = card?.folder ?? folderRef;
             const target = tree.find(
@@ -386,7 +419,7 @@ export function App() {
             );
             if (folderRefForBoard !== undefined && !target) throw new Error('Папка не найдена.');
             const folder = target?.id ?? null;
-            const result = await api.cards(project.id, folder, signal);
+            const result = await workspaceApi.cards(project.id, folder, signal);
             if (!signal.aborted) {
               setWorkspace({
                 project,
@@ -442,12 +475,13 @@ export function App() {
     setEditing(linked.card);
   }, [currentBoard, recordRoute, editing]);
   useEffect(() => {
-    if (currentBoard && loaded && location.pathname !== currentUrl) {
+    if (!guestMode && currentBoard && loaded && location.pathname !== currentUrl) {
       history.replaceState(history.state, '', currentUrl + location.search + location.hash);
     }
-  }, [currentBoard, currentUrl, loaded]);
+  }, [currentBoard, currentUrl, loaded, guestMode]);
   useEffect(() => {
     const update = () => {
+      if (guestMode) return;
       if (editing) document.getElementById('close-editor')?.click();
       setRoute(currentRoute());
       setBoardAddOpen(false);
@@ -456,10 +490,10 @@ export function App() {
     };
     window.addEventListener('popstate', update);
     return () => window.removeEventListener('popstate', update);
-  }, [editing]);
+  }, [editing, guestMode]);
   const navigate = (next: Route, focus: number | null = null) => {
     if (editing) document.getElementById('close-editor')?.click();
-    history.pushState(null, '', urlFor(next));
+    if (!guestMode) history.pushState(null, '', urlFor(next));
     setRoute(next);
     setBoardAddOpen(false);
     setDrawingTool(null);
@@ -481,7 +515,7 @@ export function App() {
   const run = (work: () => Promise<void>) => {
     void perform(work).catch(() => {});
   };
-  const refreshLinks = async () => setLinks(await api.links());
+  const refreshLinks = async () => setLinks(await workspaceApi.links());
   const refresh = () => setRevision((value) => value + 1);
   const replaceCard = (card: Card) => {
     setCards((items) => items.map((item) => (item.id === card.id ? card : item)));
@@ -493,9 +527,13 @@ export function App() {
       })),
     );
   };
-  const renameCard = async (id: number, name: string) => {
-    const card = await api.card(id);
-    const renamed = await api.saveCard({ ...card, name }, crypto.randomUUID());
+  const renameCard = async (id: number, name: string, height?: number) => {
+    const card = await workspaceApi.card(id);
+    const size =
+      height && card.autoHeight !== false
+        ? clampCardSize(cardDimensions(card).width, height)
+        : card.size;
+    const renamed = await workspaceApi.saveCard({ ...card, name, size }, crypto.randomUUID());
     replaceCard(renamed);
     setEditing((current) => (current?.id === renamed.id ? renamed : current));
     if (renamed.kind === 'folder')
@@ -515,7 +553,7 @@ export function App() {
       await renameCard(currentFolder.id, name);
       return;
     }
-    const renamed = await api.renameProject(project.id, name);
+    const renamed = await workspaceApi.renameProject(project.id, name);
     setProjects((items) =>
       items.map((item) => (item.id === renamed.id ? { ...item, ...renamed } : item)),
     );
@@ -531,7 +569,7 @@ export function App() {
     const closeButton = document.getElementById('close-editor');
     if (closeButton instanceof HTMLButtonElement && closeButton.disabled) return;
     run(async () => {
-      const result = await api.visit(id);
+      const result = await workspaceApi.visit(id);
       replaceCard(result);
       setOpenForEditing(edit);
       setEditing(result);
@@ -558,17 +596,62 @@ export function App() {
     if (card.kind === 'folder') enterFolder(card.publicId ?? card.id, card.project);
     else openId(card.id);
   };
+  const finishAuth = (signedIn: User, project?: Project) => {
+    const next: Route = project
+      ? { view: 'project', project: project.publicId ?? project.id }
+      : entryRoute.current;
+    clearGuestStorage();
+    setGuest(createGuestWorkspace());
+    setTransfer(null);
+    setAuthOpen(false);
+    setEditing(null);
+    setCards([]);
+    setLinks([]);
+    setProjects([]);
+    setWorkspace(null);
+    setLoaded(false);
+    setLoadedKey('');
+    setBoardClipboard(null);
+    setFocusId(null);
+    setViewMode('board');
+    setSearchOpen(next.view === 'search');
+    setDeletedItem(null);
+    setNotice(project ? 'Полотно сохранено в аккаунте.' : '');
+    setAccount(signedIn);
+    history.replaceState(null, '', urlFor(next));
+    setRoute(next);
+  };
+  const importWorkspace = async (pending: PendingTransfer) => {
+    const project = await api.importGuest(pending.snapshot, pending.requestId);
+    finishAuth(pending.account, project);
+  };
+  const runAuth = (work: () => Promise<void>) => {
+    setAuthError('');
+    setBusy(true);
+    void work()
+      .catch((reason: unknown) => setAuthError(reasonText(reason)))
+      .finally(() => setBusy(false));
+  };
   const authenticate = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
-    run(async () => {
+    runAuth(async () => {
       const identifier = String(data.get('email'));
       const email =
         import.meta.env.DEV && mode === 'login' && identifier.trim().toLowerCase() === 'admin'
           ? 'admin@memo.local'
           : identifier;
-      const result = await api.auth(mode, email, String(data.get('password')));
-      setUser(result.user);
+      await api.session();
+      const { user: signedIn } = await api.auth(mode, email, String(data.get('password')));
+      if (!signedIn) throw new Error('Не удалось открыть аккаунт.');
+      const snapshot = guest.snapshot();
+      if (!snapshot) {
+        finishAuth(signedIn);
+        return;
+      }
+      const pending = { account: signedIn, snapshot, requestId: crypto.randomUUID() };
+      setTransfer(pending);
+      await importWorkspace(pending);
     });
   };
   const createProject = async (name: string, template: Template, requestId: string) => {
@@ -583,23 +666,23 @@ export function App() {
     setProjectCreateOpen(false);
     requestAnimationFrame(() => projectCreateButton.current?.focus());
   };
-  const dismissSettings = () => {
-    setProjectSettingsOpen(false);
-    setShortcutsOpen(false);
-  };
   const openSearch = () => {
-    dismissSettings();
+    setShortcutsOpen(false);
     setSearchOpen(true);
     searchInput.current?.focus();
+  };
+  const dismissSearch = () => {
+    setSearchOpen(false);
+    requestAnimationFrame(() => searchButton.current?.focus());
   };
   const createBlock = (kind: BlockKind, coordinates?: Card['coordinates']) => {
     if (!active || busy || !loaded || loadedKey !== loadKey) return;
     const pending = pendingBlock.current;
     const operation = pending[kind] ?? { requestId: crypto.randomUUID(), coordinates };
     pending[kind] = operation;
-    dismissSettings();
+    setShortcutsOpen(false);
     run(async () => {
-      const created = await api.capture({
+      const created = await workspaceApi.capture({
         ...operation,
         project: active.id,
         folder: folder ?? undefined,
@@ -616,16 +699,18 @@ export function App() {
     const operation = pendingPaste.current ?? { requestId: crypto.randomUUID(), coordinates };
     pendingPaste.current = operation;
     run(async () => {
-      await api.copyCard(source, { ...operation, project: active.id, folder });
+      await workspaceApi.copyCard(source, { ...operation, project: active.id, folder });
       if (pendingPaste.current === operation) pendingPaste.current = null;
       refresh();
     });
   };
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
-      if (!user || projectCreateOpen || event.defaultPrevented || event.isComposing) return;
+      if (!user || authOpen || projectCreateOpen || event.defaultPrevented || event.isComposing)
+        return;
       if (event.target instanceof Element && event.target.closest('dialog[open]')) return;
       if (
+        !guestMode &&
         (event.ctrlKey || event.metaKey) &&
         !event.altKey &&
         !event.shiftKey &&
@@ -650,13 +735,11 @@ export function App() {
         event.preventDefault();
         setSearchOpen(false);
         setShortcutsOpen(false);
-        dismissSettings();
         setBoardAddOpen(false);
         draw(tool.kind);
       } else if (event.shiftKey && event.code === 'KeyH') {
         event.preventDefault();
         setSearchOpen(false);
-        setProjectSettingsOpen(false);
         setShortcutsOpen(true);
         shortcutsButton.current?.focus();
       } else if (
@@ -683,7 +766,7 @@ export function App() {
   });
   const createChild = (parent: Card) =>
     run(async () => {
-      const withText = await api.capture({
+      const withText = await workspaceApi.capture({
         requestId: crypto.randomUUID(),
         project: parent.project,
         folder: parent.folder ?? undefined,
@@ -698,12 +781,12 @@ export function App() {
     });
   const updatePosition = (card: Card) =>
     perform(async () => {
-      replaceCard(await api.position(card));
+      replaceCard(await workspaceApi.position(card));
     });
   const moveSelection = (moving: Card[], marks: number[], motion: BoardMove) =>
     perform(async () => {
       if (selected === undefined) return [];
-      const saved = await api.moveSelection(selected, folder, moving, marks, motion);
+      const saved = await workspaceApi.moveSelection(selected, folder, moving, marks, motion);
       const byId = new Map(saved.cards.map((card) => [card.id, card]));
       if ('destination' in motion) {
         setCards((items) => items.filter((item) => !byId.has(item.id)));
@@ -719,7 +802,13 @@ export function App() {
   const removeSelection = (selection: BoardSelection, requestId: string) =>
     perform(async () => {
       if (selected === undefined) return;
-      await api.trashSelection(selected, folder, selection.cards, selection.marks, requestId);
+      await workspaceApi.trashSelection(
+        selected,
+        folder,
+        selection.cards,
+        selection.marks,
+        requestId,
+      );
       setCards((items) => items.filter((item) => !selection.cards.includes(item.id)));
       setFocusId(null);
       setDeletedItem(null);
@@ -728,20 +817,20 @@ export function App() {
     });
   const connect = (source: number, target: number, label = '') =>
     perform(async () => {
-      await api.connect(source, target, label);
+      await workspaceApi.connect(source, target, label);
       await refreshLinks();
-      replaceCard(await api.card(target));
+      replaceCard(await workspaceApi.card(target));
     });
   const disconnect = (link: CardLink) =>
     perform(async () => {
-      await api.disconnect(link);
+      await workspaceApi.disconnect(link);
       await refreshLinks();
-      replaceCard(await api.card(link.target));
+      replaceCard(await workspaceApi.card(link.target));
     });
   const reconnect = (link: CardLink, newSource: number, newTarget: number) =>
     perform(async () => {
       try {
-        await api.reconnectLink(link, newSource, newTarget);
+        await workspaceApi.reconnectLink(link, newSource, newTarget);
         setDeletedItem(null);
         setNotice('Связь изменена.');
       } finally {
@@ -750,7 +839,7 @@ export function App() {
     });
   const remove = (card: Card) =>
     perform(async () => {
-      await api.deleteCard(card.id);
+      await workspaceApi.deleteCard(card.id);
       setDeletedItem({ id: card.id, type: 'card' });
       setNotice(
         card.kind === 'folder' ? 'Папка перемещена в корзину.' : 'Запись перемещена в корзину.',
@@ -779,16 +868,15 @@ export function App() {
       refresh();
     }).catch((reason: unknown) => setDeleteError(reasonText(reason)));
   };
-  const exportActive = () => {
-    if (!active) return;
+  const exportProject = (project: Project) => {
     run(async () => {
-      const result = await api.exportProject(active.id);
+      const result = await api.exportProject(project.id);
       const url = URL.createObjectURL(
         new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' }),
       );
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `memo-project-${active.id}.json`;
+      anchor.download = `memo-project-${project.id}.json`;
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       setNotice('Проект экспортирован вместе с загруженными файлами.');
@@ -796,7 +884,7 @@ export function App() {
   };
   const restore = (id: number, type: 'card' | 'project') =>
     run(async () => {
-      if (type === 'card') await api.restoreCard(id);
+      if (type === 'card') await workspaceApi.restoreCard(id);
       else await api.restoreProject(id);
       setDeletedItem(null);
       setNotice(
@@ -805,80 +893,7 @@ export function App() {
       refresh();
     });
 
-  if (!ready) return <main className="loading-screen">Загружаем пространство…</main>;
-  if (!user)
-    return (
-      <main className="auth-page">
-        <section className="auth-intro">
-          <span className="brand-mark">m.</span>
-          <p className="eyebrow">MEMO</p>
-          <h1>
-            Дайте мыслям
-            <br />
-            своё пространство.
-          </h1>
-          <p>Собирайте заметки, стройте семейное дерево, связывайте темы и находите новые идеи.</p>
-          <div className="auth-illustration" aria-hidden="true">
-            <span>Первая идея</span>
-            <i />
-            <span>Новая связь</span>
-            <i />
-            <span>Большая картина</span>
-          </div>
-        </section>
-        <section className="auth-form">
-          <p className="eyebrow">ВАШЕ ПРОСТРАНСТВО</p>
-          <h2>{mode === 'login' ? 'С возвращением' : 'Начнём с аккаунта'}</h2>
-          <p>
-            {mode === 'login'
-              ? 'Войдите, чтобы продолжить работу с записями.'
-              : 'Все проекты и материалы будут доступны только вам.'}
-          </p>
-          {error && (
-            <div className="alert" role="alert">
-              {error}
-              <button onClick={() => location.reload()}>Повторить подключение</button>
-            </div>
-          )}
-          <form onSubmit={authenticate}>
-            <label>
-              {import.meta.env.DEV && mode === 'login' ? 'Email или логин' : 'Email'}
-              <input
-                name="email"
-                type={import.meta.env.DEV && mode === 'login' ? 'text' : 'email'}
-                autoComplete={mode === 'login' ? 'username' : 'email'}
-                required
-                maxLength={254}
-              />
-            </label>
-            <label>
-              Пароль
-              <input
-                name="password"
-                type="password"
-                required
-                minLength={8}
-                maxLength={72}
-                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-              />
-            </label>
-            <button className="primary" disabled={busy}>
-              {busy ? 'Подождите…' : mode === 'login' ? 'Войти в пространство' : 'Создать аккаунт'}
-            </button>
-          </form>
-          <button
-            className="text-button"
-            disabled={busy}
-            onClick={() => {
-              setMode(mode === 'login' ? 'register' : 'login');
-              setError('');
-            }}
-          >
-            {mode === 'login' ? 'Нет аккаунта? Зарегистрироваться' : 'Уже есть аккаунт? Войти'}
-          </button>
-        </section>
-      </main>
-    );
+  if (!user) return <main className="loading-screen">Загружаем пространство…</main>;
 
   const toasts = (error || notice) && (
     <>
@@ -927,15 +942,16 @@ export function App() {
     '--memo-record-width': `${panels.right}px`,
   };
   return (
-    <>
+    <WorkspaceClient.Provider value={workspaceApi}>
       <div
-        className={`application ${editing ? 'has-record-dock' : ''}`}
+        className={`application ${guestMode ? 'guest-workspace' : ''} ${editing ? 'has-record-dock' : ''}`}
         style={docking}
-        inert={projectCreateOpen}
+        inert={projectCreateOpen || authOpen}
       >
         <aside
           className={`sidebar ${panels.collapsed ? 'sidebar-collapsed' : ''}`}
           id="memo-sidebar"
+          hidden={guestMode}
         >
           <div className="sidebar-top">
             <a
@@ -960,48 +976,6 @@ export function App() {
                 setPanels((current) => ({ ...current, collapsed: !current.collapsed }))
               }
             />
-          </div>
-          <div className="sidebar-search">
-            <button
-              ref={searchButton}
-              type="button"
-              className="sidebar-search-button"
-              title="Поиск · ⌘ / Ctrl K"
-              aria-label="Поиск"
-              aria-keyshortcuts="Meta+K Control+K"
-              aria-expanded={searchOpen}
-              aria-controls={searchOpen ? 'memo-search' : undefined}
-              onClick={() => (searchOpen ? setSearchOpen(false) : openSearch())}
-            >
-              <Icon name="search" size={17} />
-              <span className="sidebar-label">Поиск</span>
-            </button>
-            {searchOpen && (
-              <Popover
-                id="memo-search"
-                role="search"
-                className="search-popover"
-                trigger={searchButton}
-                onDismiss={() => setSearchOpen(false)}
-              >
-                <label className="search-label">
-                  <input
-                    autoFocus
-                    ref={searchInput}
-                    type="search"
-                    maxLength={128}
-                    aria-label="Поиск по всем записям"
-                    placeholder="Найти · ⌘ / Ctrl K"
-                    value={query}
-                    onChange={(event) => {
-                      setQuery(event.target.value);
-                      if (route.view !== 'search') navigate({ view: 'search' });
-                    }}
-                  />
-                  <Icon name="search" size={16} />
-                </label>
-              </Popover>
-            )}
           </div>
           <p className="nav-section">ЛИЧНОЕ ПРОСТРАНСТВО</p>
           <nav className="main-navigation" aria-label="Личное пространство">
@@ -1047,7 +1021,7 @@ export function App() {
             </>
           )}
           <div className="sidebar-bottom">
-            <span className="avatar">{user.email[0].toUpperCase()}</span>
+            <span className="avatar">{user.email.charAt(0).toUpperCase()}</span>
             <span title={user.email}>{user.email}</span>
             <button
               className="icon-button"
@@ -1056,7 +1030,15 @@ export function App() {
               onClick={() =>
                 run(async () => {
                   await api.logout();
-                  setUser(null);
+                  clearGuestStorage();
+                  setGuest(createGuestWorkspace());
+                  setAccount(null);
+                  setLoaded(false);
+                  setLoadedKey('');
+                  entryRoute.current = { view: 'dashboard' };
+                  setRoute(guestRoute);
+                  setViewMode('board');
+                  history.replaceState(null, '', base);
                   setProjects([]);
                   setCards([]);
                   setWorkspace(null);
@@ -1064,6 +1046,7 @@ export function App() {
                   setLinks([]);
                   setTrash({ cards: [], projects: [] });
                   setQuery('');
+                  setSearchOpen(false);
                   setBoardClipboard(null);
                   setDeletedItem(null);
                   setNotice('');
@@ -1087,7 +1070,7 @@ export function App() {
         </aside>
         <main className="workspace">
           <header className="workspace-header">
-            <div className="workspace-heading">
+            <div className="workspace-heading" inert={searchOpen && !guestMode}>
               {folder !== null && active && (
                 <nav className="board-breadcrumbs" aria-label="Путь к папке">
                   <button
@@ -1126,51 +1109,56 @@ export function App() {
               )}
             </div>
             <div className="workspace-header-actions">
-              {active && (
-                <div className="project-settings">
+              {guestMode && (
+                <Button
+                  className="guest-auth-button"
+                  aria-haspopup="dialog"
+                  disabled={busy}
+                  onClick={() => {
+                    setAuthError('');
+                    setMode('login');
+                    setAuthOpen(true);
+                  }}
+                >
+                  Войти
+                </Button>
+              )}
+              {!guestMode && (
+                <div className="workspace-search">
                   <IconButton
-                    ref={settingsButton}
-                    icon="settings"
-                    label="Действия с проектом"
-                    aria-expanded={projectSettingsOpen}
-                    aria-controls={projectSettingsOpen ? 'project-settings-panel' : undefined}
-                    onClick={() => {
-                      setShortcutsOpen(false);
-                      setProjectSettingsOpen((open) => !open);
-                    }}
+                    ref={searchButton}
+                    icon="search"
+                    iconSize={20}
+                    label="Поиск"
+                    aria-expanded={searchOpen}
+                    aria-keyshortcuts="Meta+K Control+K"
+                    aria-controls={searchOpen ? 'memo-search' : undefined}
+                    hidden={searchOpen}
+                    onClick={openSearch}
                   />
-                  {projectSettingsOpen && (
-                    <Popover
-                      id="project-settings-panel"
-                      role="region"
-                      aria-label="Действия с проектом"
-                      trigger={settingsButton}
-                      onDismiss={dismissSettings}
-                      className="project-settings-panel"
-                    >
-                      <Button
-                        variant="text"
-                        disabled={busy}
-                        onClick={() => {
-                          dismissSettings();
-                          exportActive();
+                  {searchOpen && (
+                    <div id="memo-search" role="search" className="workspace-search-field">
+                      <input
+                        autoFocus
+                        ref={searchInput}
+                        type="search"
+                        maxLength={128}
+                        aria-label="Поиск по всем записям"
+                        placeholder="Найти · ⌘ / Ctrl K"
+                        value={query}
+                        onChange={(event) => {
+                          setQuery(event.target.value);
+                          if (route.view !== 'search') navigate({ view: 'search' });
                         }}
-                      >
-                        Экспорт
-                      </Button>
-                      <Button
-                        variant="text"
-                        className="danger"
-                        disabled={busy || active.inbox}
-                        onClick={() => {
-                          settingsButton.current?.focus();
-                          dismissSettings();
-                          requestDelete({ project: active });
+                        onBlur={() => setSearchOpen(false)}
+                        onKeyDown={(event) => {
+                          if (event.key !== 'Escape' || event.nativeEvent.isComposing) return;
+                          event.preventDefault();
+                          dismissSearch();
                         }}
-                      >
-                        В корзину
-                      </Button>
-                    </Popover>
+                      />
+                      <Icon name="search" size={18} />
+                    </div>
                   )}
                 </div>
               )}
@@ -1184,7 +1172,6 @@ export function App() {
                   aria-controls={shortcutsOpen ? 'keyboard-shortcuts' : undefined}
                   aria-keyshortcuts="Alt+Shift+H"
                   onClick={() => {
-                    setProjectSettingsOpen(false);
                     setShortcutsOpen((open) => !open);
                   }}
                 />
@@ -1222,7 +1209,7 @@ export function App() {
                 aria-haspopup="dialog"
                 disabled={busy}
                 onClick={() => {
-                  dismissSettings();
+                  setShortcutsOpen(false);
                   setProjectCreateOpen(true);
                 }}
               >
@@ -1231,16 +1218,18 @@ export function App() {
             )}
             {active && (
               <div className="board-add">
-                <IconButton
+                <Button
                   ref={boardAddButton}
-                  className="primary"
+                  variant="primary"
                   icon="plus"
-                  label="Добавить на полотно"
+                  aria-label="Добавить на полотно"
                   disabled={busy || !loaded || loadedKey !== loadKey}
                   aria-expanded={boardAddOpen}
                   aria-controls={boardAddOpen ? 'board-add-actions' : undefined}
                   onClick={() => setBoardAddOpen((open) => !open)}
-                />
+                >
+                  Добавить
+                </Button>
                 {boardAddOpen && (
                   <Popover
                     id="board-add-actions"
@@ -1282,6 +1271,9 @@ export function App() {
                   </Popover>
                 )}
               </div>
+            )}
+            {guestMode && (
+              <p className="guest-notice">Временное полотно. Войдите, чтобы сохранить.</p>
             )}
             {active && (
               <div className="view-switch" role="group" aria-label="Вид проекта">
@@ -1337,7 +1329,7 @@ export function App() {
                 notifications={toasts}
                 locate={locate}
                 busy={busy || projectCreateOpen}
-                keyboardDisabled={projectSettingsOpen || shortcutsOpen || searchOpen}
+                keyboardDisabled={authOpen || shortcutsOpen || searchOpen}
                 storageKey={`memo:${user.id}:camera:${selected}${folder === null ? '' : `:${folder}`}`}
                 focusId={focusId}
                 clipboard={boardClipboard}
@@ -1381,6 +1373,12 @@ export function App() {
                         <span className="project-row-name">{project.name}</span>
                         <span className="project-row-count">Записей: {project.cards ?? 0}</span>
                       </button>
+                      <ProjectActions
+                        project={project}
+                        busy={busy}
+                        exportProject={() => exportProject(project)}
+                        deleteProject={() => requestDelete({ project })}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -1531,6 +1529,23 @@ export function App() {
           </div>
         )}
       </div>
+      {authOpen && (
+        <GuestAuthDialog
+          mode={mode}
+          changeMode={() => {
+            setMode(mode === 'login' ? 'register' : 'login');
+            setAuthError('');
+          }}
+          busy={busy}
+          transferring={transfer !== null}
+          error={authError}
+          dismiss={() => setAuthOpen(false)}
+          authenticate={authenticate}
+          retry={() => {
+            if (transfer) runAuth(() => importWorkspace(transfer));
+          }}
+        />
+      )}
       {projectCreateOpen && (
         <ProjectCreateDialog create={createProject} dismiss={dismissProjectCreate} />
       )}
@@ -1550,6 +1565,6 @@ export function App() {
           confirm={deleteConfirmed}
         />
       )}
-    </>
+    </WorkspaceClient.Provider>
   );
 }

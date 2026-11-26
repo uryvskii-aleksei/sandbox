@@ -2105,6 +2105,7 @@ kbd {
 .shape-caption-trash {
   grid-column: 3;
   padding-left: 6px;
+  pointer-events: auto;
 }
 .mark-lines .mark-hit {
   pointer-events: stroke;
@@ -2279,8 +2280,6 @@ kbd {
 }
 .mark-lines g:hover > .mark-trash,
 .mark-lines g:focus-within > .mark-trash,
-.shape-caption-pencil + .shape-caption-trash,
-.mark-lines g:is(:hover, :focus-within, [data-active]) .shape-caption-trash,
 .canvas-label-item:hover > .mark-trash,
 .canvas-label-item:focus-within > .mark-trash {
   visibility: visible;

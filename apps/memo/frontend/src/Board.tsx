@@ -1459,7 +1459,7 @@ export function Board({
               <IconButton
                 className="canvas-trash card-trash"
                 icon="trash"
-                iconSize={27}
+                iconSize={22.5}
                 label={`В корзину: ${card.name}`}
                 disabled={busy}
                 onClick={() => setTrashCandidate(card)}

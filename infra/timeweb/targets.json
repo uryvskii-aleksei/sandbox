@@ -2,6 +2,13 @@
   "version": 1,
   "provider": "timeweb-shared",
   "targets": {
+    "amodu": {
+      "app": "apps/amodu",
+      "buildDir": "dist",
+      "sshHost": "timeweb-sandbox",
+      "remotePath": "/home/c/cj999935/public_html/amodu",
+      "url": "https://amodu.ru/amodu/"
+    },
     "stonehaus-v1": {
       "app": "apps/stonehaus",
       "buildDir": "dist/v1",

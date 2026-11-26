@@ -38,6 +38,30 @@ test('building preserves original bytes, refreshes generated output and retains 
   assert.equal(fs.existsSync(path.join(output, 'stale.html')), false);
 });
 
+test('Amodu resources resolve from both the domain root and its deployment directory', (t) => {
+  const f = fixture(t);
+  const source =
+    '<link href="./styles.css"><img src="./assets/stonehaus.webp"><a href="#content">Skip</a>';
+  const index = f.write('amodu/site/index.html', source);
+  f.write('amodu/site/styles.css', 'body { color: #fff; }');
+  f.write('amodu/site/assets/stonehaus.webp', Buffer.from([0, 128, 255]));
+
+  const output = buildSite(path.join(f.root, 'amodu'));
+  const html = fs.readFileSync(path.join(output, 'index.html'), 'utf8');
+  assert.equal(fs.readFileSync(index, 'utf8'), source);
+  assert.ok(html.includes('href="#content"'));
+  for (const route of ['/', '/amodu/']) {
+    const page = new URL(route, 'https://example.test');
+    const resources = [...html.matchAll(/(?:href|src)="([^#][^"]*)"/g)];
+    assert.equal(resources.length, 2);
+    for (const [, reference] of resources) {
+      const { pathname } = new URL(reference, page);
+      assert.ok(pathname.startsWith('/amodu/'), pathname);
+      assert.ok(fs.existsSync(path.join(output, pathname.slice('/amodu/'.length))), pathname);
+    }
+  }
+});
+
 test('Purpur build places the main page and legacy versions inside one public mount', (t) => {
   const f = fixture(t);
   f.write('purpur/site/index.html', 'Purpur main');

@@ -1,14 +1,15 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { api, ApiError } from './api';
 import { BoardContextMenu } from './BoardContextMenu';
 import type { BoardMenuItem } from './BoardContextMenu';
 import { MarkLayer, MarkTools, useCanvasMarks } from './CanvasMarks';
+import { CardTitleEditor } from './CardTitleEditor';
 import { linkPort, routeBoardLinks, routeConnection } from './connectionRoutes';
 import { LinkControl } from './LinkControl';
-import { Icon, IconButton, Toast } from './ui';
-import { canConnect, cardDimensions, clampCardSize, excerpt } from './graph';
+import { IconButton, Toast } from './ui';
+import { canConnect, cardDimensions, clampCardSize } from './graph';
 import { isTextInput, markTools } from './shortcuts';
 import { readLocal, writeLocal } from './storage';
 import { TrashDialog } from './TrashDialog';
@@ -40,6 +41,7 @@ interface Props {
   createBlock: (kind: 'record' | 'folder', at: Card['coordinates']) => void;
   open: (card: Card, editing?: boolean) => void;
   enter: (card: Card) => void;
+  rename: (id: number, name: string) => Promise<Card>;
   moveSelection: (cards: Card[], marks: number[], move: BoardMove) => Promise<BoardMark[]>;
   remove: (card: Card) => Promise<void>;
   removeSelection: (selection: BoardSelection, requestId: string) => Promise<void>;
@@ -81,6 +83,7 @@ type ResizeGesture = {
 };
 interface Drag {
   card: Card | null;
+  title: boolean;
   selecting: boolean;
   selection: BoardSelection | null;
   pointer: number;
@@ -119,36 +122,6 @@ function dragRectangle(drag: Drag, event: PointerEvent<HTMLElement>, board: DOMR
   );
 }
 
-function CardPreview({ text }: { text: string }) {
-  const frame = useRef<HTMLDivElement>(null);
-  const [lines, setLines] = useState(1);
-  useLayoutEffect(() => {
-    const element = frame.current;
-    const paragraph = element?.firstElementChild;
-    if (!element || !paragraph) return;
-    const measure = () => {
-      const lineHeight = Number.parseFloat(getComputedStyle(paragraph).lineHeight);
-      setLines(Math.floor(element.clientHeight / lineHeight));
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-  return (
-    <div className="card-preview" ref={frame}>
-      <p
-        className="card-excerpt"
-        style={{
-          WebkitLineClamp: Math.max(1, lines),
-          visibility: lines > 0 ? undefined : 'hidden',
-        }}
-      >
-        {text}
-      </p>
-    </div>
-  );
-}
 function cameraValue(value: unknown): value is Camera {
   return (
     typeof value === 'object' &&
@@ -222,6 +195,7 @@ export function Board({
   createBlock,
   open,
   enter,
+  rename,
   moveSelection,
   remove,
   removeSelection,
@@ -262,6 +236,7 @@ export function Board({
     moving: 'source' | 'target';
   } | null>(null);
   const [selectedId, setSelectedId] = useState(focusId);
+  const [titleCardId, setTitleCardId] = useState<number | null>(null);
   const [hoveredLink, setHoveredLink] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const [contextMenu, setContextMenu] = useState<
@@ -274,6 +249,9 @@ export function Board({
   const root = useRef<HTMLElement>(null);
   const viewport = useRef<{ width: number; height: number } | null>(null);
   const drag = useRef<Drag | null>(null);
+  // Счётчик кликов учитываем только после отпускания мыши без перетаскивания.
+  const mouseClick = useRef<{ id: number; title: boolean } | null>(null);
+  const previousBodyClick = useRef<number | null>(null);
   const modifierSelectionHandled = useRef(false);
   const markPointer = useRef<number | null>(null);
   const resizing = useRef<ResizeGesture | null>(null);
@@ -290,14 +268,19 @@ export function Board({
   const marks = useCanvasMarks(projectId, folderId);
   const onThisBoard = (card: Card) =>
     card.project === projectId && (card.folder ?? null) === folderId;
-  const selectCard = (card: Card) => {
+  const highlightCard = (id: number) => {
     marks.cancel();
     setGroup(emptySelection);
+    setSelectedId(id);
+  };
+  const selectCard = (card: Card) => {
+    highlightCard(card.id);
     if (card.kind === 'folder') enter(card);
-    else {
-      setSelectedId(card.id);
-      open(card);
-    }
+    else open(card);
+  };
+  const saveTitle = async (id: number, name: string) => {
+    const renamed = await rename(id, name);
+    setExternal((items) => items.map((item) => (item.id === id ? renamed : item)));
   };
   const point = (card: Card) =>
     resizePreview?.id === card.id
@@ -742,6 +725,7 @@ export function Board({
     const origin = card ? point(card) : { x: camera.x, y: camera.y };
     drag.current = {
       card,
+      title: !!card && event.target instanceof Element && !!event.target.closest('.card-title'),
       selecting,
       selection,
       pointer: event.pointerId,
@@ -833,6 +817,7 @@ export function Board({
     };
   };
   const selectionTarget = (element: Element) => {
+    if (element.closest('input')) return null;
     const card = Number(
       element.closest('.mind-card:not(.reference-card)')?.getAttribute('data-card-id'),
     );
@@ -997,9 +982,15 @@ export function Board({
     }
     try {
       if (cancelled) return;
-      if (!current.moved) {
-        if (current.card && !current.selection) selectCard(current.card);
-        else if (!current.selection) {
+      const moved =
+        current.moved ||
+        Math.abs(event.clientX - current.x) + Math.abs(event.clientY - current.y) > 5;
+      if (!moved) {
+        if (current.card) {
+          if (event.pointerType === 'mouse')
+            mouseClick.current = { id: current.card.id, title: current.title };
+          else if (!current.selection) selectCard(current.card);
+        } else if (!current.selection) {
           marks.cancel();
           setSelectedId(null);
           setGroup(emptySelection);
@@ -1206,6 +1197,7 @@ export function Board({
         }
       }}
       onClickCapture={(event) => {
+        if (!mouseClick.current || mouseClick.current.title) previousBodyClick.current = null;
         if (
           (event.ctrlKey || event.metaKey) &&
           event.target instanceof Element &&
@@ -1239,6 +1231,7 @@ export function Board({
           event.preventDefault();
       }}
       onPointerDownCapture={(event) => {
+        mouseClick.current = null;
         modifierSelectionHandled.current = false;
         if (
           event.button === 0 &&
@@ -1423,39 +1416,62 @@ export function Board({
             <article
               key={card.id}
               data-card-id={card.id}
-              className={`mind-card ${local ? '' : 'reference-card'} ${connected ? (validTarget(source ?? card.id, card.id) ? 'valid-target' : 'invalid-target') : ''} ${grouped ? 'grouped-card' : selection === card.id ? 'focused-card' : neighbors.has(card.id) ? 'related-card' : ''} ${isFolder ? 'folder-card' : ''} ${dropFolder?.id === card.id ? (dropFolder.allowed ? 'folder-drop-target' : 'folder-drop-rejected') : ''} ${temporary[card.id] ? 'dragging-card' : ''}`}
+              className={`mind-card ${local ? '' : 'reference-card'} ${connected ? (validTarget(source ?? card.id, card.id) ? 'valid-target' : 'invalid-target') : ''} ${grouped ? 'grouped-card' : selection === card.id ? 'focused-card' : neighbors.has(card.id) ? 'related-card' : ''} ${dropFolder?.id === card.id ? (dropFolder.allowed ? 'folder-drop-target' : 'folder-drop-rejected') : ''} ${temporary[card.id] ? 'dragging-card' : ''}`}
               style={{ left: point(card).x, top: point(card).y, ...size(card) }}
               onPointerDown={(event) => start(event, card)}
+              onClick={(event) => {
+                const click = mouseClick.current;
+                if (!event.detail || click?.id !== card.id) return;
+                mouseClick.current = null;
+                if (busy || source !== null || marks.tool) return;
+                if (click.title) setTitleCardId(card.id);
+                else {
+                  const doubleClick = event.detail === 2 && previousBodyClick.current === card.id;
+                  previousBodyClick.current = card.id;
+                  if (doubleClick) selectCard(card);
+                  else if (!grouped) highlightCard(card.id);
+                }
+              }}
             >
-              <button
-                className="card-title"
-                disabled={busy}
-                aria-label={
-                  source !== null
-                    ? `Связать с ${card.name}`
-                    : isFolder
-                      ? `Открыть папку ${card.name}`
-                      : undefined
-                }
-                aria-pressed={
-                  source === null ? grouped || (!isFolder && selection === card.id) : undefined
-                }
-                onFocus={() => {
-                  if (source !== null) setTarget(card.id);
-                }}
-                onBlur={() => {
-                  if (!linking.current) setTarget(null);
-                }}
-                onClick={(event) => {
-                  if (event.ctrlKey || event.metaKey) return;
-                  if (source !== null && !linking.current) void finishLink(source, card.id);
-                  else if (event.detail === 0) selectCard(card);
-                }}
-              >
-                {isFolder && <Icon name="folder" size={27} />}
-                <span>{card.name}</span>
-              </button>
-              <CardPreview text={isFolder ? 'Открыть полотно' : excerpt(card)} />
+              {titleCardId === card.id ? (
+                <CardTitleEditor
+                  card={card}
+                  save={(name) => saveTitle(card.id, name)}
+                  close={() => setTitleCardId((id) => (id === card.id ? null : id))}
+                />
+              ) : (
+                <button
+                  className="card-title"
+                  disabled={busy}
+                  aria-keyshortcuts={source === null ? 'F2' : undefined}
+                  aria-label={
+                    source !== null
+                      ? `Связать с ${card.name}`
+                      : isFolder
+                        ? `Открыть папку ${card.name}`
+                        : `Открыть запись ${card.name}`
+                  }
+                  aria-pressed={source === null ? grouped || selection === card.id : undefined}
+                  onFocus={() => {
+                    if (source !== null) setTarget(card.id);
+                  }}
+                  onBlur={() => {
+                    if (!linking.current) setTarget(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'F2' || busy || source !== null || marks.tool) return;
+                    event.preventDefault();
+                    setTitleCardId(card.id);
+                  }}
+                  onClick={(event) => {
+                    if (event.ctrlKey || event.metaKey) return;
+                    if (source !== null && !linking.current) void finishLink(source, card.id);
+                    else if (event.detail === 0) selectCard(card);
+                  }}
+                >
+                  <span>{card.name}</span>
+                </button>
+              )}
               <IconButton
                 className="canvas-trash card-trash"
                 icon="trash"

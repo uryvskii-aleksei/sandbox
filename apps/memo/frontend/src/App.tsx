@@ -453,14 +453,20 @@ export function App() {
       })),
     );
   };
-  const renameTitle = async (project: Project, currentFolder: Folder | undefined, name: string) => {
-    if (currentFolder) {
-      const card = await api.card(currentFolder.id);
-      const renamed = await api.saveCard({ ...card, name }, crypto.randomUUID());
-      replaceCard(renamed);
+  const renameCard = async (id: number, name: string) => {
+    const card = await api.card(id);
+    const renamed = await api.saveCard({ ...card, name }, crypto.randomUUID());
+    replaceCard(renamed);
+    setEditing((current) => (current?.id === renamed.id ? renamed : current));
+    if (renamed.kind === 'folder')
       setFolders((items) =>
         items.map((item) => (item.id === renamed.id ? { ...item, name: renamed.name } : item)),
       );
+    return renamed;
+  };
+  const renameTitle = async (project: Project, currentFolder: Folder | undefined, name: string) => {
+    if (currentFolder) {
+      await renameCard(currentFolder.id, name);
       return;
     }
     const renamed = await api.renameProject(project.id, name);
@@ -1243,6 +1249,7 @@ export function App() {
                 createBlock={createBlock}
                 open={(card, edit) => openId(card.id, edit)}
                 enter={(card) => enterFolder(card.id, card.project)}
+                rename={renameCard}
                 moveSelection={moveSelection}
                 removeSelection={removeSelection}
                 child={createChild}

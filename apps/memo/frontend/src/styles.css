@@ -636,9 +636,11 @@ button {
   z-index: 1;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
   padding: 18px;
   background: white;
-  color: #25344e;
+  color: var(--accent);
   border: 1px solid #aebedb;
   border-top: 4px solid var(--accent);
   border-radius: 10px;
@@ -664,19 +666,24 @@ button {
     0 0 0 4px #6f92dc66,
     0 6px 24px #10274f22;
 }
+.card-title,
+.card-title-input {
+  color: var(--accent);
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.15;
+}
 .card-title {
   display: block;
-  flex: none;
-  width: 100%;
-  height: auto;
+  width: max-content;
+  max-width: 100%;
   padding: 0;
-  border-radius: 0;
   text-align: left;
-  font-size: 16px;
-  font-weight: 650;
-  line-height: 1.3;
   overflow-wrap: anywhere;
-  color: var(--accent);
+  cursor: text;
+}
+.card-title:hover:not(:disabled) {
+  text-decoration: underline;
 }
 .card-title span {
   display: -webkit-box;
@@ -684,22 +691,24 @@ button {
   -webkit-line-clamp: 2;
   overflow: hidden;
 }
-.card-excerpt {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  white-space: pre-line;
+.card-title-draft {
+  position: relative;
+  width: 100%;
 }
-.card-preview {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  margin-top: 8px;
+.card-title-draft .card-title-input {
+  padding: 4px 6px;
+  user-select: text;
+}
+.card-title-error {
+  position: absolute;
+  z-index: 2;
+  top: 100%;
+  left: 0;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: #fff0f2;
+  color: #9e324a;
+  font-size: 18px;
 }
 .card-actions {
   position: absolute;
@@ -1772,7 +1781,6 @@ kbd {
 
 .reference-card {
   border-top-style: dashed;
-  background: #f1f5fd;
 }
 .canvas-reference-error {
   position: absolute;
@@ -1827,21 +1835,6 @@ kbd {
   text-overflow: ellipsis;
   text-decoration: underline;
   text-underline-offset: 3px;
-}
-.folder-card {
-  background: #eef3ff;
-  border-top-color: #486bb1;
-}
-.folder-card .card-title {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-.folder-card .card-title svg {
-  flex: none;
-}
-.mind-card .card-title {
-  padding-inline-end: 26px;
 }
 .mind-card.related-card {
   border-color: #5378c2;
@@ -2251,6 +2244,12 @@ kbd {
 }
 .card-actions {
   z-index: 1;
+}
+@media (hover: hover) and (pointer: fine) {
+  .mind-card:not(:hover):not(:focus-within) > :is(.card-actions, .card-trash) {
+    opacity: 0;
+    pointer-events: none;
+  }
 }
 .mark-trash {
   visibility: hidden;

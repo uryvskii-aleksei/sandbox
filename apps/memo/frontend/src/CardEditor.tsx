@@ -64,6 +64,19 @@ export function CardEditor({
   const savedCallback = useRef(saved);
   savedCallback.current = saved;
   const dirty = contentSignature(edit) !== contentSignature(base.current);
+  useEffect(() => {
+    if (
+      card.version <= base.current.version ||
+      dirty ||
+      recovery ||
+      saving.current ||
+      attempt.current
+    )
+      return;
+    base.current = card;
+    editRef.current = card;
+    renderEdit(card);
+  }, [card, dirty, recovery]);
   const persist = (value = editRef.current) => {
     const ok = writeLocal(draftKey(userId, card.id), {
       card: value,

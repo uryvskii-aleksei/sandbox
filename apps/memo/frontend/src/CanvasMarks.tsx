@@ -381,7 +381,7 @@ function ShapeCaption({
             onClick={onEdit}
           />
         )}
-        <div className="mark-trash shape-caption-trash">{children}</div>
+        <div className="shape-caption-trash">{children}</div>
       </div>
     </foreignObject>
   );

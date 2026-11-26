@@ -2570,7 +2570,6 @@ select {
 .panel-divider-right {
   left: 0;
 }
-.panel-divider:hover,
 .panel-divider:focus-visible {
   background: color-mix(in srgb, var(--accent) 25%, transparent);
 }

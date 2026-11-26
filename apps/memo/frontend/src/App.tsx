@@ -12,6 +12,7 @@ import { folderTrail } from './types';
 import type {
   BoardSelection,
   BoardClipboard,
+  BoardMove,
   Card,
   CardLink,
   Folder,
@@ -20,7 +21,7 @@ import type {
   Trash,
   User,
 } from './types';
-import { Button, ConfirmDialog, Icon, IconButton, Popover, Select } from './ui';
+import { Button, ConfirmDialog, Icon, IconButton, Popover, Select, Toast } from './ui';
 
 type BlockKind = 'record' | 'folder';
 
@@ -412,11 +413,11 @@ export function App() {
     setFocusId(focus);
     setError('');
   };
-  const perform = async (work: () => Promise<void>) => {
+  const perform = async <T,>(work: () => Promise<T>) => {
     setBusy(true);
     setError('');
     try {
-      await work();
+      return await work();
     } catch (reason) {
       setError(reasonText(reason));
       throw reason;
@@ -613,13 +614,21 @@ export function App() {
     perform(async () => {
       replaceCard(await api.position(card));
     });
-  const moveInto = (card: Card, folder: Card) =>
+  const moveSelection = (moving: Card[], marks: number[], motion: BoardMove) =>
     perform(async () => {
-      await api.move(card, folder.project, folder.id);
-      setCards((items) => items.filter((item) => item.id !== card.id));
-      setFocusId(null);
-      setDeletedItem(null);
-      setNotice(`«${card.name}» перемещено в «${folder.name}».`);
+      if (selected === undefined) return [];
+      const saved = await api.moveSelection(selected, folder, moving, marks, motion);
+      const byId = new Map(saved.cards.map((card) => [card.id, card]));
+      if ('destination' in motion) {
+        setCards((items) => items.filter((item) => !byId.has(item.id)));
+        setFocusId(null);
+        setDeletedItem(null);
+        setNotice('Выбранные элементы перемещены в папку.');
+        if (moving.some((card) => card.kind === 'folder')) refresh();
+      } else {
+        setCards((items) => items.map((card) => byId.get(card.id) ?? card));
+      }
+      return saved.marks;
     });
   const removeSelection = (selection: BoardSelection, requestId: string) =>
     perform(async () => {
@@ -785,6 +794,48 @@ export function App() {
       </main>
     );
 
+  const toasts = (error || notice) && (
+    <>
+      {error && (
+        <Toast
+          kind="error"
+          action={{
+            label: 'Повторить',
+            run: () => {
+              setError('');
+              refresh();
+            },
+            disabled: busy,
+          }}
+          onDismiss={() => setError('')}
+        >
+          {error}
+        </Toast>
+      )}
+      {notice && (
+        <Toast
+          kind="success"
+          action={
+            deletedItem
+              ? {
+                  label: 'Отменить удаление',
+                  run: () => restore(deletedItem.id, deletedItem.type),
+                  disabled: busy,
+                }
+              : undefined
+          }
+          onDismiss={() => {
+            setNotice('');
+            setDeletedItem(null);
+          }}
+        >
+          {notice}
+        </Toast>
+      )}
+    </>
+  );
+  const showingBoard =
+    route.view === 'project' && viewMode === 'board' && !loading && loaded && loadedKey === loadKey;
   const docking: CSSProperties & Record<'--memo-sidebar-width' | '--memo-record-width', string> = {
     '--memo-sidebar-width': `${panels.collapsed ? 62 : panels.left}px`,
     '--memo-record-width': `${panels.right}px`,
@@ -823,6 +874,48 @@ export function App() {
                 setPanels((current) => ({ ...current, collapsed: !current.collapsed }))
               }
             />
+          </div>
+          <div className="sidebar-search">
+            <button
+              ref={searchButton}
+              type="button"
+              className="sidebar-search-button"
+              title="Поиск · ⌘ / Ctrl K"
+              aria-label="Поиск"
+              aria-keyshortcuts="Meta+K Control+K"
+              aria-expanded={searchOpen}
+              aria-controls={searchOpen ? 'memo-search' : undefined}
+              onClick={() => (searchOpen ? setSearchOpen(false) : openSearch())}
+            >
+              <Icon name="search" size={17} />
+              <span className="sidebar-label">Поиск</span>
+            </button>
+            {searchOpen && (
+              <Popover
+                id="memo-search"
+                role="search"
+                className="search-popover"
+                trigger={searchButton}
+                onDismiss={() => setSearchOpen(false)}
+              >
+                <label className="search-label">
+                  <input
+                    autoFocus
+                    ref={searchInput}
+                    type="search"
+                    maxLength={128}
+                    aria-label="Поиск по всем записям"
+                    placeholder="Найти · ⌘ / Ctrl K"
+                    value={query}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      if (route.view !== 'search') navigate({ view: 'search' });
+                    }}
+                  />
+                  <Icon name="search" size={16} />
+                </label>
+              </Popover>
+            )}
           </div>
           <button
             className="capture-button"
@@ -950,43 +1043,6 @@ export function App() {
               )}
             </div>
           </header>
-          {error && (
-            <div className="alert workspace-alert" role="alert">
-              {error}
-              <button
-                onClick={() => {
-                  setError('');
-                  refresh();
-                }}
-              >
-                Повторить
-              </button>
-            </div>
-          )}
-          {notice && (
-            <div className="notice" role="status">
-              <span>{notice}</span>
-              {deletedItem && (
-                <button
-                  className="text-button"
-                  disabled={busy}
-                  onClick={() => restore(deletedItem.id, deletedItem.type)}
-                >
-                  Отменить удаление
-                </button>
-              )}
-              <button
-                className="icon-button"
-                aria-label="Скрыть уведомление"
-                onClick={() => {
-                  setNotice('');
-                  setDeletedItem(null);
-                }}
-              >
-                ×
-              </button>
-            </div>
-          )}
           <div className="project-toolbar">
             {active && (
               <div className="board-add" role="group" aria-label="Добавить на полотно">
@@ -1032,43 +1088,6 @@ export function App() {
                   onClick={() => setViewMode('list')}
                 />
               </div>
-            )}
-            <IconButton
-              ref={searchButton}
-              className={`primary search-toggle ${active ? '' : 'search-toggle-end'}`}
-              icon="search"
-              label="Поиск"
-              tooltip="Поиск · ⌘ / Ctrl K"
-              aria-keyshortcuts="Meta+K Control+K"
-              aria-expanded={searchOpen}
-              aria-controls={searchOpen ? 'memo-search' : undefined}
-              onClick={() => (searchOpen ? setSearchOpen(false) : openSearch())}
-            />
-            {searchOpen && (
-              <Popover
-                id="memo-search"
-                role="search"
-                className="search-popover"
-                trigger={searchButton}
-                onDismiss={() => setSearchOpen(false)}
-              >
-                <label className="search-label">
-                  <input
-                    autoFocus
-                    ref={searchInput}
-                    type="search"
-                    maxLength={128}
-                    aria-label="Поиск по всем записям"
-                    placeholder="Найти · ⌘ / Ctrl K"
-                    value={query}
-                    onChange={(event) => {
-                      setQuery(event.target.value);
-                      if (route.view !== 'search') navigate({ view: 'search' });
-                    }}
-                  />
-                  <Icon name="search" size={16} />
-                </label>
-              </Popover>
             )}
             <div className="project-settings">
               <IconButton
@@ -1146,6 +1165,9 @@ export function App() {
                 </Popover>
               )}
             </div>
+            {!showingBoard && toasts && (
+              <div className="memo-toast-stack toolbar-toasts">{toasts}</div>
+            )}
           </div>
           {loading || loadedKey !== loadKey ? (
             <div className="loading-screen" role="status">
@@ -1167,6 +1189,7 @@ export function App() {
                 projectId={selected ?? 0}
                 folderId={folder}
                 markToolsSlot={markToolsSlot}
+                notifications={toasts}
                 locate={locate}
                 busy={busy || modal}
                 keyboardDisabled={projectSettingsOpen || searchOpen}
@@ -1181,7 +1204,7 @@ export function App() {
                 createBlock={createBlock}
                 open={(card, edit) => openId(card.id, edit)}
                 enter={(card) => enterFolder(card.id, card.project)}
-                moveInto={moveInto}
+                moveSelection={moveSelection}
                 removeSelection={removeSelection}
                 child={createChild}
                 position={updatePosition}

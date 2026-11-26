@@ -4,6 +4,7 @@ import type {
   CardLink,
   BoardMark,
   BoardMarkUpdate,
+  BoardMove,
   NewBoardMark,
   MemoDocument,
   Field,
@@ -44,7 +45,8 @@ const isMark = (value: unknown): value is BoardMark =>
     typeof value.text === 'string' &&
     (value.scale === undefined || number(value.scale))) ||
     ((value.kind === 'line' || value.kind === 'square' || value.kind === 'circle') &&
-      point(value.end)));
+      point(value.end) &&
+      (value.text === undefined || typeof value.text === 'string')));
 const isUser = (value: unknown): value is User =>
   record(value) && number(value.id) && typeof value.email === 'string';
 const isSession = (value: unknown): value is Session =>
@@ -286,11 +288,28 @@ export const api = {
       coordinates: Card['coordinates'];
     },
   ) => request(`/cards/${id}/copy`, isCard, { method: 'POST', body: JSON.stringify(body) }),
-  move: (card: Card, project: number, folder: number | null) =>
-    request(`/cards/${card.id}/move`, isCard, {
-      method: 'POST',
-      body: JSON.stringify({ project, folder, version: card.version }),
-    }),
+  moveSelection: (
+    project: number,
+    folder: number | null,
+    cards: Card[],
+    marks: number[],
+    move: BoardMove,
+  ) =>
+    request(
+      `/projects/${project}/move-selection`,
+      (value): value is { cards: Card[]; marks: BoardMark[] } =>
+        record(value) && array(isCard)(value.cards) && array(isMark)(value.marks),
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          folder,
+          cards: cards.map(({ id, version }) => ({ id, version })),
+          marks,
+          ...move,
+          requestId: crypto.randomUUID(),
+        }),
+      },
+    ),
   trash: () => request('/trash', isTrash),
   restoreCard: (id: number) =>
     request(`/cards/${id}/restore`, isCard, { method: 'POST', body: '{}' }),

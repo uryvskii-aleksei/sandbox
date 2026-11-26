@@ -110,6 +110,9 @@ function route(): never
         trashBoardSelection(positiveId($match[1]), $owner, jsonBody());
         respond(null);
     }
+    if ($method === 'POST' && preg_match('~^/projects/(\d+)/move-selection$~', $path, $match)) {
+        respond(moveBoardSelection(positiveId($match[1]), $owner, jsonBody()));
+    }
     if (preg_match('~^/marks/(\d+)$~', $path, $match) && in_array($method, ['PATCH', 'DELETE'], true)) {
         respond(changeBoardMark(positiveId($match[1]), $owner, $method === 'PATCH' ? jsonBody() : null));
     }

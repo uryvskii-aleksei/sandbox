@@ -19,13 +19,27 @@ function database(): PDO
     if ($root === false) {
         throw new RuntimeException('Document root not found');
     }
-    $requested = getenv('WAVE_DB_PATH') ?: dirname($root) . '/wave-data/wave.sqlite3';
+    $protected = $root . '/.wave-data';
+    $default = is_dir($protected) ? $protected : dirname($root) . '/wave-data';
+    $requested = getenv('WAVE_DB_PATH') ?: $default . '/wave.sqlite3';
     $directory = realpath(dirname($requested));
-    if (
-        $directory === false || $directory === $root ||
-        str_starts_with($directory, rtrim($root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR)
-    ) {
+    if ($directory === false) {
         throw new RuntimeException('Private database directory not configured');
+    }
+
+    $inWebRoot = $directory === $root ||
+        str_starts_with($directory, rtrim($root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR);
+    if ($inWebRoot || dirname($requested) === $protected) {
+        $denyFile = $protected . '/.htaccess';
+        if (
+            $directory !== $protected || is_link($protected) ||
+            basename($requested) !== 'wave.sqlite3' ||
+            (fileperms($directory) & 0777) !== 0700 ||
+            !is_file($denyFile) || is_link($denyFile) ||
+            trim((string) file_get_contents($denyFile)) !== 'Require all denied'
+        ) {
+            throw new RuntimeException('Wave storage must be protected from HTTP access');
+        }
     }
     $path = $directory . DIRECTORY_SEPARATOR . basename($requested);
     if (is_link($path)) {

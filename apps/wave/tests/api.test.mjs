@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -31,8 +31,7 @@ function client(url) {
   };
 }
 
-test('гостевые оценки переносятся, а данные аккаунтов разделены', { timeout: 20000 }, async (t) => {
-  const temp = await mkdtemp(path.join(tmpdir(), 'wave-test-'));
+async function startPreview(t, temp, { documentRoot = 'site', dbPath } = {}) {
   const probe = createServer();
   await new Promise((resolve, reject) =>
     probe.once('error', reject).listen(0, '127.0.0.1', resolve),
@@ -40,12 +39,23 @@ test('гостевые оценки переносятся, а данные ак
   const { port } = probe.address();
   await new Promise((resolve) => probe.close(resolve));
 
+  const env = { ...process.env };
+  if (dbPath) env.WAVE_DB_PATH = dbPath;
+  else delete env.WAVE_DB_PATH;
   const php = spawn(
     'php',
-    ['-d', 'session.save_path=' + temp, '-S', '127.0.0.1:' + port, '-t', 'site', 'preview.php'],
+    [
+      '-d',
+      'session.save_path=' + temp,
+      '-S',
+      '127.0.0.1:' + port,
+      '-t',
+      documentRoot,
+      'preview.php',
+    ],
     {
       cwd: app,
-      env: { ...process.env, WAVE_DB_PATH: path.join(temp, 'ratings.sqlite3') },
+      env,
       stdio: ['ignore', 'ignore', 'pipe'],
     },
   );
@@ -79,6 +89,13 @@ test('гостевые оценки переносятся, а данные ак
       await delay(50);
     }
   }
+
+  return root;
+}
+
+test('гостевые оценки переносятся, а данные аккаунтов разделены', { timeout: 20000 }, async (t) => {
+  const temp = await mkdtemp(path.join(tmpdir(), 'wave-test-'));
+  const root = await startPreview(t, temp, { dbPath: path.join(temp, 'ratings.sqlite3') });
 
   const home = await fetch(root + '/');
   assert.match(await home.text(), /href="\/wave\/"/);
@@ -124,3 +141,31 @@ test('гостевые оценки переносятся, а данные ак
   const separate = await visit({ action: 'register', ...credentials, login: 'SecondTester' });
   assert.deepEqual(separate.ratings, {});
 });
+
+test(
+  'Wave разрешает SQLite в выделенном каталоге только с запретом HTTP',
+  { timeout: 20000 },
+  async (t) => {
+    const temp = await mkdtemp(path.join(tmpdir(), 'wave-timeweb-test-'));
+    const documentRoot = path.join(temp, 'public');
+    const directory = path.join(documentRoot, '.wave-data');
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const root = await startPreview(t, temp, { documentRoot });
+    const visit = client(root + '/wave/api.php');
+    await visit();
+
+    const login = {
+      action: 'register',
+      login: 'StorageTest',
+      password: 'test-passphrase-for-storage',
+    };
+    await visit(login, 503);
+    const denyFile = path.join(directory, '.htaccess');
+    await writeFile(denyFile, 'Require all granted\n');
+    await visit(login, 503);
+    await writeFile(denyFile, await readFile(new URL('deploy/data.htaccess', app)));
+    assert.equal((await visit(login)).username, 'storagetest');
+    const database = await stat(path.join(directory, 'wave.sqlite3'));
+    assert.equal(database.mode & 0o777, 0o600);
+  },
+);

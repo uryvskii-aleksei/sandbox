@@ -128,6 +128,7 @@ test('folders scope nested boards without changing the directed graph or old rec
   };
   await move(folder.id, nested.id, 422);
   await move(record.id, folder.id);
+  assert.equal((await owner(`/cards/${record.publicId}`)).folder, folder.id);
   assert.deepEqual(await ids('root'), [folder.id]);
   assert.deepEqual(await ids(folder.id), [record.id, nested.id]);
   assert.equal((await owner('/links')).find((link) => link.target === record.id).label, 'Решение');
@@ -137,6 +138,7 @@ test('folders scope nested boards without changing the directed graph or old rec
   assert.equal(exported.cards.find((item) => item.id === nested.id).kind, 'folder');
   assert.equal((await owner('/search?q=Сверить')).cards[0].id, note.id);
   await owner(`/cards/${note.id}`, 'DELETE', undefined, 200);
+  await owner(`/cards/${note.publicId}`, 'GET', undefined, 404);
   await owner(`/cards/${nested.id}`, 'DELETE', undefined, 200);
   await owner(`/cards/${note.id}/restore`, 'POST', {}, 404);
   await owner(`/cards/${nested.id}/restore`, 'POST', {});

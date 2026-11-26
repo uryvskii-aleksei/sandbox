@@ -5,6 +5,7 @@ import { hasSectionContent, recordSections, sectionDocument } from './document';
 import type { RecordSection } from './document';
 import { RecordContent } from './RecordContent';
 import { contentSignature, copiedContent, excerpt, reconcileSaved } from './graph';
+import { routeUrl } from './routes';
 import { draftKey, readDraft, removeLocal, writeLocal } from './storage';
 import { TrashDialog } from './TrashDialog';
 import type { Draft, SaveAttempt } from './storage';
@@ -51,11 +52,27 @@ export function CardEditor({
     'saved',
   );
   const [error, setError] = useState('');
+  const [copyLinkStatus, setCopyLinkStatus] = useState<'idle' | 'copied' | 'manual'>('idle');
   const [localFailure, setLocalFailure] = useState(false);
   const [fieldPending, setFieldPending] = useState(0);
   const [working, setWorking] = useState(false);
   const [confirmTrash, setConfirmTrash] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const recordLink =
+    card.kind !== 'folder' && card.publicId
+      ? new URL(
+          routeUrl(import.meta.env.BASE_URL, { view: 'record', record: card.publicId }),
+          location.origin,
+        ).href
+      : '';
+  const copyRecordLink = async () => {
+    try {
+      await navigator.clipboard.writeText(recordLink);
+      setCopyLinkStatus('copied');
+    } catch {
+      setCopyLinkStatus('manual');
+    }
+  };
   const saving = useRef(false);
   const attempt = useRef<SaveAttempt | undefined>(undefined);
   const dialog = useRef<HTMLElement>(null);
@@ -315,6 +332,13 @@ export function CardEditor({
               )}
             </div>
             <div className="editor-header-actions">
+              {recordLink && (
+                <IconButton
+                  icon="link"
+                  label="Скопировать ссылку на запись"
+                  onClick={() => void copyRecordLink()}
+                />
+              )}
               <IconButton
                 id="close-editor"
                 icon="close"
@@ -325,6 +349,27 @@ export function CardEditor({
             </div>
           </header>
           <div className="editor-scroll">
+            {copyLinkStatus === 'copied' && (
+              <p className="help-text" role="status">
+                Ссылка скопирована.
+              </p>
+            )}
+            {copyLinkStatus === 'manual' && (
+              <>
+                <p className="help-text" role="status">
+                  Скопируйте ссылку вручную.
+                </p>
+                <label>
+                  Ссылка на запись
+                  <input
+                    autoFocus
+                    readOnly
+                    value={recordLink}
+                    onFocus={(event) => event.currentTarget.select()}
+                  />
+                </label>
+              </>
+            )}
             {recovery && (
               <section className="recovery-panel">
                 <h2>Восстановить черновик?</h2>

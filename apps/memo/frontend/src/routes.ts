@@ -1,12 +1,16 @@
 export type EntityRef = number | string;
 type Page = 'dashboard' | 'inbox' | 'recent' | 'search' | 'trash' | 'drafts';
-export type Route = { view: Page } | { view: 'project'; project: EntityRef; folder?: EntityRef };
+export type Route =
+  | { view: Page }
+  | { view: 'project'; project: EntityRef; folder?: EntityRef }
+  | { view: 'record'; record: string };
 
 const publicIdPattern = 'm[a-f0-9]{32}';
 const entityPattern = `(${publicIdPattern}|\\d{1,10})`;
 const workspacePattern = new RegExp(
   `^(?:workspace|workplace)/${entityPattern}(?:/folder/${entityPattern})?/?$`,
 );
+const recordPattern = new RegExp(`^record/(${publicIdPattern})/?$`);
 const publicId = new RegExp(`^${publicIdPattern}$`);
 export const isPublicId = (value: unknown): value is string =>
   typeof value === 'string' && publicId.test(value);
@@ -15,6 +19,8 @@ const entityRef = (value: string): EntityRef => (isPublicId(value) ? value : Num
 export function parseRoute(pathname: string, base: string): Route {
   if (!pathname.startsWith(base)) return { view: 'dashboard' };
   const relative = pathname.slice(base.length);
+  const record = recordPattern.exec(relative);
+  if (record) return { view: 'record', record: record[1] };
   const workspace = workspacePattern.exec(relative);
   if (workspace) {
     return {
@@ -37,6 +43,7 @@ export function parseRoute(pathname: string, base: string): Route {
 }
 
 export function routeUrl(base: string, route: Route): string {
+  if (route.view === 'record') return `${base}record/${route.record}`;
   if (route.view !== 'project') return `${base}${route.view}`;
   const folder = route.folder === undefined ? '' : `/folder/${route.folder}`;
   return `${base}workspace/${route.project}${folder}`;

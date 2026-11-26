@@ -1452,13 +1452,14 @@ export function Board({
                   else if (event.detail === 0) selectCard(card);
                 }}
               >
-                {isFolder && <Icon name="folder" />}
+                {isFolder && <Icon name="folder" size={27} />}
                 <span>{card.name}</span>
               </button>
               <CardPreview text={isFolder ? 'Открыть полотно' : excerpt(card)} />
               <IconButton
                 className="canvas-trash card-trash"
                 icon="trash"
+                iconSize={27}
                 label={`В корзину: ${card.name}`}
                 disabled={busy}
                 onClick={() => setTrashCandidate(card)}
@@ -1521,6 +1522,7 @@ export function Board({
                 <IconButton
                   className="card-action link-output"
                   icon={local ? 'plus' : 'board'}
+                  iconSize={27}
                   label={
                     local
                       ? `Добавить потомка к ${card.name}`

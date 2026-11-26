@@ -208,8 +208,17 @@ test('visual documents preserve archived fields and board marks persist independ
   await owner(route, 'PUT', { ...withSections, document: duplicate }, 422);
   await owner(`/marks/${line.id}`, 'DELETE');
   assert.deepEqual(await owner(board + `/marks?folder=${folder.id}`), []);
+  const rectangle = await owner(
+    board + '/marks',
+    'POST',
+    { kind: 'square', at, end: newEnd, folder: folder.id },
+    201,
+  );
+  assert.deepEqual(rectangle.end, newEnd);
+  await owner(`/marks/${rectangle.id}`, 'PATCH', { end }, 422);
+  await owner(`/marks/${rectangle.id}`, 'DELETE');
   for (const kind of ['square', 'circle']) {
-    await owner(board + '/marks', 'POST', { kind, at, end }, 422);
+    await owner(board + '/marks', 'POST', { kind, at, end: kind === 'circle' ? newEnd : end }, 422);
     const figure = await owner(
       board + '/marks',
       'POST',
@@ -217,7 +226,7 @@ test('visual documents preserve archived fields and board marks persist independ
       201,
     );
     const figureRoute = `/marks/${figure.id}`;
-    const corner = { x: -80, y: -40 };
+    const corner = { x: -80, y: kind === 'circle' ? -40 : -60 };
     await owner(figureRoute, 'PATCH', { end }, 422);
     assert.deepEqual(await owner(figureRoute, 'PATCH', { at: corner }), { ...figure, at: corner });
     assert.deepEqual(await owner(board + `/marks?folder=${folder.id}`), [

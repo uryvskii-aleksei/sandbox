@@ -56,12 +56,14 @@ export function RichEditor({
   label,
   document,
   disabled,
+  onAutoFocus,
   change,
   activity,
 }: {
   label: string;
   document: MemoDocument;
   disabled: boolean;
+  onAutoFocus?: () => void;
   change: (document: MemoDocument) => void;
   activity: (pending: boolean) => void;
 }) {
@@ -75,6 +77,8 @@ export function RichEditor({
     extensions,
     content: document,
     immediatelyRender: true,
+    autofocus: onAutoFocus && !disabled ? 'start' : false,
+    onFocus: () => onAutoFocus?.(),
     editorProps: {
       attributes: { 'aria-label': label, role: 'textbox', 'aria-multiline': 'true' },
     },

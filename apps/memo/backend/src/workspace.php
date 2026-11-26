@@ -390,8 +390,10 @@ function validateMarkGeometry(string $kind, array $at, array $end): void
     $height = abs($end['y'] - $at['y']);
     if ($kind === 'line') {
         if (hypot($width, $height) < 1) fail(422, 'У линии должны быть разные начало и конец.');
-    } elseif ($width < 1 || abs($width - $height) > 0.001) {
-        fail(422, 'У фигуры должны быть одинаковые ширина и высота.');
+    } elseif ($width < 1 || $height < 1) {
+        fail(422, 'У фигуры должны быть положительные ширина и высота.');
+    } elseif ($kind === 'circle' && abs($width - $height) > 0.001) {
+        fail(422, 'У круга должны быть одинаковые ширина и высота.');
     }
 }
 

@@ -414,7 +414,6 @@ export function CardEditor({
                     >
                       <div className="record-section-header">
                         <input
-                          autoFocus={newSection.current === id}
                           type="text"
                           placeholder="Заголовок блока"
                           aria-label={`Заголовок блока ${index + 1}`}
@@ -438,6 +437,13 @@ export function CardEditor({
                         label={`Текст блока ${index + 1}`}
                         document={document}
                         disabled={locked || !!recovery || status === 'conflict'}
+                        onAutoFocus={
+                          newSection.current === id
+                            ? () => {
+                                if (newSection.current === id) newSection.current = null;
+                              }
+                            : undefined
+                        }
                         change={(next) => updateSection(id, { document: next })}
                         activity={fieldActivity}
                       />

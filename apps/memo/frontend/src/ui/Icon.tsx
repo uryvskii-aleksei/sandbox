@@ -14,7 +14,7 @@ export type IconName =
   | 'folder'
   | 'text'
   | 'line'
-  | 'square'
+  | 'rectangle'
   | 'circle'
   | 'keyboard'
   | 'sidebar'
@@ -40,7 +40,7 @@ const paths: Record<IconName, string> = {
   folder: 'M3 5h6l2 3h10v11H3Z',
   text: 'M4 6V4h16v2M12 4v16M8 20h8',
   line: 'M4 20 20 4',
-  square: 'M4 4h16v16H4Z',
+  rectangle: 'M3 6h18v12H3Z',
   circle: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z',
   keyboard: 'M2 5h20v14H2ZM6 9h1m4 0h1m4 0h1M6 13h1m4 0h1m4 0h1M8 16h8',
   sidebar: 'M3 5h18v14H3ZM9 5v14',

@@ -74,6 +74,100 @@ const routeUrl = (route: Route) =>
   `${import.meta.env.BASE_URL}${route.view === 'project' ? `workplace/${route.project}${route.folder ? `/folder/${route.folder}` : ''}` : route.view}`;
 const reasonText = (reason: unknown) =>
   reason instanceof Error ? reason.message : 'Не удалось выполнить действие.';
+
+function WorkspaceTitle({
+  name,
+  label,
+  save,
+}: {
+  name: string;
+  label: string;
+  save: (name: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const button = useRef<HTMLButtonElement>(null);
+
+  const finish = (restoreFocus: boolean) => {
+    setDraft(null);
+    setError('');
+    if (restoreFocus) requestAnimationFrame(() => button.current?.focus());
+  };
+  const commit = async (input: HTMLInputElement) => {
+    if (draft === null || saving) return;
+    const next = draft.trim();
+    if (next === name) {
+      finish(input === document.activeElement);
+      return;
+    }
+    if (!next) {
+      setError('Введите название.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      await save(next);
+      finish(input === document.activeElement);
+    } catch (reason) {
+      setError(reasonText(reason));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <h1>
+        {draft === null ? (
+          <button
+            ref={button}
+            className="workspace-title-button"
+            title={`Изменить название: ${name}`}
+            onClick={() => setDraft(name)}
+          >
+            {name}
+          </button>
+        ) : (
+          <input
+            autoFocus
+            className="workspace-title-input"
+            aria-label={label}
+            aria-invalid={!!error}
+            aria-describedby={error ? 'workspace-title-error' : undefined}
+            maxLength={128}
+            readOnly={saving}
+            value={draft}
+            onFocus={(event) => event.currentTarget.select()}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setError('');
+            }}
+            onBlur={(event) => void commit(event.currentTarget)}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                void commit(event.currentTarget);
+              }
+              if (event.key === 'Escape' && !saving) {
+                event.preventDefault();
+                finish(true);
+              }
+            }}
+          />
+        )}
+      </h1>
+      {error && (
+        <p className="workspace-title-error" id="workspace-title-error" role="alert">
+          {error}
+        </p>
+      )}
+    </>
+  );
+}
+
 const names: Record<View, string> = {
   dashboard: 'Мои проекты',
   project: 'Проект',
@@ -155,7 +249,6 @@ export function App() {
   const [editing, setEditing] = useState<Card | null>(null);
   const [openForEditing, setOpenForEditing] = useState(false);
   const [capturing, setCapturing] = useState(false);
-  const [projectName, setProjectName] = useState('');
   const [newProject, setNewProject] = useState('');
   const [template, setTemplate] = useState<Template>('blank');
   const [query, setQuery] = useState('');
@@ -228,7 +321,6 @@ export function App() {
       });
     return () => controller.abort();
   }, [user, revision]);
-  useEffect(() => setProjectName(active?.name ?? ''), [active?.id, active?.name]);
   useEffect(() => {
     setProjectSettingsOpen(false);
     pendingBlock.current = {};
@@ -342,6 +434,21 @@ export function App() {
         ...(link.source === card.id ? { sourceName: card.name, sourceProject: card.project } : {}),
         ...(link.target === card.id ? { targetName: card.name, targetProject: card.project } : {}),
       })),
+    );
+  };
+  const renameTitle = async (project: Project, currentFolder: Folder | undefined, name: string) => {
+    if (currentFolder) {
+      const card = await api.card(currentFolder.id);
+      const renamed = await api.saveCard({ ...card, name }, crypto.randomUUID());
+      replaceCard(renamed);
+      setFolders((items) =>
+        items.map((item) => (item.id === renamed.id ? { ...item, name: renamed.name } : item)),
+      );
+      return;
+    }
+    const renamed = await api.renameProject(project.id, name);
+    setProjects((items) =>
+      items.map((item) => (item.id === renamed.id ? { ...item, ...renamed } : item)),
     );
   };
   const openId = (id: number, edit = false) => {
@@ -815,7 +922,16 @@ export function App() {
           <header className="workspace-header">
             <div>
               <p className="eyebrow">ЛИЧНАЯ ПАМЯТЬ · СВЯЗАННЫЕ ЗАПИСИ</p>
-              <h1>{activeFolder?.name ?? active?.name ?? names[route.view]}</h1>
+              {active && (folder === null || activeFolder) ? (
+                <WorkspaceTitle
+                  key={activeFolder ? `folder-${activeFolder.id}` : `project-${active.id}`}
+                  name={activeFolder?.name ?? active.name}
+                  label={activeFolder ? 'Название папки' : 'Название проекта'}
+                  save={(name) => renameTitle(active, activeFolder, name)}
+                />
+              ) : (
+                <h1>{active?.name ?? names[route.view]}</h1>
+              )}
               {folder !== null && active && (
                 <nav className="board-breadcrumbs" aria-label="Путь к папке">
                   <button onClick={() => navigate({ view: 'project', project: active.id })}>
@@ -929,48 +1045,6 @@ export function App() {
                   className="project-settings-panel"
                   hidden={!projectSettingsOpen}
                 >
-                  <form
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      run(async () => {
-                        const result = await api.renameProject(active.id, projectName);
-                        setProjects((items) =>
-                          items.map((item) =>
-                            item.id === result.id ? { ...item, ...result } : item,
-                          ),
-                        );
-                      });
-                    }}
-                  >
-                    <label className="sr-only" htmlFor="project-name">
-                      Название проекта
-                    </label>
-                    <input
-                      id="project-name"
-                      required
-                      value={projectName}
-                      maxLength={128}
-                      onChange={(event) => setProjectName(event.target.value)}
-                    />
-                    <button
-                      className="text-button"
-                      disabled={busy || !projectName.trim() || projectName === active.name}
-                    >
-                      Переименовать
-                    </button>
-                  </form>
-                  {activeFolder && (
-                    <button
-                      className="text-button"
-                      disabled={busy}
-                      onClick={() => {
-                        setProjectSettingsOpen(false);
-                        openId(activeFolder.id, true);
-                      }}
-                    >
-                      Переименовать папку
-                    </button>
-                  )}
                   <button className="text-button" disabled={busy} onClick={exportActive}>
                     Экспорт
                   </button>

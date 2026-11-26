@@ -6,14 +6,17 @@ import { markTools } from './shortcuts';
 import { IconButton } from './ui';
 
 type Point = Card['coordinates'];
-const labelCorners = ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const;
-type LabelCorner = (typeof labelCorners)[number];
-type Handle = 'at' | 'end' | 'body' | LabelCorner;
-const isLabelCorner = (handle: Handle): handle is LabelCorner =>
-  handle === 'top-left' ||
-  handle === 'top-right' ||
-  handle === 'bottom-left' ||
-  handle === 'bottom-right';
+const corners = ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const;
+type Corner = (typeof corners)[number];
+type Handle = 'at' | 'end' | 'body' | Corner;
+const isCorner = (handle: Handle): handle is Corner =>
+  handle !== 'at' && handle !== 'end' && handle !== 'body';
+const cornerNames: Record<Corner, string> = {
+  'top-left': 'Верхний левый угол',
+  'top-right': 'Верхний правый угол',
+  'bottom-left': 'Нижний левый угол',
+  'bottom-right': 'Нижний правый угол',
+};
 type Gesture = {
   pointer: number;
   mark: BoardMark;
@@ -36,8 +39,15 @@ function equalSides(anchor: Point, target: Point): Point {
 }
 
 function sketchSize(sketch: Sketch): number {
-  const dx = sketch.end.x - sketch.at.x;
-  return sketch.kind === 'line' ? Math.hypot(dx, sketch.end.y - sketch.at.y) : Math.abs(dx);
+  const width = Math.abs(sketch.end.x - sketch.at.x);
+  const height = Math.abs(sketch.end.y - sketch.at.y);
+  return sketch.kind === 'line' ? Math.hypot(width, height) : Math.min(width, height);
+}
+
+function rectangleCorner({ at, end }: Sketch, corner: Corner, opposite = false): Point {
+  const horizontal = corner.endsWith('left') !== opposite ? Math.min : Math.max;
+  const vertical = corner.startsWith('top') !== opposite ? Math.min : Math.max;
+  return { x: horizontal(at.x, end.x), y: vertical(at.y, end.y) };
 }
 
 const fitLabelScale = (value: number) => Math.round(Math.max(0.4, Math.min(4, value)) * 100) / 100;
@@ -45,12 +55,23 @@ const labelStyle = (scale = 1): CSSProperties & { '--label-scale': number } => (
   '--label-scale': scale,
 });
 
-function moveMark(mark: BoardMark, handle: Handle, dx: number, dy: number): BoardMark {
+function moveMark(
+  mark: BoardMark,
+  handle: Handle,
+  dx: number,
+  dy: number,
+  constrain: boolean,
+): BoardMark {
   const shift = (point: Point) => ({
     x: Math.max(-limit, Math.min(limit, point.x + dx)),
     y: Math.max(-limit, Math.min(limit, point.y + dy)),
   });
-  if (isLabelCorner(handle)) return mark;
+  if (isCorner(handle)) {
+    if (mark.kind !== 'square') return mark;
+    const anchor = rectangleCorner(mark, handle, true);
+    const target = shift(rectangleCorner(mark, handle));
+    return { ...mark, at: anchor, end: constrain ? equalSides(anchor, target) : target };
+  }
   if (mark.kind === 'label') return { ...mark, at: shift(mark.at) };
   if (handle !== 'body') {
     const target = shift(mark[handle]);
@@ -178,9 +199,9 @@ export function useCanvasMarks(project: number, folder: number | null) {
   const move = (end: Point, straight: boolean) => {
     const current = drawing.current;
     if (!current) return false;
-    if (current.kind !== 'line') {
+    if (current.kind === 'circle' || (current.kind === 'square' && straight)) {
       end = equalSides(current.at, end);
-    } else if (straight) {
+    } else if (current.kind === 'line' && straight) {
       const horizontal = Math.abs(end.x - current.at.x) >= Math.abs(end.y - current.at.y);
       end = horizontal ? { x: end.x, y: current.at.y } : { x: current.at.x, y: end.y };
     }
@@ -263,7 +284,7 @@ export function MarkTools({
           key={kind}
           icon={icon}
           label={label}
-          tooltip={`${label} · Alt+Shift+${key}`}
+          tooltip={`${label} · Alt+Shift+${key}${kind === 'square' ? ' · Shift — квадрат' : ''}`}
           className="secondary"
           aria-pressed={marks.tool === kind}
           aria-keyshortcuts={`Alt+Shift+${key}`}
@@ -281,18 +302,19 @@ function MarkStroke({ sketch, ...props }: { sketch: Sketch } & SVGAttributes<SVG
   const width = Math.abs(end.x - at.x);
   const x = Math.min(at.x, end.x);
   const y = Math.min(at.y, end.y);
-  if (kind === 'square') return <rect {...props} x={x} y={y} width={width} height={width} />;
+  if (kind === 'square')
+    return <rect {...props} x={x} y={y} width={width} height={Math.abs(end.y - at.y)} />;
   return <circle {...props} cx={x + width / 2} cy={y + width / 2} r={width / 2} />;
 }
 
 const sketchNames: Record<Sketch['kind'], string> = {
   line: 'Линия разметки',
-  square: 'Квадрат разметки',
+  square: 'Прямоугольник разметки',
   circle: 'Круг разметки',
 };
 const sketchTrash: Record<Sketch['kind'], string> = {
   line: 'Удалить линию',
-  square: 'Удалить квадрат',
+  square: 'Удалить прямоугольник',
   circle: 'Удалить круг',
 };
 
@@ -323,18 +345,19 @@ export function MarkLayer({
       handle,
       origin: { x: event.clientX, y: event.clientY },
       moved: false,
-      box: isLabelCorner(handle)
-        ? (event.currentTarget.parentElement?.getBoundingClientRect() ?? null)
-        : null,
+      box:
+        mark.kind === 'label' && isCorner(handle)
+          ? (event.currentTarget.parentElement?.getBoundingClientRect() ?? null)
+          : null,
     };
   };
   const displacement = (event: PointerEvent, current: Gesture) => ({
     x: event.clientX - current.origin.x,
     y: event.clientY - current.origin.y,
   });
-  const movedMark = (current: Gesture, dx: number, dy: number): BoardMark => {
+  const movedMark = (current: Gesture, dx: number, dy: number, constrain: boolean): BoardMark => {
     const { mark, handle, box } = current;
-    if (isLabelCorner(handle) && mark.kind === 'label' && box && box.width && box.height) {
+    if (isCorner(handle) && mark.kind === 'label' && box && box.width && box.height) {
       const left = handle.endsWith('left');
       const top = handle.startsWith('top');
       const oldScale = mark.scale ?? 1;
@@ -354,7 +377,7 @@ export function MarkLayer({
         },
       };
     }
-    return moveMark(mark, handle, dx / scale, dy / scale);
+    return moveMark(mark, handle, dx / scale, dy / scale, constrain);
   };
   const move = (event: PointerEvent) => {
     const current = gesture.current;
@@ -362,7 +385,7 @@ export function MarkLayer({
     event.stopPropagation();
     const { x, y } = displacement(event, current);
     current.moved ||= Math.abs(x) + Math.abs(y) > 4;
-    if (current.moved) setMoving(movedMark(current, x, y));
+    if (current.moved) setMoving(movedMark(current, x, y, event.shiftKey));
   };
   const persist = async (mark: BoardMark, handle: Handle) => {
     if (mark.kind !== 'label' && sketchSize(mark) < 1) {
@@ -372,7 +395,7 @@ export function MarkLayer({
     await marks.update(
       mark.id,
       mark.kind === 'label'
-        ? isLabelCorner(handle)
+        ? isCorner(handle)
           ? { scale: mark.scale, at: mark.at }
           : { at: mark.at }
         : { at: mark.at, end: mark.end },
@@ -391,7 +414,7 @@ export function MarkLayer({
     const { x, y } = displacement(event, current);
     const moved = current.moved || Math.abs(x) + Math.abs(y) > 4;
     marks.choose(current.mark, !moved && current.handle === 'body');
-    if (moved) void persist(movedMark(current, x, y), current.handle);
+    if (moved) void persist(movedMark(current, x, y, event.shiftKey), current.handle);
   };
   const keys = (event: KeyboardEvent, mark: BoardMark, handle: Handle) => {
     if (busy || marks.locked || marks.tool) return;
@@ -406,9 +429,9 @@ export function MarkLayer({
     event.preventDefault();
     marks.choose(mark, false);
     const next =
-      isLabelCorner(handle) && mark.kind === 'label'
+      isCorner(handle) && mark.kind === 'label'
         ? { ...mark, scale: fitLabelScale((mark.scale ?? 1) + (dx + dy) / 10) }
-        : moveMark(mark, handle, dx * 8, dy * 8);
+        : moveMark(mark, handle, dx * 8, dy * 8, event.shiftKey);
     void persist(next, handle);
   };
   const pointer = (mark: BoardMark, handle: Handle = 'body') => ({
@@ -438,6 +461,9 @@ export function MarkLayer({
           if (mark.kind === 'label') return null;
           const selected = marks.selected === mark.id || moving?.id === mark.id;
           const grouped = group.includes(mark.id);
+          const middleX = (mark.at.x + mark.end.x) / 2;
+          const middleY = (mark.at.y + mark.end.y) / 2;
+          const handles = mark.kind === 'square' ? corners : (['at', 'end'] as const);
           return (
             <g key={mark.id} data-kind={mark.kind} data-active={selected || undefined}>
               <MarkStroke
@@ -456,46 +482,44 @@ export function MarkLayer({
               />
               <foreignObject
                 className="mark-trash"
-                width={28}
-                height={28}
-                x={
-                  mark.kind === 'line'
-                    ? (mark.at.x + mark.end.x) / 2 - 14
-                    : Math.max(mark.at.x, mark.end.x) - 5
-                }
+                width={27}
+                height={27}
+                x={mark.kind === 'circle' ? Math.max(mark.at.x, mark.end.x) - 5 : middleX - 13.5}
                 y={
-                  mark.kind === 'line'
-                    ? (mark.at.y + mark.end.y) / 2 - 30
-                    : (mark.kind === 'square'
-                        ? Math.min(mark.at.y, mark.end.y)
-                        : (mark.at.y + mark.end.y) / 2) - 14
+                  mark.kind === 'square'
+                    ? Math.min(mark.at.y, mark.end.y) - 25
+                    : middleY - (mark.kind === 'line' ? 30 : 14)
                 }
               >
                 {trash(mark, sketchTrash[mark.kind])}
               </foreignObject>
-              {(['at', 'end'] as const).map((handle) => (
-                <rect
-                  key={handle}
-                  className="mark-endpoint"
-                  role="button"
-                  tabIndex={0}
-                  aria-label={
-                    mark.kind === 'line'
-                      ? handle === 'at'
-                        ? 'Начало линии разметки'
-                        : 'Конец линии разметки'
-                      : handle === 'at'
-                        ? 'Первый угол фигуры'
-                        : 'Противоположный угол фигуры'
-                  }
-                  x={mark[handle].x - 6}
-                  y={mark[handle].y - 6}
-                  width={12}
-                  height={12}
-                  rx={2}
-                  {...pointer(mark, handle)}
-                />
-              ))}
+              {handles.map((handle) => {
+                const point = isCorner(handle) ? rectangleCorner(mark, handle) : mark[handle];
+                const name = isCorner(handle)
+                  ? `${cornerNames[handle]} прямоугольника`
+                  : mark.kind === 'line'
+                    ? handle === 'at'
+                      ? 'Начало линии разметки'
+                      : 'Конец линии разметки'
+                    : handle === 'at'
+                      ? 'Первый угол фигуры'
+                      : 'Противоположный угол фигуры';
+                return (
+                  <rect
+                    key={handle}
+                    className={`mark-endpoint ${handle}`}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={name}
+                    x={point.x - 6}
+                    y={point.y - 6}
+                    width={12}
+                    height={12}
+                    rx={2}
+                    {...pointer(mark, handle)}
+                  />
+                );
+              })}
             </g>
           );
         })}
@@ -522,7 +546,7 @@ export function MarkLayer({
                 {mark.text}
               </button>
               <div className="mark-trash">{trash(mark, `Удалить подпись «${mark.text}»`)}</div>
-              {labelCorners.map((corner) => (
+              {corners.map((corner) => (
                 <button
                   key={corner}
                   type="button"

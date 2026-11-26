@@ -255,10 +255,9 @@ button {
 .sidebar {
   width: 248px;
   flex-shrink: 0;
-  background: var(--accent);
-  color: #fff;
-  border-right: 1px solid #fff;
-  box-shadow: 2px 0 12px #10274f30;
+  background: #fff;
+  color: var(--accent);
+  border-right: 1px solid var(--accent);
   padding: 30px 20px 18px;
   display: flex;
   flex-direction: column;
@@ -283,7 +282,7 @@ button {
 .nav-section {
   font-size: 9px;
   letter-spacing: 1.6px;
-  color: #cbd9f5;
+  color: var(--muted);
   margin: 24px 10px 14px;
 }
 .sidebar nav {
@@ -299,11 +298,11 @@ button {
   font-size: 13px;
   text-align: left;
 }
-.nav-item:hover:not(:disabled) {
-  background: var(--accent-hover);
+.nav-item:hover:not(.selected):not(:disabled) {
+  background: #e8eef9;
 }
 .nav-item.selected {
-  background: var(--accent-active);
+  background: var(--accent);
   color: #fff;
 }
 .nav-item > span:not(.project-dot) {
@@ -313,13 +312,16 @@ button {
 }
 .nav-item small {
   margin-left: auto;
-  color: #dbe6ff;
+  color: var(--muted);
   font-size: 11px;
+}
+.nav-item.selected small {
+  color: #dbe6ff;
 }
 .project-dot {
   width: 7px;
   height: 7px;
-  background: #ffffff;
+  background: currentColor;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -383,6 +385,34 @@ button {
 }
 .workspace-header .eyebrow {
   margin-bottom: 9px;
+}
+.workspace-header > div {
+  width: 100%;
+  min-width: 0;
+}
+.workspace-title-button,
+.workspace-title-input {
+  padding: 0;
+  letter-spacing: inherit;
+}
+.workspace-title-button {
+  max-width: 100%;
+  cursor: text;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.workspace-title-button:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.workspace-title-input {
+  border: 0;
+  color: var(--accent);
+}
+.workspace-title-error {
+  margin: 6px 0 0;
+  color: #fff;
+  font-size: 12px;
 }
 .workspace-alert {
   margin: 16px 30px 0;
@@ -1136,7 +1166,7 @@ audio {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  background: white;
+  background: #e8eef9;
   color: var(--accent);
   padding: 12px;
   text-align: left;
@@ -1346,14 +1376,6 @@ kbd {
 }
 .project-settings-panel[hidden] {
   display: none;
-}
-.project-settings-panel form {
-  display: grid;
-  gap: 10px;
-}
-.project-settings-panel input {
-  width: 100%;
-  max-width: none;
 }
 .project-settings-panel > button {
   text-align: left;
@@ -2017,6 +2039,14 @@ kbd {
   cursor: move;
   touch-action: none;
 }
+.mark-endpoint.top-left,
+.mark-endpoint.bottom-right {
+  cursor: nwse-resize;
+}
+.mark-endpoint.top-right,
+.mark-endpoint.bottom-left {
+  cursor: nesw-resize;
+}
 .mark-lines g:has(.mark-hit:focus-visible) > .mark-stroke {
   stroke-dasharray: 5 4;
 }
@@ -2434,7 +2464,7 @@ select {
   margin: 0;
 }
 .sidebar-toggle {
-  color: white;
+  color: var(--accent);
 }
 .capture-button .sidebar-label {
   flex: 1;
@@ -2471,9 +2501,11 @@ select {
   height: 22px;
   place-items: center;
   border-radius: 5px;
-  color: white;
-  background: #ffffff29;
+  background: #e8eef9;
   font-size: 11px;
+}
+.sidebar-collapsed .selected .project-dot {
+  background: #ffffff29;
 }
 .sidebar-collapsed .project-dot > span {
   display: inline;
@@ -2490,7 +2522,7 @@ select {
   width: min(var(--memo-record-width), max(270px, calc(100vw - var(--memo-sidebar-width) - 245px)));
   min-width: 0;
   height: 100dvh;
-  border-left: 1px solid var(--border);
+  border-left: 1px solid var(--accent);
   background: #fff;
 }
 .record-dock .editor {
@@ -2540,7 +2572,7 @@ select {
 }
 .panel-divider:hover,
 .panel-divider:focus-visible {
-  background: #7491bd40;
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
 }
 @media (max-width: 760px) {
   .application.has-record-dock {
@@ -2552,7 +2584,7 @@ select {
     width: 100%;
     height: max(340px, 55dvh);
     border-left: 0;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--accent);
   }
   .panel-divider-right {
     display: none;
@@ -2562,6 +2594,8 @@ select {
   .application .sidebar {
     width: 100%;
     position: static;
+    border-right: 0;
+    border-bottom: 1px solid var(--accent);
   }
   .sidebar-top {
     grid-column: 1;

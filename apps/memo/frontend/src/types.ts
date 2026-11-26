@@ -50,6 +50,7 @@ export interface Card {
   updatedAt?: string | null;
   openedAt?: string | null;
 }
+// Существующий тип square хранит и квадраты, и прямоугольники.
 export type SketchKind = 'line' | 'square' | 'circle';
 export interface Sketch {
   kind: SketchKind;

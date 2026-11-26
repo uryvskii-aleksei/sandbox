@@ -33,6 +33,45 @@ function client() {
   };
 }
 
+test('projects are ordered by saved edits and retries create one project', async () => {
+  const owner = client();
+  await owner('/session');
+  await owner('/auth/register', 'POST', {
+    email: `project-order-${randomUUID()}@example.test`,
+    password: 'Synthetic-password-2026',
+  });
+  const create = (body) => owner('/projects', 'POST', body, 201);
+  const first = await create({ name: 'Первый' });
+  const note = await owner(`/projects/${first.id}/cards`, 'POST', { name: 'Запись' }, 201);
+  const newProject = { name: 'Второй', template: 'tasks', requestId: randomUUID() };
+  const second = await create(newProject);
+  assert.deepEqual(await create(newProject), second);
+  const order = async () =>
+    (await owner('/projects')).filter((project) => !project.inbox).map((project) => project.id);
+
+  assert.deepEqual(await order(), [second.id, first.id]);
+  await owner(`/cards/${note.id}/visit`, 'POST', {});
+  assert.deepEqual(await order(), [second.id, first.id]);
+
+  await owner(`/cards/${note.id}`, 'PUT', {
+    ...note,
+    name: 'Изменённая запись',
+    requestId: randomUUID(),
+  });
+  assert.deepEqual(await order(), [first.id, second.id]);
+
+  await owner(`/projects/${second.id}`, 'PATCH', { name: 'Изменённый проект' });
+  assert.deepEqual(await order(), [second.id, first.id]);
+
+  await owner(
+    `/projects/${first.id}/marks`,
+    'POST',
+    { kind: 'label', text: 'Разметка на полотне', at: { x: 80, y: 80 } },
+    201,
+  );
+  assert.deepEqual(await order(), [first.id, second.id]);
+});
+
 test('folders scope nested boards without changing the directed graph or old records', async () => {
   const owner = client();
   const outsider = client();

@@ -200,8 +200,11 @@ export const api = {
     session(`/auth/${mode}`, { method: 'POST', body: JSON.stringify({ email, password }) }),
   logout: () => session('/auth/logout', { method: 'POST', body: '{}' }),
   projects: (signal?: AbortSignal) => request('/projects', array(isProject), { signal }),
-  createProject: (name: string, template: Template = 'blank') =>
-    request('/projects', isProject, { method: 'POST', body: JSON.stringify({ name, template }) }),
+  createProject: (name: string, template: Template, requestId: string) =>
+    request('/projects', isProject, {
+      method: 'POST',
+      body: JSON.stringify({ name, template, requestId }),
+    }),
   renameProject: (id: number, name: string) =>
     request(`/projects/${id}`, isProject, { method: 'PATCH', body: JSON.stringify({ name }) }),
   deleteProject: (id: number) => request(`/projects/${id}`, isNull, { method: 'DELETE' }),

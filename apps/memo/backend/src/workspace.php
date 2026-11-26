@@ -43,10 +43,11 @@ function receipted(int $owner, string $operation, array $body, callable $work): 
 function projectList(int $owner, bool $trash = false): array
 {
     $deleted = $trash ? 'IS NOT NULL' : 'IS NULL';
+    $order = $trash ? 'p.id DESC' : 'COALESCE(p.updated_at,p.created_at) DESC,p.id DESC';
     $rows = query("SELECT p.id,p.name,COALESCE(d.inbox,0) AS inbox,d.deleted_at,
         (SELECT COUNT(*) FROM cards c LEFT JOIN card_details cd ON cd.card_id=c.id WHERE c.project_id=p.id AND cd.deleted_at IS NULL) AS cards
         FROM projects p LEFT JOIN project_details d ON d.project_id=p.id
-        WHERE p.owner_id=? AND d.deleted_at $deleted ORDER BY COALESCE(d.inbox,0) DESC,p.id DESC", [$owner])->fetchAll();
+        WHERE p.owner_id=? AND d.deleted_at $deleted ORDER BY COALESCE(d.inbox,0) DESC,$order", [$owner])->fetchAll();
     return array_map(static fn(array $row): array => ['id' => (int) $row['id'], 'name' => $row['name'],
         'inbox' => (bool) $row['inbox'], 'deletedAt' => $row['deleted_at'], 'cards' => (int) $row['cards']], $rows);
 }
@@ -61,9 +62,20 @@ function inboxProject(int $owner): int
     return $id;
 }
 
+function touchProject(int $id): void
+{
+    query('UPDATE projects SET updated_at=CURRENT_TIMESTAMP(6) WHERE id=?', [$id]);
+}
+
+function touchCardProject(int $id): void
+{
+    query('UPDATE projects p JOIN cards c ON c.project_id=p.id SET p.updated_at=CURRENT_TIMESTAMP(6) WHERE c.id=?', [$id]);
+}
+
 function touchCard(int $id): void
 {
     query('INSERT INTO card_details(card_id) VALUES(?) ON DUPLICATE KEY UPDATE updated_at=CURRENT_TIMESTAMP(6)', [$id]);
+    touchCardProject($id);
 }
 
 function folderId(mixed $value): ?int
@@ -109,6 +121,7 @@ function moveCardToBoard(array $row, int $owner, array $body): void
     query('UPDATE cards SET project_id=?,folder_id=?,x=?,y=?,version=version+1 WHERE id=?',
         [$project, $folder, $point['x'], $point['y'], $row['id']]);
     touchCard((int) $row['id']);
+    if ($project !== (int) $row['project_id']) touchProject((int) $row['project_id']);
 }
 
 function requireLinkedSelection(int $owner, int $project, ?int $folder, array $selectedIds): void
@@ -192,6 +205,7 @@ function moveBoardSelection(int $project, int $owner, array $body): array
             query('UPDATE board_marks SET folder_id=?,x=?,y=?,end_x=?,end_y=? WHERE id=?', [$destination, $x, $y, $endX, $endY, $id]);
             $savedMarks[] = boardMarkOutput(query('SELECT * FROM board_marks WHERE id=?', [$id])->fetch());
         }
+        if ($savedMarks && !$savedCards) touchProject($project);
         return ['cards' => $savedCards, 'marks' => $savedMarks];
     });
 }
@@ -260,6 +274,7 @@ function putLink(int $owner, array $body): array
     if (!$previous || $previous['label'] !== $label) {
         query('UPDATE cards SET version=version+1 WHERE id=?', [$target]);
         touchCard($target);
+        touchCardProject($source);
     }
     return array_values(array_filter(linkRows($owner), static fn(array $link): bool => $link['source'] === $source && $link['target'] === $target))[0];
 }
@@ -271,7 +286,11 @@ function deleteLink(int $owner, array $body): void
     $deleted = query('DELETE FROM card_links WHERE source_id=? AND target_id=?', [$source, $target])->rowCount();
     $next = query('SELECT source_id FROM card_links WHERE target_id=? ORDER BY source_id LIMIT 1', [$target])->fetchColumn();
     query('UPDATE cards SET parent_id=? WHERE id=?', [$next === false ? null : (int) $next, $target]);
-    if ($deleted > 0) { query('UPDATE cards SET version=version+1 WHERE id=?', [$target]); touchCard($target); }
+    if ($deleted > 0) {
+        query('UPDATE cards SET version=version+1 WHERE id=?', [$target]);
+        touchCard($target);
+        touchCardProject($source);
+    }
 }
 
 function rewireLink(int $owner, array $body): array
@@ -298,6 +317,8 @@ function rewireLink(int $owner, array $body): array
             query('UPDATE cards SET parent_id=?,version=version+1 WHERE id=?', [$parent === false ? null : (int) $parent, $id]);
             touchCard($id);
         }
+        touchCardProject($source);
+        if ($newSource !== $source) touchCardProject($newSource);
         return array_values(array_filter(linkRows($owner), static fn(array $link): bool => $link['source'] === $newSource && $link['target'] === $newTarget))[0];
     });
 }
@@ -416,11 +437,13 @@ function searchCards(int $owner): array
     return ['cards' => array_map(__NAMESPACE__ . '\\cardOutput', array_slice($rows, 0, 100)), 'hasMore' => count($rows) > 100];
 }
 
-function templateProject(int $owner, string $name, string $template): array
+function templateProject(int $owner, array $body): array
 {
+    $name = text($body['name'] ?? '');
+    $template = text($body['template'] ?? 'blank', 16);
     if (!in_array($template, ['blank', 'family', 'outline', 'retro', 'tasks'], true)) fail(422, 'Неизвестный шаблон.');
-    return ownedTransaction($owner, static function () use ($owner, $name, $template): array {
-        query('INSERT INTO projects(owner_id,name) VALUES(?,?)', [$owner, $name]);
+    return receipted($owner, 'create-project', $body, static function () use ($owner, $name, $template): array {
+        query('INSERT INTO projects(owner_id,name,updated_at) VALUES(?,?,CURRENT_TIMESTAMP(6))', [$owner, $name]);
         $projectId = (int) database()->lastInsertId();
         $nodes = match ($template) {
             'family' => [['Родитель 1', 40, 60, 'Имя, даты жизни и воспоминания.'], ['Родитель 2', 420, 60, 'Имя, даты жизни и воспоминания.'], ['Ребёнок', 230, 360, 'Замените примеры участниками вашей семьи.']],
@@ -476,6 +499,7 @@ function trashCard(array $card): void
         fail(409, 'Сначала переместите или удалите элементы внутри папки.');
     }
     query('INSERT INTO card_details(card_id,deleted_at) VALUES(?,CURRENT_TIMESTAMP) ON DUPLICATE KEY UPDATE deleted_at=CURRENT_TIMESTAMP', [$card['id']]);
+    touchProject((int) $card['project_id']);
 }
 
 function trashBoardSelection(int $projectId, int $owner, array $body): void
@@ -498,6 +522,7 @@ function trashBoardSelection(int $projectId, int $owner, array $body): void
             $deleted = query('DELETE FROM board_marks WHERE id=? AND project_id=? AND folder_id <=> ?', [$id, $projectId, $folder]);
             if (!$deleted->rowCount()) fail(404, 'Элемент разметки уже недоступен.');
         }
+        if ($marks && !$cards) touchProject($projectId);
         return [];
     });
 }
@@ -574,6 +599,7 @@ function insertBoardMark(int $project, ?int $folder, string $kind, array $at, ?a
     query('INSERT INTO board_marks(project_id,folder_id,kind,label,label_scale,x,y,end_x,end_y) VALUES(?,?,?,?,?,?,?,?,?)',
         [$project, $folder, $kind, $label, $scale, $at['x'], $at['y'], $end['x'] ?? null, $end['y'] ?? null]);
     $id = (int) database()->lastInsertId();
+    touchProject($project);
     return boardMarkOutput(query('SELECT * FROM board_marks WHERE id=?', [$id])->fetch());
 }
 
@@ -585,9 +611,14 @@ function changeBoardMark(int $id, int $owner, ?array $body): ?array
             if ($body === null) return null;
             fail(404, 'Элемент полотна не найден.');
         }
-        project((int) $row['project_id'], $owner);
-        validateFolder(folderId($row['folder_id']), (int) $row['project_id'], $owner);
-        if ($body === null) { query('DELETE FROM board_marks WHERE id=?', [$id]); return null; }
+        $project = (int) $row['project_id'];
+        project($project, $owner);
+        validateFolder(folderId($row['folder_id']), $project, $owner);
+        if ($body === null) {
+            query('DELETE FROM board_marks WHERE id=?', [$id]);
+            touchProject($project);
+            return null;
+        }
         $mark = boardMarkOutput($row);
         $at = array_key_exists('at', $body) ? coordinates($body['at']) : $mark['at'];
         $end = $mark['end'] ?? null;
@@ -607,6 +638,7 @@ function changeBoardMark(int $id, int $owner, ?array $body): ?array
         }
         query('UPDATE board_marks SET label=?,label_scale=?,x=?,y=?,end_x=?,end_y=? WHERE id=?',
             [$row['label'], $row['label_scale'], $at['x'], $at['y'], $end['x'] ?? null, $end['y'] ?? null, $id]);
+        touchProject($project);
         return boardMarkOutput(query('SELECT * FROM board_marks WHERE id=?', [$id])->fetch());
     });
 }

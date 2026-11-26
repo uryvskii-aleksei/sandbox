@@ -67,8 +67,7 @@ function route(): never
         respond(projectList($owner));
     }
     if ($path === '/projects' && $method === 'POST') {
-        $body = jsonBody();
-        respond(templateProject($owner, text($body['name'] ?? ''), text($body['template'] ?? 'blank', 16)), 201);
+        respond(templateProject($owner, jsonBody()), 201);
     }
     if (preg_match('~^/projects/(\d+)/(restore|export)$~', $path, $match)) {
         $id = positiveId($match[1]);
@@ -83,7 +82,15 @@ function route(): never
     }
     if (preg_match('~^/projects/(\d+)$~', $path, $match)) {
         $id = positiveId($match[1]); project($id, $owner);
-        if ($method === 'PATCH') { $body = jsonBody(); query('UPDATE projects SET name=? WHERE id=? AND owner_id=?', [text($body['name'] ?? ''), $id, $owner]); respond(project($id, $owner)); }
+        if ($method === 'PATCH') {
+            $name = text(jsonBody()['name'] ?? '');
+            respond(ownedTransaction($owner, static function () use ($id, $owner, $name): array {
+                $current = project($id, $owner);
+                if ($current['name'] === $name) return $current;
+                query('UPDATE projects SET name=?,updated_at=CURRENT_TIMESTAMP(6) WHERE id=? AND owner_id=?', [$name, $id, $owner]);
+                return project($id, $owner);
+            }));
+        }
         if ($method === 'DELETE') {
             ownedTransaction($owner, static function () use ($id, $owner): void {
                 $current = project($id, $owner);
@@ -154,7 +161,8 @@ function route(): never
                 project((int) $row['project_id'], $owner);
                 if ($operation === 'restore') {
                     validateFolder(folderId($row['folder_id']), (int) $row['project_id'], $owner);
-                    query('UPDATE card_details SET deleted_at=NULL WHERE card_id=?', [$id]);
+                    $restored = query('UPDATE card_details SET deleted_at=NULL WHERE card_id=? AND deleted_at IS NOT NULL', [$id]);
+                    if ($restored->rowCount()) touchProject((int) $row['project_id']);
                 }
                 if ($operation === 'metadata') {
                     if (!is_bool($body['pinned'] ?? null)) fail(422, 'Укажите состояние закрепления.');

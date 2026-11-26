@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const siteNames = ['amodu', 'purpur', 'stonehaus'];
+const siteNames = ['amodu', 'wave', 'purpur', 'stonehaus'];
 
 /** Создаёт отдельную копию файлов сайта для дальнейшей поставки. */
 export function buildSite(appDirectory) {
@@ -57,7 +57,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     if (check) {
       const source = path.join(app, 'site');
       for (const entry of fs.readdirSync(source, { recursive: true, withFileTypes: true })) {
-        if (!entry.isFile() || !entry.name.endsWith('.js')) continue;
+        if (!entry.isFile() || !/\.m?js$/.test(entry.name)) continue;
         const result = spawnSync(
           process.execPath,
           ['--check', path.join(entry.parentPath, entry.name)],

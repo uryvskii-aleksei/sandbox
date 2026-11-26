@@ -301,6 +301,44 @@ a:focus-visible {
   color: var(--project-text);
 }
 
+.project-wave {
+  --project-surface: #faefef;
+  --project-text: #6e262b;
+  --project-description: #62464d;
+  --project-border: #f1d5d5;
+}
+
+.wave-link {
+  background: #792d32;
+}
+
+.wave-link:hover,
+.wave-link:active {
+  background: #562129;
+}
+
+.wave-play {
+  position: absolute;
+  inset: 0;
+  width: 3.85rem;
+  aspect-ratio: 1;
+  margin: auto;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #ffe3d7;
+  box-shadow: 0 0 0 0.4rem #27111887;
+}
+
+.wave-play::before {
+  width: 1.15rem;
+  height: 1.25rem;
+  margin-inline-start: 0.22rem;
+  background: #521e26;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  content: '';
+}
+
 .project-purpur {
   --project-surface: #f7f2f7;
   --project-text: #9d169e;

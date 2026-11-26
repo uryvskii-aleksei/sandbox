@@ -29,6 +29,7 @@ jobs:
       - run: npm run check
       - run: npm run build:sites
       - run: npm run build:memo
+      - run: npm run test:wave:api
 
   php:
     runs-on: ubuntu-latest

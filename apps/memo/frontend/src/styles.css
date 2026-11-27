@@ -688,13 +688,11 @@ button {
   z-index: 1;
   display: flex;
   --card-padding: 18px;
-  --card-base-top-border: 4px;
-  --card-top-border: var(--card-base-top-border);
+  --card-top-border: 4px;
   align-items: center;
   min-height: 70px;
   max-height: 760px;
   padding: var(--card-padding);
-  padding-top: calc(var(--card-padding) + var(--card-base-top-border) - var(--card-top-border));
   background: white;
   color: var(--accent);
   border: 1px solid #aebedb;
@@ -722,7 +720,6 @@ button {
   border-style: dashed;
 }
 .mind-card:is(.focused-card, .grouped-card) {
-  --card-top-border: 2px;
   border-color: var(--accent);
 }
 .card-title,

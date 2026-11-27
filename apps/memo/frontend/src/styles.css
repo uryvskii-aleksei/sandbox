@@ -700,11 +700,12 @@ button {
 .card-actions {
   position: absolute;
   z-index: 1;
-  bottom: 0;
+  top: 100%;
   left: 50%;
-  transform: translate(-50%, 50%);
+  transform: translateX(-50%);
   display: flex;
   gap: 4px;
+  padding-top: 8px;
 }
 .link-output {
   cursor: crosshair;

@@ -164,13 +164,6 @@ button {
   gap: 14px;
   margin-bottom: 12px;
 }
-.guest-auth-button {
-  flex: none;
-  white-space: nowrap;
-}
-.guest-workspace .sidebar[hidden] {
-  display: none;
-}
 .alert {
   display: flex;
   gap: 18px;
@@ -266,6 +259,35 @@ button {
   border-radius: 50%;
   flex-shrink: 0;
 }
+.sidebar-account {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.sidebar-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-account > .icon-button {
+  margin-inline-start: auto;
+}
+.sidebar-account > .sidebar-auth-button {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+@media (pointer: coarse) {
+  .sidebar-account > .sidebar-auth-button {
+    min-height: 44px;
+  }
+}
 .avatar {
   width: 30px;
   height: 30px;
@@ -293,7 +315,6 @@ button {
   padding-inline: var(--header-inset);
   display: flex;
   align-items: center;
-  gap: 10px;
   background: var(--accent);
   color: #fff;
   border-bottom: 1px solid #fff;
@@ -1985,19 +2006,6 @@ kbd {
 .shape-caption-draft textarea:focus {
   outline: none;
 }
-.workspace-account {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  max-width: min(45%, 240px);
-  min-width: 0;
-  font-size: 12px;
-}
-.workspace-email {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 @media (pointer: coarse) {
   .workspace-header {
     --header-button-size: 44px;
@@ -2433,8 +2441,15 @@ select {
 }
 .sidebar-collapsed .sidebar-label,
 .sidebar-collapsed .nav-section,
-.sidebar-collapsed .nav-item small {
+.sidebar-collapsed .nav-item small,
+.sidebar-collapsed .sidebar-email {
   display: none;
+}
+.sidebar-collapsed .sidebar-account {
+  flex-direction: column;
+}
+.sidebar-collapsed .sidebar-account > .icon-button {
+  margin: 0;
 }
 .sidebar-collapsed .main-navigation {
   margin-block: 12px;
@@ -2553,6 +2568,17 @@ select {
   .sidebar-collapsed .sidebar-top {
     flex-direction: row;
     margin: 0;
+  }
+  .sidebar-account {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .sidebar-collapsed .sidebar-account {
+    flex-direction: row;
   }
   .sidebar-collapsed .main-navigation {
     margin-block: 6px 0;

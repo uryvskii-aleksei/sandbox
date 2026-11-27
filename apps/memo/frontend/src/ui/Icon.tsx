@@ -18,6 +18,7 @@ export type IconName =
   | 'keyboard'
   | 'search'
   | 'sidebar'
+  | 'login'
   | 'copy'
   | 'paste'
   | 'plus';
@@ -45,6 +46,7 @@ const paths: Record<IconName, string> = {
   keyboard: 'M2 5h20v14H2ZM6 9h1m4 0h1m4 0h1M6 13h1m4 0h1m4 0h1M8 16h8',
   search: 'M20 20l-4.5-4.5M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0Z',
   sidebar: 'M3 5h18v14H3ZM9 5v14',
+  login: 'M13 4h7v16h-7M3 12h11m-4-4 4 4-4 4',
   copy: 'M8 8h12v12H8ZM16 8V4H4v12h4',
   paste: 'M8 5H5v16h14V5h-3M8 3h8v5H8ZM9 12h6M9 16h6',
   plus: 'M12 5v14M5 12h14',

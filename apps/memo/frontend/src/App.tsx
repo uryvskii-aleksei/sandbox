@@ -969,23 +969,22 @@ export function App() {
   return (
     <WorkspaceClient.Provider value={workspaceApi}>
       <div
-        className={`application ${guestMode ? 'guest-workspace' : ''} ${editing ? 'has-record-dock' : ''}`}
+        className={`application ${editing ? 'has-record-dock' : ''}`}
         style={docking}
         inert={projectCreateOpen || authOpen}
       >
         <aside
           className={`sidebar ${panels.collapsed ? 'sidebar-collapsed' : ''}`}
           id="memo-sidebar"
-          hidden={guestMode}
         >
           <div className="sidebar-top">
             <a
               className="brand"
               aria-label="Memo"
-              href={urlFor({ view: 'dashboard' })}
+              href={base}
               onClick={(event) => {
                 event.preventDefault();
-                navigate({ view: 'dashboard' });
+                navigate(guestMode ? guestRoute : { view: 'dashboard' });
               }}
             >
               <span className="brand-mark">m.</span>
@@ -1002,24 +1001,28 @@ export function App() {
               }
             />
           </div>
-          <p className="nav-section">ЛИЧНОЕ ПРОСТРАНСТВО</p>
-          <nav className="main-navigation" aria-label="Личное пространство">
-            {navigation.map((item) => (
-              <button
-                key={item.view}
-                className={`nav-item ${route.view === item.view ? 'selected' : ''}`}
-                disabled={busy}
-                onClick={() => navigate({ view: item.view })}
-                aria-label={item.label}
-                title={panels.collapsed ? item.label : undefined}
-                aria-current={route.view === item.view ? 'page' : undefined}
-              >
-                <span aria-hidden="true">{item.icon}</span>
-                <span className="sidebar-label">{item.label}</span>
-                {item.view === 'drafts' && drafts.length > 0 && <small>{drafts.length}</small>}
-              </button>
-            ))}
-          </nav>
+          {!guestMode && (
+            <>
+              <p className="nav-section">ЛИЧНОЕ ПРОСТРАНСТВО</p>
+              <nav className="main-navigation" aria-label="Личное пространство">
+                {navigation.map((item) => (
+                  <button
+                    key={item.view}
+                    className={`nav-item ${route.view === item.view ? 'selected' : ''}`}
+                    disabled={busy}
+                    onClick={() => navigate({ view: item.view })}
+                    aria-label={item.label}
+                    title={panels.collapsed ? item.label : undefined}
+                    aria-current={route.view === item.view ? 'page' : undefined}
+                  >
+                    <span aria-hidden="true">{item.icon}</span>
+                    <span className="sidebar-label">{item.label}</span>
+                    {item.view === 'drafts' && drafts.length > 0 && <small>{drafts.length}</small>}
+                  </button>
+                ))}
+              </nav>
+            </>
+          )}
           {visibleProjects.length > 0 && (
             <>
               <p className="nav-section">ПРОЕКТЫ</p>
@@ -1045,6 +1048,36 @@ export function App() {
               </nav>
             </>
           )}
+          <div className="sidebar-account">
+            {guestMode ? (
+              <Button
+                className="sidebar-auth-button"
+                icon="login"
+                aria-label="Войти"
+                aria-haspopup="dialog"
+                disabled={busy}
+                onClick={() => {
+                  setAuthError('');
+                  setMode('login');
+                  setAuthOpen(true);
+                }}
+              >
+                <span className="sidebar-label">Войти</span>
+              </Button>
+            ) : (
+              <>
+                <span className="avatar" aria-hidden="true">
+                  {user.email.charAt(0).toUpperCase()}
+                </span>
+                <span className="sidebar-email" title={user.email}>
+                  {user.email}
+                </span>
+                <button className="icon-button" disabled={busy} aria-label="Выйти" onClick={logout}>
+                  ↪
+                </button>
+              </>
+            )}
+          </div>
           {!panels.collapsed && (
             <PanelDivider
               side="left"
@@ -1137,32 +1170,6 @@ export function App() {
                 </div>
               )}
             </div>
-            {guestMode ? (
-              <Button
-                className="guest-auth-button"
-                aria-haspopup="dialog"
-                disabled={busy}
-                onClick={() => {
-                  setAuthError('');
-                  setMode('login');
-                  setAuthOpen(true);
-                }}
-              >
-                Войти
-              </Button>
-            ) : (
-              <div className="workspace-account">
-                <span className="avatar" aria-hidden="true">
-                  {user.email.charAt(0).toUpperCase()}
-                </span>
-                <span className="workspace-email" title={user.email}>
-                  {user.email}
-                </span>
-                <button className="icon-button" disabled={busy} aria-label="Выйти" onClick={logout}>
-                  ↪
-                </button>
-              </div>
-            )}
           </header>
           <div className="project-toolbar">
             {showingProjects && (

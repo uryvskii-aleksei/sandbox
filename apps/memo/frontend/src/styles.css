@@ -15,6 +15,9 @@
   --accent-active: #15306b;
   --border: #cbd5e6;
   --workspace-header-height: 52px;
+  --panel-header-inset: 16px;
+  --panel-inset: 14px;
+  --workspace-divider-shadow: 0 2px 12px #10274f30;
 }
 * {
   box-sizing: border-box;
@@ -187,14 +190,14 @@ button {
   display: flex;
 }
 .sidebar {
-  --sidebar-inset: 20px;
+  --sidebar-inset: var(--panel-inset);
   width: 248px;
   flex-shrink: 0;
   background: #fff;
   color: var(--accent);
   border-right: 1px solid var(--accent);
   box-shadow: 2px 0 12px #10274f30;
-  padding: 0 var(--sidebar-inset) 18px;
+  padding: 0 var(--sidebar-inset);
   display: flex;
   flex-direction: column;
   height: 100dvh;
@@ -266,8 +269,9 @@ button {
   align-items: center;
   gap: 6px;
   min-width: 0;
-  margin-top: auto;
-  padding-top: 12px;
+  flex-shrink: 0;
+  margin: auto calc(-1 * var(--sidebar-inset)) 0;
+  padding: 12px var(--sidebar-inset);
   border-top: 1px solid var(--border);
   font-size: 12px;
 }
@@ -277,12 +281,15 @@ button {
   white-space: nowrap;
 }
 .sidebar-account > .icon-button {
+  width: 36px;
+  height: 36px;
   margin-inline-start: auto;
 }
 .sidebar-account > .sidebar-auth-button {
   width: 100%;
   min-height: 36px;
-  padding: 7px 10px;
+  padding: 8px 10px;
+  font-size: 12px;
   white-space: nowrap;
 }
 @media (pointer: coarse) {
@@ -319,8 +326,8 @@ button {
   align-items: center;
   background: var(--accent);
   color: #fff;
-  border-bottom: 1px solid #fff;
-  box-shadow: 0 2px 12px #10274f30;
+  border-bottom: 1px solid var(--accent);
+  box-shadow: var(--workspace-divider-shadow);
   position: relative;
   z-index: 4;
 }
@@ -489,7 +496,8 @@ button {
   gap: 10px;
   align-items: center;
   padding: 12px 30px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--accent);
+  box-shadow: var(--workspace-divider-shadow);
   background: #fff;
   font-size: 12px;
   color: var(--muted);
@@ -1016,9 +1024,7 @@ audio {
 }
 @media (max-width: 900px) {
   .sidebar {
-    --sidebar-inset: 12px;
     width: 205px;
-    padding-bottom: 24px;
   }
   .project-toolbar {
     padding: 12px 20px;
@@ -2414,8 +2420,9 @@ select {
   flex-shrink: 0;
   min-height: var(--workspace-header-height);
   margin-inline: calc(-1 * var(--sidebar-inset));
-  padding-inline: var(--sidebar-inset);
+  padding-inline: var(--panel-header-inset);
   border-bottom: 1px solid var(--accent);
+  box-shadow: var(--workspace-divider-shadow);
 }
 .sidebar-top .brand {
   margin: 0;
@@ -2498,13 +2505,15 @@ select {
   height: 100%;
 }
 .record-dock .editor-header {
+  position: relative;
   background: white;
   color: var(--accent);
   border-bottom: 1px solid var(--accent);
+  box-shadow: var(--workspace-divider-shadow);
   flex: 0 0 auto;
   min-height: var(--workspace-header-height);
   align-items: center;
-  padding: 0 16px;
+  padding: 0 var(--panel-header-inset);
 }
 .record-dock .editor-title {
   color: var(--accent);
@@ -2517,11 +2526,11 @@ select {
   color: var(--muted);
 }
 .record-dock .editor-body {
-  padding: 14px;
+  padding: var(--panel-inset);
 }
 .record-dock .editor-footer {
   flex-wrap: wrap;
-  padding: 12px 14px;
+  padding: 12px var(--panel-inset);
   gap: 6px;
 }
 .record-dock .editor-footer > button {
@@ -2569,7 +2578,7 @@ select {
     position: static;
     border-right: 0;
     border-bottom: 1px solid var(--accent);
-    box-shadow: 0 2px 12px #10274f30;
+    box-shadow: var(--workspace-divider-shadow);
   }
   .sidebar-top {
     grid-column: 1;
@@ -2578,6 +2587,7 @@ select {
     margin: 0;
     padding: 0;
     border: 0;
+    box-shadow: none;
   }
   .sidebar-account {
     grid-column: 2;

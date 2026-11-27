@@ -139,12 +139,14 @@ function authenticate(PDO $db, array $body, bool $register): void
 {
     $login = $body['login'] ?? null;
     $password = $body['password'] ?? null;
+    $loginError = $register ? 'Укажите корректный email.' : 'Укажите email или имя пользователя.';
     if (!is_string($login) || !is_string($password)) {
-        throw new RequestError('Укажите имя пользователя и пароль.', 400);
+        throw new RequestError('Укажите логин и пароль.', 400);
     }
     $login = strtolower(trim($login));
-    if (!preg_match('/^[a-z0-9_]{3,24}$/D', $login)) {
-        throw new RequestError('Имя должно содержать от 3 до 24 латинских букв, цифр или знаков подчёркивания.', 400);
+    $isEmail = strlen($login) <= 254 && filter_var($login, FILTER_VALIDATE_EMAIL) !== false;
+    if (!$isEmail && ($register || !preg_match('/^[a-z0-9_]{3,24}$/D', $login))) {
+        throw new RequestError($loginError, 400);
     }
     if (strlen($password) > 72 || str_contains($password, "\0") || $password === '') {
         throw new RequestError('Пароль должен занимать не больше 72 байт.', 400);
@@ -159,7 +161,7 @@ function authenticate(PDO $db, array $body, bool $register): void
         $query->execute([$login]);
         $user = $query->fetch(PDO::FETCH_ASSOC);
         if (!$user || !password_verify($password, $user['password_hash'])) {
-            throw new RequestError('Имя пользователя или пароль не совпадают.', 401);
+            throw new RequestError('Логин или пароль не совпадают.', 401);
         }
     }
     $hash = $register ? password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]) : null;
@@ -170,7 +172,7 @@ function authenticate(PDO $db, array $body, bool $register): void
             $query = $db->prepare('INSERT INTO users (username, password_hash) VALUES (?, ?) ON CONFLICT (username) DO NOTHING');
             $query->execute([$login, $hash]);
             if ($query->rowCount() === 0) {
-                throw new RequestError('Это имя уже занято.', 409);
+                throw new RequestError('Этот email уже зарегистрирован.', 409);
             }
         }
         $id = $register ? (int) $db->lastInsertId() : (int) $user['id'];

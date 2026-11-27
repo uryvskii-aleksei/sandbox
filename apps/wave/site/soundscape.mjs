@@ -2,7 +2,7 @@ import { createSoundscapeArt } from './soundscape-art.mjs';
 
 const genreHues = { electronic: 264, jazz: 202, folk: 141, 'hip-hop': 23, pop: 326 };
 
-function trackHue(clip) {
+export function trackHue(clip) {
   let hash = 0;
   for (const character of clip.id) {
     hash = (Math.imul(hash, 31) + character.charCodeAt(0)) >>> 0;
@@ -40,12 +40,11 @@ export function setupSoundscape(video, canvas) {
   let hue = palette;
   let playing = false;
 
-  function cue(clip) {
-    palette = trackHue(clip);
+  function cue(themeHue) {
+    palette = themeHue;
     hue = palette;
     bass = floor = accent = 0;
     art?.start();
-    return palette;
   }
 
   function draw(time) {

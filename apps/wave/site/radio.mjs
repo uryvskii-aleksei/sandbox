@@ -1,16 +1,13 @@
 import { setupAccount } from './account.mjs';
 import { pickClip } from './selection.mjs';
-import { setupSoundscape } from './soundscape.mjs';
+import { setupSoundscape, trackHue } from './soundscape.mjs';
 
 const get = (id) => document.getElementById(id);
-const panel = get('deck-panel');
-const station = panel.parentElement;
 const toggle = get('toggle');
 const previous = get('previous');
 const next = get('next');
 const like = get('like');
 const dislike = get('dislike');
-const splash = get('splash');
 const video = get('video');
 const soundscape = setupSoundscape(video, get('soundscape'));
 const trackDetails = get('track-details');
@@ -37,25 +34,25 @@ const current = () => history[position];
 
 function render() {
   const clip = current();
+  const track = clip ?? history[0];
   const pause = !video.paused && !video.ended && !video.error;
   const label = pause ? 'Пауза' : 'Воспроизвести';
   get('toggle-icon').className = 'symbol ' + (pause ? 'pause' : 'play');
   toggle.setAttribute('aria-label', label);
   toggle.dataset.tooltip = label + ' · Пробел';
-  panel.inert = !clip;
-  toggle.disabled = splash.disabled = !catalog.length && !catalogFailed;
+  toggle.disabled = !catalog.length && !catalogFailed;
   previous.disabled = position <= 0;
   next.disabled = !clip;
   like.disabled = dislike.disabled = !clip || account.busy;
   like.setAttribute('aria-pressed', String(account.ratings[clip?.id] === 1));
   dislike.setAttribute('aria-pressed', String(account.ratings[clip?.id] === -1));
-  trackDetails.hidden = !clip;
-  if (clip) {
-    get('track-artist').textContent = clip.artist;
-    get('track-title').textContent = clip.title;
-    get('clip-credit').textContent = clip.credit;
-    source.href = clip.source;
-    video.setAttribute('aria-label', clip.artist + ' — ' + clip.title);
+  trackDetails.hidden = !track;
+  if (track) {
+    get('track-artist').textContent = track.artist;
+    get('track-title').textContent = track.title;
+    get('clip-credit').textContent = track.credit;
+    source.href = track.source;
+    video.setAttribute('aria-label', track.artist + ' — ' + track.title);
   }
 }
 
@@ -75,21 +72,25 @@ function play() {
   });
 }
 
-function show(clip) {
-  const posterHadFocus = document.activeElement === splash;
-  splash.hidden = true;
-  video.hidden = false;
-  message.textContent = 'Загружаем клип…';
-  const hue = soundscape.cue(clip);
+function applyTrackTheme(clip) {
+  const hue = trackHue(clip);
   const root = document.documentElement;
   root.style.setProperty('--accent', `hsl(${hue} 88% 72%)`);
   root.classList.add('has-clip');
-  video.src = clip.video;
+  return hue;
+}
+
+function show(clip, keepFirstFrame = false) {
+  video.controls = true;
+  soundscape.cue(applyTrackTheme(clip));
+  if (!keepFirstFrame || video.error) video.src = clip.video;
+  message.textContent =
+    video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ? 'Загружаем клип…' : '';
   play();
-  if (posterHadFocus) toggle.focus({ preventScroll: true });
 }
 
 function advance() {
+  const firstStart = position < 0;
   if (position + 1 < history.length) {
     position++;
   } else {
@@ -103,7 +104,7 @@ function advance() {
     history = [...history, clip].slice(-100);
     position = history.length - 1;
   }
-  show(current());
+  show(current(), firstStart);
 }
 
 function playOrPause() {
@@ -129,7 +130,14 @@ async function loadCatalog() {
     if (!response.ok) throw new Error();
     const clips = await response.json();
     if (!Array.isArray(clips) || !clips.length) throw new Error();
+    const first = pickClip(clips, account.ratings, [], unavailable);
+    if (!first) throw new Error();
+    applyTrackTheme(first);
     catalog = clips;
+    history = [first];
+    message.textContent = 'Загружаем первый кадр…';
+    video.src = first.video;
+    video.hidden = false;
   } catch {
     catalogFailed = true;
     message.textContent =
@@ -178,17 +186,16 @@ document.addEventListener('keydown', (event) => {
   const space = event.code === 'Space' || event.key === ' ';
   const arrow = event.code === 'ArrowLeft' || event.code === 'ArrowRight';
   // Когда в фокусе встроенный видеоплеер, его клавиши управляют просмотром и перемоткой.
-  if ((space || arrow) && target === video) return;
+  if ((space || arrow) && target === video && video.controls) return;
   if (space && target.closest('button, a[href]')) return;
 
-  const button = space ? (current() ? toggle : splash) : shortcuts.get(event.code);
+  const button = space ? toggle : shortcuts.get(event.code);
   if (!button || button.disabled || button.hidden) return;
   event.preventDefault();
   button.click();
 });
 
 trackDetails.addEventListener('click', () => clipDetails.showModal());
-splash.addEventListener('click', playOrPause);
 toggle.addEventListener('click', playOrPause);
 next.addEventListener('click', advance);
 previous.addEventListener('click', () => {
@@ -200,6 +207,12 @@ previous.addEventListener('click', () => {
 like.addEventListener('click', () => account.rate(current().id, 1));
 dislike.addEventListener('click', () => account.rate(current().id, -1));
 
+video.addEventListener('click', () => {
+  if (!current()) playOrPause();
+});
+video.addEventListener('loadeddata', () => {
+  if (!current()) message.textContent = '';
+});
 video.addEventListener('play', render);
 video.addEventListener('playing', () => {
   unavailable.delete(current().id);
@@ -215,15 +228,12 @@ video.addEventListener('waiting', () => {
 });
 video.addEventListener('ended', advance);
 video.addEventListener('error', () => {
-  unavailable.add(current().id);
-  message.textContent = 'Клип недоступен. Попробуйте ещё раз или перейдите к следующему.';
+  const track = current() ?? history[0];
+  if (track) unavailable.add(track.id);
+  message.textContent = current()
+    ? 'Клип недоступен. Попробуйте ещё раз или перейдите к следующему.'
+    : 'Первый кадр не загрузился. Нажмите «Воспроизвести», чтобы попробовать снова.';
   render();
 });
 
-function measurePanel() {
-  station.style.setProperty('--panel-height', panel.getBoundingClientRect().height + 'px');
-}
-
-measurePanel();
-new ResizeObserver(measurePanel).observe(panel);
 void loadCatalog();

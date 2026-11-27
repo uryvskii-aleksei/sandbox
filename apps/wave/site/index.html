@@ -16,7 +16,7 @@
       <h1 class="wordmark">wave</h1>
       <div class="account">
         <span id="username" hidden></span>
-        <button class="text-button" id="account-button" type="button">Войти</button>
+        <button class="text-button accent-button" id="account-button" type="button">Войти</button>
       </div>
       <p class="message account-message" id="account-message" role="status"></p>
     </header>
@@ -25,24 +25,12 @@
       <div class="player-stage">
         <section class="deck" aria-label="Плеер Wave">
           <div class="screen">
-            <button
-              class="splash shortcut"
-              id="splash"
-              type="button"
-              aria-label="Включить клип"
-              aria-keyshortcuts="Space"
-              data-tooltip="Включить клип · Пробел"
-              disabled
-            >
-              <span class="poster-play" aria-hidden="true"><span class="symbol play"></span></span>
-            </button>
             <video
               class="video"
               id="video"
-              controls
               playsinline
               crossorigin="anonymous"
-              preload="none"
+              preload="auto"
               aria-label="Музыкальный клип"
               aria-keyshortcuts="F"
               title="Полноэкранный режим · F"
@@ -55,61 +43,27 @@
               </p></noscript
             >
           </div>
+          <div class="track" aria-live="polite" aria-atomic="true">
+            <button
+              id="track-details"
+              class="track-details shortcut"
+              type="button"
+              aria-haspopup="dialog"
+              aria-controls="clip-details"
+              aria-keyshortcuts="I"
+              data-tooltip="О клипе · I"
+              hidden
+            >
+              <span class="track-artist" id="track-artist"></span>
+              <span class="track-separator" aria-hidden="true">—</span>
+              <span class="track-title" id="track-title"></span>
+            </button>
+          </div>
         </section>
       </div>
 
-      <section class="deck-panel" id="deck-panel" aria-label="Управление плеером" inert>
-        <div class="track" aria-live="polite" aria-atomic="true">
-          <button
-            id="track-details"
-            class="track-details shortcut"
-            type="button"
-            aria-haspopup="dialog"
-            aria-controls="clip-details"
-            aria-keyshortcuts="I"
-            data-tooltip="О клипе · I"
-            hidden
-          >
-            <span class="track-artist" id="track-artist"></span>
-            <span class="track-title" id="track-title"></span>
-          </button>
-        </div>
-        <div class="transport" role="group" aria-label="Воспроизведение">
-          <button
-            id="previous"
-            class="control shortcut"
-            type="button"
-            aria-label="Предыдущий клип"
-            aria-keyshortcuts="ArrowLeft"
-            data-tooltip="Предыдущий клип · ←"
-            disabled
-          >
-            <span class="symbol previous" aria-hidden="true"></span>
-          </button>
-          <button
-            id="toggle"
-            class="control shortcut transport-play"
-            type="button"
-            aria-label="Воспроизвести"
-            aria-keyshortcuts="Space"
-            data-tooltip="Воспроизвести · Пробел"
-            disabled
-          >
-            <span class="symbol play" id="toggle-icon" aria-hidden="true"></span>
-          </button>
-          <button
-            id="next"
-            class="control shortcut"
-            type="button"
-            aria-label="Следующий клип"
-            aria-keyshortcuts="ArrowRight"
-            data-tooltip="Следующий клип · →"
-            disabled
-          >
-            <span class="symbol next" aria-hidden="true"></span>
-          </button>
-        </div>
-        <div class="reactions" role="group" aria-label="Оценка клипа">
+      <section class="deck-panel" id="deck-panel" aria-label="Управление плеером">
+        <div class="transport">
           <button
             id="dislike"
             class="control shortcut reaction"
@@ -121,6 +75,39 @@
             disabled
           >
             <span class="symbol dislike" aria-hidden="true"></span>
+          </button>
+          <button
+            id="previous"
+            class="control shortcut transport-skip"
+            type="button"
+            aria-label="Предыдущий клип"
+            aria-keyshortcuts="ArrowLeft"
+            data-tooltip="Предыдущий клип · ←"
+            disabled
+          >
+            <span class="symbol previous" aria-hidden="true"></span>
+          </button>
+          <button
+            id="toggle"
+            class="control shortcut transport-play accent-button"
+            type="button"
+            aria-label="Воспроизвести"
+            aria-keyshortcuts="Space"
+            data-tooltip="Воспроизвести · Пробел"
+            disabled
+          >
+            <span class="symbol play" id="toggle-icon" aria-hidden="true"></span>
+          </button>
+          <button
+            id="next"
+            class="control shortcut transport-skip"
+            type="button"
+            aria-label="Следующий клип"
+            aria-keyshortcuts="ArrowRight"
+            data-tooltip="Следующий клип · →"
+            disabled
+          >
+            <span class="symbol next" aria-hidden="true"></span>
           </button>
           <button
             id="like"
@@ -163,11 +150,18 @@
       </div>
       <p id="account-description">Сохраняйте свои оценки и продолжайте на другом устройстве.</p>
       <form class="account-form" id="account-form">
-        <label for="login">Имя пользователя</label>
-        <input id="login" name="login" autocomplete="username" required maxlength="24" autofocus />
-        <small id="login-hint" hidden
-          >От 3 до 24 латинских букв, цифр или знаков подчёркивания.</small
-        >
+        <label for="login">Email</label>
+        <input
+          id="login"
+          name="login"
+          inputmode="email"
+          autocomplete="username"
+          spellcheck="false"
+          autocapitalize="none"
+          maxlength="254"
+          required
+          autofocus
+        />
         <label for="password">Пароль</label>
         <input
           id="password"
@@ -181,7 +175,7 @@
           >От 12 символов. Используйте пароль, который сможете сохранить.</small
         >
         <p class="message form-error" id="form-message" role="alert"></p>
-        <button class="submit" id="account-submit" type="submit">Войти</button>
+        <button class="submit accent-button" id="account-submit" type="submit">Войти</button>
         <button class="text-button mode-button" id="account-mode" type="button">
           Создать аккаунт
         </button>

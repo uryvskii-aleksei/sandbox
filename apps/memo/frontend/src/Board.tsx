@@ -5,6 +5,7 @@ import { useWorkspaceClient } from './WorkspaceClient';
 import { BoardContextMenu } from './BoardContextMenu';
 import type { BoardMenuItem } from './BoardContextMenu';
 import { MarkLayer, useCanvasMarks } from './CanvasMarks';
+import type { StartShapeDrag } from './CanvasMarks';
 import { nearbyControls } from './canvasControls';
 import { CardTitleEditor } from './CardTitleEditor';
 import { linkPort, routeBoardLinks, routeConnection } from './connectionRoutes';
@@ -101,6 +102,10 @@ interface Drag {
   moved: boolean;
 }
 const emptySelection: BoardSelection = { cards: [], marks: [] };
+const shapeDragId = (owner: Element | null) =>
+  owner?.matches('g:is([data-kind="square"], [data-kind="circle"])')
+    ? owner.getAttribute('data-menu-mark')
+    : null;
 const nativeContextTargets =
   'input,textarea,select,[contenteditable],.mark-error,.zoom-controls,.connection-control,.link-hit';
 type MenuTarget = { card: Card } | { mark: BoardMark } | null;
@@ -275,6 +280,7 @@ export function Board({
     sidebarWidth: number;
   } | null>(null);
   const drag = useRef<Drag | null>(null);
+  const startShapeDrag = useRef<StartShapeDrag>(null);
   const nearbyControlOwner = useRef<Element | null>(null);
   const mousePosition = useRef<MenuPosition | null>(null);
   const handledRightPress = useRef(false);
@@ -983,8 +989,8 @@ export function Board({
       );
     return { x: limit(x, 'x'), y: limit(y, 'y') };
   };
-  const showNearbyControls = (owner: Element | null, cardDragArea = false) => {
-    root.current?.toggleAttribute('data-card-drag-area', cardDragArea);
+  const showNearbyControls = (owner: Element | null, dragArea = false) => {
+    root.current?.toggleAttribute('data-element-drag-area', dragArea);
     if (nearbyControlOwner.current !== owner) {
       nearbyControlOwner.current?.removeAttribute('data-controls-nearby');
       owner?.setAttribute('data-controls-nearby', '');
@@ -1013,7 +1019,10 @@ export function Board({
     const owner = controlOwnerAt(target, position);
     showNearbyControls(
       owner,
-      !busy && target === root.current && owner?.hasAttribute('data-card-id') === true,
+      !busy &&
+        target === root.current &&
+        (owner?.hasAttribute('data-card-id') === true ||
+          (!marks.locked && shapeDragId(owner) !== null)),
     );
   };
   useLayoutEffect(() => {
@@ -1439,12 +1448,26 @@ export function Board({
           cancelLink();
           return;
         }
-        const cardId =
+        const owner =
           event.button === 0 &&
           event.pointerType === 'mouse' &&
           event.target === event.currentTarget
-            ? controlOwnerAt(event.target, event)?.getAttribute('data-card-id')
+            ? controlOwnerAt(event.target, event)
             : null;
+        const markId = shapeDragId(owner);
+        if (markId !== null && !marks.locked) {
+          const id = Number(markId);
+          if (group.marks.includes(id)) {
+            start(event, null, false, true);
+            return;
+          }
+          if (startShapeDrag.current?.(event, id)) {
+            setGroup(emptySelection);
+            setSelectedId(null);
+            return;
+          }
+        }
+        const cardId = owner?.getAttribute('data-card-id');
         start(event, cardId ? (visible.find((card) => card.id === Number(cardId)) ?? null) : null);
       }}
       onPointerMove={move}
@@ -1521,6 +1544,7 @@ export function Board({
           busy={busy || source !== null}
           group={highlightedGroup.marks}
           offset={groupOffset}
+          shapeDragRef={startShapeDrag}
         />
         <svg className="connections" width="1" height="1" aria-hidden="true">
           {routedLinks.map(({ link, key, d, start, end }) => {

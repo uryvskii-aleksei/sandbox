@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type {
   CSSProperties,
   KeyboardEvent,
   PointerEvent as ReactPointerEvent,
   ReactNode,
+  Ref,
   SVGAttributes,
 } from 'react';
 import { useWorkspaceClient } from './WorkspaceClient';
@@ -12,6 +13,7 @@ import type { BoardMark, BoardMarkUpdate, Card, NewBoardMark, Sketch } from './t
 import { IconButton } from './ui';
 
 type Point = Card['coordinates'];
+export type StartShapeDrag = (event: ReactPointerEvent<HTMLElement>, id: number) => boolean;
 const captionGap = 8;
 const shapeCaptionAnchor = ({ at, end }: Sketch): Point => ({
   x: (at.x + end.x) / 2,
@@ -379,23 +381,21 @@ export function MarkLayer({
   busy,
   group,
   offset,
+  shapeDragRef,
 }: {
   marks: Marks;
   scale: number;
   busy: boolean;
   group: number[];
   offset: Point | null;
+  shapeDragRef: Ref<StartShapeDrag>;
 }) {
   const gesture = useRef<Gesture | null>(null);
   const captionEditor = useRef<HTMLFormElement>(null);
   const [moving, setMoving] = useState<BoardMark | null>(null);
   useEffect(() => () => gesture.current?.listeners.abort(), []);
-  const start = (
-    event: ReactPointerEvent<SVGElement | HTMLButtonElement>,
-    mark: BoardMark,
-    handle: Handle,
-  ) => {
-    if (busy || marks.locked || marks.tool || gesture.current || event.button !== 0) return;
+  const start = (event: ReactPointerEvent<Element>, mark: BoardMark, handle: Handle) => {
+    if (busy || marks.locked || marks.tool || gesture.current || event.button !== 0) return false;
     event.stopPropagation();
     const target = event.currentTarget;
     const listeners = new AbortController();
@@ -419,7 +419,14 @@ export function MarkLayer({
     window.addEventListener('pointerup', (event) => finish(event), options);
     window.addEventListener('pointercancel', (event) => finish(event, true), options);
     window.addEventListener('blur', () => finish(null), { signal: listeners.signal });
+    return true;
   };
+  useImperativeHandle(shapeDragRef, () => (event, id) => {
+    const shape = marks.items.find(
+      (mark) => mark.id === id && (mark.kind === 'circle' || mark.kind === 'square'),
+    );
+    return shape ? start(event, shape, 'body') : false;
+  });
   const displacement = (event: PointerEvent, current: Gesture) => ({
     x: event.clientX - current.origin.x,
     y: event.clientY - current.origin.y,

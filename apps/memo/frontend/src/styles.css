@@ -344,12 +344,6 @@ button {
   letter-spacing: -0.6px;
   margin-bottom: 38px;
 }
-.nav-section {
-  font-size: 9px;
-  letter-spacing: 1.6px;
-  color: var(--muted);
-  margin: 24px 10px 14px;
-}
 .sidebar nav {
   overflow: auto;
 }
@@ -1137,11 +1131,6 @@ audio {
   .brand {
     margin-bottom: 12px;
   }
-  .sidebar .nav-section,
-  .sidebar nav,
-  .sidebar > .nav-item {
-    display: none;
-  }
   .workspace {
     height: calc(100dvh - 115px);
   }
@@ -1185,9 +1174,6 @@ audio {
 }
 .sidebar {
   gap: 0;
-}
-.main-navigation {
-  flex-shrink: 0;
 }
 .project-navigation {
   min-height: 40px;
@@ -1580,25 +1566,21 @@ kbd {
     margin: 0;
     font-size: 16px;
   }
-  .sidebar .main-navigation {
+  .sidebar .project-navigation {
     display: flex;
     grid-column: 1 / -1;
-    overflow-x: auto;
-    margin-top: 8px;
+    min-width: 0;
     gap: 4px;
   }
-  .sidebar .main-navigation .nav-item {
+  .sidebar .project-navigation .nav-item {
     width: auto;
+    max-width: 100%;
     padding: 10px 12px;
     margin: 0;
     font-size: 11px;
     gap: 6px;
     flex-shrink: 0;
     min-height: 44px;
-  }
-  .sidebar .project-navigation,
-  .sidebar .nav-section {
-    display: none;
   }
   .workspace {
     height: auto;
@@ -2608,7 +2590,6 @@ select {
 }
 .sidebar-collapsed .sidebar-top .brand,
 .sidebar-collapsed .sidebar-label,
-.sidebar-collapsed .nav-section,
 .sidebar-collapsed .nav-item small,
 .sidebar-collapsed .sidebar-email {
   display: none;
@@ -2618,9 +2599,6 @@ select {
 }
 .sidebar-collapsed .sidebar-account > .icon-button {
   margin: 0;
-}
-.sidebar-collapsed .main-navigation {
-  margin-block: 12px;
 }
 .sidebar-collapsed .nav-item {
   min-height: 36px;
@@ -2775,7 +2753,7 @@ select {
     grid-column: 1 / -1;
     grid-row: 2;
   }
-  .sidebar-collapsed .sidebar-new-project .sidebar-label {
+  .sidebar-collapsed :is(.sidebar-new-project, .project-navigation) .sidebar-label {
     display: inline;
   }
   .sidebar-top {
@@ -2798,9 +2776,6 @@ select {
   }
   .sidebar-collapsed .sidebar-account {
     flex-direction: row;
-  }
-  .sidebar-collapsed .main-navigation {
-    margin-block: 6px 0;
   }
   .panel-divider-left {
     display: none;

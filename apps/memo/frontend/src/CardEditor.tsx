@@ -361,7 +361,6 @@ export function CardEditor({
               )}
               <IconButton
                 id="close-editor"
-                className="record-end-action"
                 icon="close"
                 label="Закрыть редактор"
                 disabled={working || status === 'saving'}
@@ -529,7 +528,7 @@ export function CardEditor({
                       )}
                       {text !== null && (
                         <IconButton
-                          className="record-end-action record-block-delete danger"
+                          className="record-block-delete danger"
                           icon="trash"
                           label={`Удалить текстовый блок ${index + 1}`}
                           disabled={!canEdit || status === 'saving'}

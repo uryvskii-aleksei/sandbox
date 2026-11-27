@@ -237,6 +237,7 @@ export function App() {
   const workspaceApi = guestMode ? guest.client : api;
   const entryRoute = useRef(currentRoute());
   const [authOpen, setAuthOpen] = useState(false);
+  const guestAuthButton = useRef<HTMLButtonElement>(null);
   const [authError, setAuthError] = useState('');
   const [transfer, setTransfer] = useState<PendingTransfer | null>(null);
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -329,9 +330,7 @@ export function App() {
     const enterGuest = () => {
       setRoute(guestRoute);
       setSearchOpen(false);
-      if (entryRoute.current.view === 'project' || entryRoute.current.view === 'record') {
-        setAuthOpen(true);
-      }
+      setAuthOpen(true);
     };
     void api
       .session()
@@ -620,6 +619,10 @@ export function App() {
     setAccount(signedIn);
     history.replaceState(null, '', urlFor(next));
     setRoute(next);
+  };
+  const dismissGuestAuth = () => {
+    setAuthOpen(false);
+    requestAnimationFrame(() => guestAuthButton.current?.focus({ preventScroll: true }));
   };
   const importWorkspace = async (pending: PendingTransfer) => {
     const project = await api.importGuest(pending.snapshot, pending.requestId);
@@ -1048,6 +1051,7 @@ export function App() {
           <div className="sidebar-account">
             {guestMode ? (
               <Button
+                ref={guestAuthButton}
                 className="sidebar-auth-button"
                 variant="primary"
                 icon="login"
@@ -1541,7 +1545,7 @@ export function App() {
           busy={busy}
           transferring={transfer !== null}
           error={authError}
-          dismiss={() => setAuthOpen(false)}
+          dismiss={dismissGuestAuth}
           authenticate={authenticate}
           retry={() => {
             if (transfer) runAuth(() => importWorkspace(transfer));

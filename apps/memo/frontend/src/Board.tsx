@@ -611,7 +611,7 @@ export function Board({
     if (!board || busy || trashCandidate || trashGroup) return false;
     if (
       element.closest(
-        'input,textarea,select,[contenteditable],.board-tools,.mark-error,.zoom-controls,.connection-control,.link-hit',
+        'input,textarea,select,[contenteditable],.mark-error,.zoom-controls,.connection-control,.link-hit',
       )
     )
       return false;
@@ -1220,6 +1220,15 @@ export function Board({
           blocks,
         ))
       : null;
+  const linkNotice = sourceCard
+    ? target !== null
+      ? validTarget(sourceCard.id, target)
+        ? 'Отпустите, чтобы связать'
+        : 'Недопустимая связь'
+      : reconnecting
+        ? 'Выберите карточку для нового конца связи'
+        : `Начало связи: ${sourceCard.name}`
+    : null;
   const highlightedGroup = marquee?.selection ?? group;
   const worldStyle: CSSProperties & { '--board-scale': number } = {
     transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`,
@@ -1323,7 +1332,18 @@ export function Board({
           start(event, null, true);
         }
       }}
-      onPointerDown={(event) => start(event, null)}
+      onPointerDown={(event) => {
+        if (
+          source !== null &&
+          !linking.current &&
+          event.button === 0 &&
+          event.target === event.currentTarget
+        ) {
+          cancelLink();
+          return;
+        }
+        start(event, null);
+      }}
       onPointerMove={move}
       onPointerUp={(event) => void end(event)}
       onPointerCancel={(event) => void end(event, true)}
@@ -1348,13 +1368,6 @@ export function Board({
             height: marquee.rect.height,
           }}
         />
-      )}
-      {source !== null && (
-        <div className="board-tools" onPointerDown={(event) => event.stopPropagation()}>
-          <button className="secondary" onClick={cancelLink}>
-            Отменить связь
-          </button>
-        </div>
       )}
       {(notifications || moveError) && (
         <div className="memo-toast-stack" onPointerDown={(event) => event.stopPropagation()}>
@@ -1393,17 +1406,6 @@ export function Board({
             Повторить
           </button>
         </div>
-      )}
-      {sourceCard && (
-        <p className="board-hint has-tools" role="status">
-          {target !== null
-            ? validTarget(sourceCard.id, target)
-              ? 'Отпустите, чтобы связать'
-              : 'Недопустимая связь'
-            : reconnecting
-              ? 'Выберите карточку для нового конца связи'
-              : `Связь от «${sourceCard.name}»`}
-        </p>
       )}
       <div className="board-world" style={worldStyle}>
         <MarkLayer
@@ -1682,9 +1684,10 @@ export function Board({
         </button>
       </div>
       <span className="sr-only" role="status">
-        {group.cards.length || group.marks.length
-          ? `Выделено элементов: ${group.cards.length + group.marks.length}`
-          : notice}
+        {linkNotice ??
+          (group.cards.length || group.marks.length
+            ? `Выделено элементов: ${group.cards.length + group.marks.length}`
+            : notice)}
       </span>
       {trashCandidate && (
         <TrashDialog

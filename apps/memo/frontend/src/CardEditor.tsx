@@ -313,30 +313,35 @@ export function CardEditor({
           }}
         >
           <header className="editor-header">
-            <div>
+            <div className="editor-heading-content">
               {titleDraft !== null ? (
-                <textarea
-                  autoFocus
-                  rows={Math.min(4, titleDraft.split('\n').length)}
-                  className="editor-title"
-                  aria-label={card.kind === 'folder' ? 'Название папки' : 'Название записи'}
-                  maxLength={128}
-                  value={titleDraft}
-                  disabled={!canEdit}
-                  onFocus={(event) => event.currentTarget.select()}
-                  onChange={(event) => setTitleDraft(event.target.value)}
-                  onBlur={commitTitle}
-                  onKeyDown={(event) => {
-                    if (event.nativeEvent.isComposing) return;
-                    if (event.key === 'Enter' && !event.shiftKey) {
-                      event.preventDefault();
-                      commitTitle();
-                    } else if (event.key === 'Escape') {
-                      event.preventDefault();
-                      setTitleDraft(null);
-                    }
-                  }}
-                />
+                <div className="editor-title-draft">
+                  <span className="editor-title-mirror" aria-hidden="true">
+                    {titleDraft + '\u200b'}
+                  </span>
+                  <textarea
+                    autoFocus
+                    rows={1}
+                    className="editor-title"
+                    aria-label={card.kind === 'folder' ? 'Название папки' : 'Название записи'}
+                    maxLength={128}
+                    value={titleDraft}
+                    disabled={!canEdit}
+                    onFocus={(event) => event.currentTarget.select()}
+                    onChange={(event) => setTitleDraft(event.target.value)}
+                    onBlur={commitTitle}
+                    onKeyDown={(event) => {
+                      if (event.nativeEvent.isComposing) return;
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        commitTitle();
+                      } else if (event.key === 'Escape') {
+                        event.preventDefault();
+                        setTitleDraft(null);
+                      }
+                    }}
+                  />
+                </div>
               ) : (
                 <h1 className="editor-heading">
                   <button

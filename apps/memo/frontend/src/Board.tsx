@@ -37,6 +37,7 @@ interface Props {
   storageKey: string;
   focusId: number | null;
   editingCardId: number | null;
+  sidebarWidth: number;
   clipboard: BoardClipboard | null;
   copy: (item: BoardClipboard) => void;
   pasteCard: (source: number, at: Card['coordinates']) => void;
@@ -198,6 +199,7 @@ export function Board({
   storageKey,
   focusId,
   editingCardId,
+  sidebarWidth,
   clipboard,
   copy,
   pasteCard,
@@ -249,6 +251,7 @@ export function Board({
     moving: 'source' | 'target';
   } | null>(null);
   const [selectedId, setSelectedId] = useState(focusId);
+  const [dismissedCardActions, setDismissedCardActions] = useState<number | null>(null);
   const [titleCardId, setTitleCardId] = useState<number | null>(null);
   const [hoveredLink, setHoveredLink] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
@@ -260,13 +263,18 @@ export function Board({
     | null
   >(null);
   const root = useRef<HTMLElement>(null);
-  const viewport = useRef<{ width: number; height: number; editingCardId: number | null } | null>(
-    null,
-  );
+  const viewport = useRef<{
+    width: number;
+    height: number;
+    editingCardId: number | null;
+    sidebarWidth: number;
+  } | null>(null);
   const drag = useRef<Drag | null>(null);
   // Счётчик кликов учитываем только после отпускания мыши без перетаскивания.
   const mouseClick = useRef<{ id: number; title: boolean } | null>(null);
   const previousBodyClick = useRef<number | null>(null);
+  const centerAfterClick = useRef(0);
+  const lastCenteredFocus = useRef<number | null>(null);
   const modifierSelectionHandled = useRef(false);
   const markPointer = useRef<number | null>(null);
   const resizing = useRef<ResizeGesture | null>(null);
@@ -290,6 +298,7 @@ export function Board({
   };
   const selectCard = (card: Card) => {
     highlightCard(card.id);
+    centerCard(card);
     if (card.kind === 'folder') enter(card);
     else open(card);
   };
@@ -335,6 +344,21 @@ export function Board({
   };
   const size = (card: Card) =>
     resizePreview?.id === card.id ? resizePreview.size : displayedSize(card);
+  const centerCard = (card: Card) => {
+    const board = root.current;
+    if (!board) return;
+    const { x, y } = point(card);
+    const { width, height } = size(card);
+    const element = board.querySelector<HTMLElement>(`[data-card-id="${card.id}"]`);
+    const cx = x + width / 2;
+    const cy = y + (element?.offsetHeight ?? height) / 2;
+    setCamera((current) => ({
+      ...current,
+      x: board.clientWidth / 2 - cx * current.scale,
+      y: board.clientHeight / 2 - cy * current.scale,
+    }));
+  };
+  useEffect(() => () => window.clearTimeout(centerAfterClick.current), []);
   const neededReferences = useMemo(() => {
     const localIds = new Set(cards.map((card) => card.id));
     const linked = links
@@ -455,33 +479,18 @@ export function Board({
       zoom(defaultScale);
     // Полотно монтируется отдельно для каждого проекта.
   }, []);
-  useEffect(() => {
-    if (focusId !== null) {
-      const card = allCards.find((item) => item.id === focusId);
-      const board = root.current;
-      if (card && board) {
-        setSelectedId(card.id);
-        setCamera((current) => {
-          const { x, y } = card.coordinates;
-          const { width, height } = cardDimensions(card);
-          const left = x * current.scale + current.x;
-          const top = y * current.scale + current.y;
-          if (
-            left >= 16 &&
-            top >= 16 &&
-            left + width * current.scale <= board.clientWidth - 16 &&
-            top + height * current.scale <= board.clientHeight - 16
-          )
-            return current;
-          return {
-            ...current,
-            x: board.clientWidth / 2 - (x + width / 2) * current.scale,
-            y: board.clientHeight / 2 - (y + height / 2) * current.scale,
-          };
-        });
-      }
+  useLayoutEffect(() => {
+    if (focusId === null) {
+      lastCenteredFocus.current = null;
+      return;
     }
-  }, [focusId]);
+    if (lastCenteredFocus.current === focusId) return;
+    const card = allCards.find((item) => item.id === focusId);
+    if (!card) return;
+    lastCenteredFocus.current = focusId;
+    setSelectedId(card.id);
+    centerCard(card);
+  }, [allCards, focusId]);
   useLayoutEffect(() => {
     const board = root.current;
     if (!board) return;
@@ -489,9 +498,13 @@ export function Board({
       const width = board.clientWidth;
       const height = board.clientHeight;
       const before = viewport.current;
-      viewport.current = { width, height, editingCardId };
+      viewport.current = { width, height, editingCardId, sidebarWidth };
       if (!before?.width || !before.height || (before.width === width && before.height === height))
         return;
+      if (before.sidebarWidth !== sidebarWidth && before.editingCardId === editingCardId) {
+        window.clearTimeout(centerAfterClick.current);
+        return;
+      }
       const anchor = allCards.find((card) => card.id === (editingCardId ?? before.editingCardId));
       setCamera((current) => {
         if (anchor) {
@@ -526,12 +539,13 @@ export function Board({
     const observer = new ResizeObserver(resizeViewport);
     observer.observe(board);
     return () => observer.disconnect();
-  }, [allCards, autoHeights, cards, editingCardId, selectedId]);
+  }, [allCards, autoHeights, cards, editingCardId, selectedId, sidebarWidth]);
   useEffect(() => {
     const element = root.current;
     if (!element) return;
     const wheel = (event: WheelEvent) => {
       if (busy) return;
+      window.clearTimeout(centerAfterClick.current);
       event.preventDefault();
       setCamera((current) => {
         if (!event.ctrlKey && !event.metaKey)
@@ -637,9 +651,8 @@ export function Board({
           icon: 'pencil',
           action: () => {
             cancelLink();
-            marks.cancel();
-            setGroup(emptySelection);
-            setSelectedId(card.id);
+            highlightCard(card.id);
+            centerCard(card);
             open(card, true);
           },
         },
@@ -794,8 +807,23 @@ export function Board({
     }
     setMoveError('');
     const selection = moveGroup || (card && group.cards.includes(card.id)) ? group : null;
-    const selecting = !card && !selection && !pan && event.pointerType !== 'touch';
-    if (!card) event.preventDefault();
+    const selecting =
+      !card &&
+      !selection &&
+      !pan &&
+      (event.pointerType === 'mouse' ? event.shiftKey : event.pointerType !== 'touch');
+    if (!card) {
+      const input = document.activeElement;
+      if (
+        !pan &&
+        event.target === event.currentTarget &&
+        input instanceof HTMLTextAreaElement &&
+        input.classList.contains('card-title-input')
+      ) {
+        input.blur();
+      }
+      event.preventDefault();
+    }
     if (selecting) {
       setSelectedId(null);
       setGroup(emptySelection);
@@ -1033,7 +1061,13 @@ export function Board({
       if (press && press.pointer !== event.pointerId) return;
       if (press && !press.moved) {
         cancelLink();
-        if (!cancelled && press.child) usePlus(press.child);
+        if (!cancelled && press.child) {
+          if (event.pointerType === 'mouse') {
+            setDismissedCardActions(press.child.id);
+            if (linkFocus.current instanceof HTMLButtonElement) linkFocus.current.blur();
+          }
+          usePlus(press.child);
+        }
         return;
       }
       const element = document
@@ -1124,6 +1158,7 @@ export function Board({
   };
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
+      window.clearTimeout(centerAfterClick.current);
       if (
         busy ||
         keyboardDisabled ||
@@ -1173,6 +1208,7 @@ export function Board({
       } else if (!event.repeat && !event.shiftKey && card && !marks.tool && !marks.draft) {
         if (event.code === 'KeyE') {
           event.preventDefault();
+          centerCard(card);
           open(card, true);
         } else if (event.code === 'KeyL') {
           event.preventDefault();
@@ -1297,6 +1333,7 @@ export function Board({
           event.preventDefault();
       }}
       onPointerDownCapture={(event) => {
+        window.clearTimeout(centerAfterClick.current);
         mouseClick.current = null;
         modifierSelectionHandled.current = false;
         if (
@@ -1483,10 +1520,15 @@ export function Board({
               key={card.id}
               ref={observeCard}
               data-card-id={card.id}
+              data-card-kind={card.kind}
+              data-actions-dismissed={dismissedCardActions === card.id || undefined}
               data-auto-height={autoHeight || undefined}
               className={`mind-card ${local ? '' : 'reference-card'} ${connected ? (validTarget(source ?? card.id, card.id) ? 'valid-target' : 'invalid-target') : ''} ${grouped ? 'grouped-card' : selection === card.id ? 'focused-card' : neighbors.has(card.id) ? 'related-card' : ''} ${dropFolder?.id === card.id ? (dropFolder.allowed ? 'folder-drop-target' : 'folder-drop-rejected') : ''} ${temporary[card.id] ? 'dragging-card' : ''}`}
               style={style}
               onPointerDown={(event) => start(event, card)}
+              onPointerLeave={() => {
+                if (dismissedCardActions === card.id) setDismissedCardActions(null);
+              }}
               onClick={(event) => {
                 const click = mouseClick.current;
                 if (!event.detail || click?.id !== card.id) return;
@@ -1497,7 +1539,11 @@ export function Board({
                   const doubleClick = event.detail === 2 && previousBodyClick.current === card.id;
                   previousBodyClick.current = card.id;
                   if (doubleClick) selectCard(card);
-                  else if (!grouped) highlightCard(card.id);
+                  else if (!grouped) {
+                    highlightCard(card.id);
+                    // Карточка остаётся под указателем до второго клика.
+                    centerAfterClick.current = window.setTimeout(() => centerCard(card), 500);
+                  }
                 }
               }}
             >

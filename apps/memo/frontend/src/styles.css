@@ -160,6 +160,7 @@ button {
   background: var(--accent);
   color: #fff;
   font-size: 16px;
+  font-style: italic;
   font-weight: 650;
   letter-spacing: -0.6px;
   white-space: nowrap;
@@ -172,6 +173,7 @@ button {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  min-height: min(700px, calc(100dvh - 34px));
 }
 .guest-auth-close {
   position: absolute;
@@ -416,6 +418,8 @@ button {
 }
 .sidebar-account > .sidebar-auth-button {
   width: 100%;
+}
+.login-button {
   min-height: var(--footer-control-height);
   padding: 8px 10px;
   font-size: 12px;
@@ -714,6 +718,9 @@ button {
 }
 .mind-card.invalid-target {
   outline: 4px solid #bb465e;
+}
+.mind-card[data-card-kind='folder'] {
+  border-style: dashed;
 }
 .mind-card:is(.focused-card, .grouped-card) {
   --card-side-border: var(--card-top-border);
@@ -2168,7 +2175,9 @@ kbd {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .mind-card:not(:hover):not(:focus-within) > .card-actions > div {
+  .mind-card:is(:not(:hover), [data-actions-dismissed]):not(:has(:focus-visible))
+    > .card-actions
+    > div {
     opacity: 0;
     pointer-events: none;
   }
@@ -2290,9 +2299,6 @@ select {
   border-top: 1px solid var(--accent);
   background: linear-gradient(#10274f26, transparent);
   pointer-events: none;
-}
-.record-sections > .add-button {
-  justify-self: center;
 }
 .record-block + .add-button {
   margin-block-start: calc(2 * var(--workspace-row-inset));
@@ -2546,20 +2552,14 @@ select {
     gap: 2px;
     padding-inline: 2px;
   }
-  .sidebar-collapsed .sidebar-top .brand-mark,
   .sidebar-collapsed .sidebar-toggle {
     width: 24px;
     height: 24px;
     min-width: 0;
     min-height: 0;
   }
-  .sidebar-collapsed .sidebar-top .brand-mark {
-    width: 31px;
-    padding-inline: 0;
-    font-size: 10px;
-    letter-spacing: -0.2px;
-  }
 }
+.sidebar-collapsed .sidebar-top .brand,
 .sidebar-collapsed .sidebar-label,
 .sidebar-collapsed .nav-section,
 .sidebar-collapsed .nav-item small,
@@ -2611,6 +2611,7 @@ select {
   height: 100%;
 }
 .record-dock .editor-header {
+  --editor-title-line-height: 27px;
   position: relative;
   background: white;
   color: var(--accent);
@@ -2622,11 +2623,41 @@ select {
   padding-block: 0;
   padding-inline: var(--panel-header-inset) var(--panel-inset);
 }
-.record-dock .editor-title {
+.record-dock .editor-heading-content {
+  padding-block: calc((var(--workspace-header-height) - 1px - var(--editor-title-line-height)) / 2);
+}
+.record-dock .editor-header .editor-header-actions {
+  align-self: flex-start;
+  align-items: center;
+  height: calc(var(--workspace-header-height) - 1px);
+}
+.record-dock .editor-heading {
+  line-height: var(--editor-title-line-height);
+}
+.editor-title-draft {
+  display: grid;
   color: var(--accent);
   font-size: 23px;
-  padding: 3px 6px;
-  display: block;
+  font-weight: 700;
+  line-height: var(--editor-title-line-height);
+}
+.editor-title-draft > * {
+  grid-area: 1 / 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.editor-title-mirror {
+  visibility: hidden;
+}
+.editor-title-draft .editor-title {
+  height: 100%;
+  border: 0;
+  padding: 0;
+  outline: none;
+  color: inherit;
+  font: inherit;
+  overflow: hidden;
   resize: none;
 }
 .record-dock .save-status {

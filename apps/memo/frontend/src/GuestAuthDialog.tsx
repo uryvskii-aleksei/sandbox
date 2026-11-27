@@ -55,7 +55,7 @@ export function GuestAuthDialog({
             onClick={dismiss}
           />
           <section className="auth-intro">
-            <span className="brand-mark">Memo</span>
+            <span className="brand-mark">memo</span>
             <h2>
               Дайте мыслям
               <br />
@@ -103,8 +103,14 @@ export function GuestAuthDialog({
                   autoComplete={login ? 'current-password' : 'new-password'}
                 />
               </label>
-              <Button type="submit" variant="primary" disabled={busy}>
-                {busy ? 'Подождите…' : login ? 'Войти в пространство' : 'Создать аккаунт'}
+              <Button
+                type="submit"
+                variant="primary"
+                className={login ? 'login-button' : undefined}
+                icon={login ? 'login' : undefined}
+                disabled={busy}
+              >
+                {busy ? 'Подождите…' : login ? 'Войти' : 'Создать аккаунт'}
               </Button>
             </form>
             <Button variant="text" disabled={busy} onClick={changeMode}>

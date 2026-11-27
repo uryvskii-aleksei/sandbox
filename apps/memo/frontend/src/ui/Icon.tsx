@@ -3,6 +3,7 @@ import type { SVGProps } from 'react';
 export type IconName =
   | 'pencil'
   | 'trash'
+  | 'save'
   | 'board'
   | 'list'
   | 'link'
@@ -31,6 +32,7 @@ export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'children' | 'n
 const paths: Record<IconName, string> = {
   pencil: 'm16 4 4 4M4 20l4.5-1 11-11a2.8 2.8 0 0 0-4-4l-11 11L4 20Z',
   trash: 'M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7',
+  save: 'M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12l4 4v12a2 2 0 0 1-2 2ZM7 3v6h10V3M7 21v-8h10v8',
   board: 'M3 3h7v7H3ZM14 3h7v7h-7ZM3 14h7v7H3ZM14 14h7v7h-7Z',
   list: 'M8 5h13M8 12h13M8 19h13M3 5h.01M3 12h.01M3 19h.01',
   link: 'M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2',

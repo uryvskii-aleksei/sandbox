@@ -1041,6 +1041,22 @@ test('capture and autosave deduplicate a lost response, retain trash, search con
     2,
   );
   await a('/projects', 'POST', { name: 'Некорректно', template: 'missing' }, 422);
+  const layout = await a('/projects', 'POST', { name: 'Расстояния между записями' }, 201);
+  const captureNext = () =>
+    a('/capture', 'POST', { project: layout.id, requestId: randomUUID(), text: 'Запись' }, 201);
+  const firstInLayout = await captureNext();
+  const secondInLayout = await captureNext();
+  await captureNext();
+  const nextRow = await captureNext();
+  assert.equal(
+    secondInLayout.coordinates.x - firstInLayout.coordinates.x - firstInLayout.size.width,
+    198,
+  );
+  assert.equal(nextRow.coordinates.x, firstInLayout.coordinates.x);
+  assert.equal(
+    nextRow.coordinates.y - firstInLayout.coordinates.y - firstInLayout.size.height,
+    315,
+  );
   await a(
     '/capture',
     'POST',

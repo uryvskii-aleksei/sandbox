@@ -213,19 +213,21 @@ function moveBoardSelection(int $project, int $owner, array $body): array
 function nextCardPosition(int $projectId, ?int $folder = null): array
 {
     $points = query('SELECT c.x,c.y,c.width,c.height FROM cards c LEFT JOIN card_details d ON d.card_id=c.id WHERE c.project_id=? AND c.folder_id <=> ? AND d.deleted_at IS NULL', [$projectId, $folder])->fetchAll();
-    $columns = (int) floor((100000 - 80) / 320);
-    $rows = (int) floor((100000 - 80) / 280);
+    $columnStep = 386;
+    $rowStep = 385;
+    $columns = (int) floor((100000 - 80) / $columnStep);
+    $rows = (int) floor((100000 - 80) / $rowStep);
     $occupied = [];
     foreach ($points as $point) {
-        $left = max(0, (int) floor(((float) $point['x'] - 320 - 80) / 320) + 1);
-        $right = min($columns, (int) ceil(((float) $point['x'] + $point['width'] + 40 - 80) / 320) - 1);
-        $top = max(0, (int) ceil(((float) $point['y'] - 230 - 80) / 280));
-        $bottom = min($rows, (int) floor(((float) $point['y'] + $point['height'] + 40 - 80) / 280));
+        $left = max(0, (int) floor(((float) $point['x'] - $columnStep - 80) / $columnStep) + 1);
+        $right = min($columns, (int) ceil(((float) $point['x'] + $point['width'] + 60 - 80) / $columnStep) - 1);
+        $top = max(0, (int) ceil(((float) $point['y'] - 310 - 80) / $rowStep));
+        $bottom = min($rows, (int) floor(((float) $point['y'] + $point['height'] + 60 - 80) / $rowStep));
         for ($row = $top; $row <= $bottom; $row++) for ($column = $left; $column <= $right; $column++) $occupied[$row * ($columns + 1) + $column] = true;
     }
     // Заполняем по три колонки, затем следующий блок. Координаты остаются допустимыми.
     for ($band = 0; $band <= $columns; $band += 3) for ($row = 0; $row <= $rows; $row++) for ($column = $band; $column <= min($columns, $band + 2); $column++) {
-        if (!isset($occupied[$row * ($columns + 1) + $column])) return ['x' => 80 + $column * 320, 'y' => 80 + $row * 280];
+        if (!isset($occupied[$row * ($columns + 1) + $column])) return ['x' => 80 + $column * $columnStep, 'y' => 80 + $row * $rowStep];
     }
     fail(422, 'На полотне нет свободного места. Создайте другой проект.');
 }

@@ -2,6 +2,7 @@ import type { Card, CardLink, DocumentNode, FieldGroup } from './types';
 
 export const cardWidth = 188;
 export const cardHeight = 70;
+export const cardColumnStep = cardWidth + 60;
 export const cardDimensions = (card: Card) => card.size ?? { width: cardWidth, height: cardHeight };
 export const clampCardSize = (width: number, height: number) => ({
   width: Math.max(180, Math.min(920, Math.round(width))),
@@ -9,25 +10,31 @@ export const clampCardSize = (width: number, height: number) => ({
 });
 
 export function childPosition(cards: Card[], parent: Card): Card['coordinates'] {
+  const rowStep = cardHeight + 285;
+  const clearance = 30;
   for (let index = 0; index <= cards.length; index++) {
     const point = {
-      x: parent.coordinates.x + (index % 5) * (cardWidth + 40),
-      y: parent.coordinates.y + cardDimensions(parent).height + 90 + Math.floor(index / 5) * 260,
+      x: parent.coordinates.x + (index % 5) * cardColumnStep,
+      y:
+        parent.coordinates.y +
+        cardDimensions(parent).height +
+        135 +
+        Math.floor(index / 5) * rowStep,
     };
     if (
       cards.every(
         (card) =>
-          point.x + cardWidth + 20 <= card.coordinates.x ||
-          point.x >= card.coordinates.x + cardDimensions(card).width + 20 ||
-          point.y + cardHeight + 20 <= card.coordinates.y ||
-          point.y >= card.coordinates.y + cardDimensions(card).height + 20,
+          point.x + cardWidth + clearance <= card.coordinates.x ||
+          point.x >= card.coordinates.x + cardDimensions(card).width + clearance ||
+          point.y + cardHeight + clearance <= card.coordinates.y ||
+          point.y >= card.coordinates.y + cardDimensions(card).height + clearance,
       )
     )
       return point;
   }
   return {
-    x: parent.coordinates.x + cardWidth + 40,
-    y: parent.coordinates.y + (cards.length + 1) * 260,
+    x: parent.coordinates.x + cardColumnStep,
+    y: parent.coordinates.y + (cards.length + 1) * rowStep,
   };
 }
 

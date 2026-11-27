@@ -5,6 +5,7 @@ import { useWorkspaceClient } from './WorkspaceClient';
 import { BoardContextMenu } from './BoardContextMenu';
 import type { BoardMenuItem } from './BoardContextMenu';
 import { MarkLayer, useCanvasMarks } from './CanvasMarks';
+import { nearbyControls } from './canvasControls';
 import { CardTitleEditor } from './CardTitleEditor';
 import { linkPort, routeBoardLinks, routeConnection } from './connectionRoutes';
 import { LinkControl } from './LinkControl';
@@ -87,6 +88,7 @@ type ResizeGesture = {
 };
 interface Drag {
   card: Card | null;
+  rightClickTarget: Element | null;
   title: boolean;
   selecting: boolean;
   selection: BoardSelection | null;
@@ -98,6 +100,8 @@ interface Drag {
   moved: boolean;
 }
 const emptySelection: BoardSelection = { cards: [], marks: [] };
+const nativeContextTargets =
+  'input,textarea,select,[contenteditable],.mark-error,.zoom-controls,.connection-control,.link-hit';
 type MenuTarget = { card: Card } | { mark: BoardMark } | null;
 type MenuPosition = { clientX: number; clientY: number };
 const isAutoHeight = (card: Card) => card.autoHeight ?? cardDimensions(card).height === cardHeight;
@@ -270,6 +274,9 @@ export function Board({
     sidebarWidth: number;
   } | null>(null);
   const drag = useRef<Drag | null>(null);
+  const nearbyControlOwner = useRef<Element | null>(null);
+  const mousePosition = useRef<MenuPosition | null>(null);
+  const handledRightPress = useRef(false);
   // Счётчик кликов учитываем только после отпускания мыши без перетаскивания.
   const mouseClick = useRef<{ id: number; title: boolean } | null>(null);
   const previousBodyClick = useRef<number | null>(null);
@@ -623,12 +630,7 @@ export function Board({
   const showMenu = (element: Element, position: MenuPosition) => {
     const board = root.current;
     if (!board || busy || trashCandidate || trashGroup) return false;
-    if (
-      element.closest(
-        'input,textarea,select,[contenteditable],.mark-error,.zoom-controls,.connection-control,.link-hit',
-      )
-    )
-      return false;
+    if (element.closest(nativeContextTargets)) return false;
     const cardId = Number(element.closest('[data-card-id]')?.getAttribute('data-card-id'));
     const markId = Number(element.closest('[data-menu-mark]')?.getAttribute('data-menu-mark'));
     const card = visible.find((item) => item.id === cardId);
@@ -807,11 +809,7 @@ export function Board({
     }
     setMoveError('');
     const selection = moveGroup || (card && group.cards.includes(card.id)) ? group : null;
-    const selecting =
-      !card &&
-      !selection &&
-      !pan &&
-      (event.pointerType === 'mouse' ? event.shiftKey : event.pointerType !== 'touch');
+    const selecting = !card && !selection && !pan && event.pointerType !== 'touch';
     if (!card) {
       const input = document.activeElement;
       if (
@@ -830,8 +828,12 @@ export function Board({
       marks.cancel();
     }
     const origin = card ? point(card) : { x: camera.x, y: camera.y };
+    const rightClickTarget =
+      pan && event.button === 2 && event.target instanceof Element ? event.target : null;
+    if (rightClickTarget) handledRightPress.current = true;
     drag.current = {
       card,
+      rightClickTarget,
       title: !!card && event.target instanceof Element && !!event.target.closest('.card-title'),
       selecting,
       selection,
@@ -978,7 +980,46 @@ export function Board({
       );
     return { x: limit(x, 'x'), y: limit(y, 'y') };
   };
+  const showNearbyControls = (owner: Element | null) => {
+    if (nearbyControlOwner.current !== owner) {
+      nearbyControlOwner.current?.removeAttribute('data-controls-nearby');
+      owner?.setAttribute('data-controls-nearby', '');
+      nearbyControlOwner.current = owner;
+    }
+    if (
+      dismissedCardActions !== null &&
+      owner?.getAttribute('data-card-id') !== String(dismissedCardActions)
+    ) {
+      setDismissedCardActions(null);
+    }
+  };
+  const updateNearbyControls = (target: EventTarget | null, position: MenuPosition) => {
+    const board = root.current;
+    showNearbyControls(
+      board && !marks.tool && source === null
+        ? nearbyControls(
+            board,
+            target,
+            position.clientX,
+            position.clientY,
+            camera.scale,
+            worldPoint(position),
+          )
+        : null,
+    );
+  };
+  useLayoutEffect(() => {
+    const position = mousePosition.current;
+    if (position && !drag.current) {
+      updateNearbyControls(document.elementFromPoint(position.clientX, position.clientY), position);
+    }
+  }, [camera, marks.tool, source]);
   const move = (event: PointerEvent<HTMLElement>) => {
+    if (event.pointerType === 'mouse' && !event.buttons) {
+      const position = { clientX: event.clientX, clientY: event.clientY };
+      mousePosition.current = position;
+      updateNearbyControls(event.target, position);
+    }
     if (resizing.current) {
       if (event.pointerId === resizing.current.pointer)
         setResizePreview({ id: resizing.current.card.id, ...resized(event, resizing.current) });
@@ -1085,6 +1126,13 @@ export function Board({
     if (!current || current.pointer !== event.pointerId) return;
     drag.current = null;
     setDropFolder(null);
+    const moved =
+      current.moved ||
+      Math.abs(event.clientX - current.x) + Math.abs(event.clientY - current.y) > 5;
+    if (current.rightClickTarget) {
+      if (!cancelled && !moved) showMenu(current.rightClickTarget, event);
+      return;
+    }
     if (current.selecting) {
       setMarquee(null);
       const board = root.current;
@@ -1095,9 +1143,6 @@ export function Board({
     }
     try {
       if (cancelled) return;
-      const moved =
-        current.moved ||
-        Math.abs(event.clientX - current.x) + Math.abs(event.clientY - current.y) > 5;
       if (!moved) {
         if (current.card) {
           if (event.pointerType === 'mouse')
@@ -1277,6 +1322,11 @@ export function Board({
       aria-label="Полотно проекта"
       tabIndex={0}
       onContextMenu={(event) => {
+        // Браузер может вызвать contextmenu до отпускания кнопки мыши.
+        if (event.button === 2 && handledRightPress.current) {
+          event.preventDefault();
+          return;
+        }
         if (event.ctrlKey && event.target instanceof Element) {
           const item = selectionTarget(event.target);
           if (item) {
@@ -1336,6 +1386,7 @@ export function Board({
         window.clearTimeout(centerAfterClick.current);
         mouseClick.current = null;
         modifierSelectionHandled.current = false;
+        handledRightPress.current = false;
         if (
           event.button === 0 &&
           event.target instanceof Element &&
@@ -1361,9 +1412,10 @@ export function Board({
           }
         }
         if (
-          event.button === 1 &&
           event.target instanceof Element &&
-          event.target.closest('.board') === root.current
+          event.target.closest('.board') === root.current &&
+          (event.button === 1 ||
+            (event.button === 2 && !event.ctrlKey && !event.target.closest(nativeContextTargets)))
         ) {
           event.preventDefault();
           start(event, null, true);
@@ -1382,6 +1434,10 @@ export function Board({
         start(event, null);
       }}
       onPointerMove={move}
+      onPointerLeave={() => {
+        mousePosition.current = null;
+        showNearbyControls(null);
+      }}
       onPointerUp={(event) => void end(event)}
       onPointerCancel={(event) => void end(event, true)}
     >
@@ -1465,6 +1521,7 @@ export function Board({
                   d={d}
                   className={`${appearance} ${reconnecting?.link.source === link.source && reconnecting.link.target === link.target ? 'reconnecting-link' : ''}`}
                 />
+                <path d={d} className="canvas-controls-range" data-link-label={`edge-${key}`} />
                 <path
                   d={d}
                   className="link-hit"
@@ -1526,9 +1583,6 @@ export function Board({
               className={`mind-card ${local ? '' : 'reference-card'} ${connected ? (validTarget(source ?? card.id, card.id) ? 'valid-target' : 'invalid-target') : ''} ${grouped ? 'grouped-card' : selection === card.id ? 'focused-card' : neighbors.has(card.id) ? 'related-card' : ''} ${dropFolder?.id === card.id ? (dropFolder.allowed ? 'folder-drop-target' : 'folder-drop-rejected') : ''} ${temporary[card.id] ? 'dragging-card' : ''}`}
               style={style}
               onPointerDown={(event) => start(event, card)}
-              onPointerLeave={() => {
-                if (dismissedCardActions === card.id) setDismissedCardActions(null);
-              }}
               onClick={(event) => {
                 const click = mouseClick.current;
                 if (!event.detail || click?.id !== card.id) return;

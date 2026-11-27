@@ -591,10 +591,14 @@ button {
   color: var(--muted);
 }
 .board-empty {
+  position: absolute;
+  inset: 0;
+  width: min(390px, calc(100% - 2 * var(--panel-inset)));
+  height: max-content;
+  margin: auto;
   text-align: center;
   color: var(--muted);
-  max-width: 390px;
-  margin: 65px auto;
+  pointer-events: none;
 }
 .board-empty > span {
   font-size: 50px;
@@ -855,7 +859,7 @@ button {
   opacity: 0;
   pointer-events: none;
 }
-.connection-control:hover .connection-actions,
+.connection-control:is(:hover, [data-controls-nearby]) .connection-actions,
 .connection-control:focus-within .connection-actions {
   opacity: 1;
   pointer-events: auto;
@@ -872,11 +876,6 @@ button {
 }
 .connection-label:hover {
   background: #e8eef9;
-}
-.board-empty {
-  position: absolute;
-  inset: 90px 20px auto;
-  pointer-events: none;
 }
 .zoom-controls {
   position: absolute;
@@ -1744,7 +1743,7 @@ kbd {
   stroke-width: 4;
 }
 .connections .dimmed-link,
-.connection-muted:not(.connection-hover):not(:hover):not(:focus-within) {
+.connection-muted:not(.connection-hover, :hover, :focus-within, [data-controls-nearby]) {
   opacity: 0.28;
 }
 .connections .link-hit {
@@ -1753,6 +1752,15 @@ kbd {
   stroke-dasharray: none;
   vector-effect: non-scaling-stroke;
   pointer-events: stroke;
+  animation: none;
+}
+:is(.connections, .mark-lines) .canvas-controls-range {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 76px;
+  stroke-linecap: round;
+  stroke-dasharray: none;
+  pointer-events: none;
   animation: none;
 }
 .connection-empty {
@@ -1947,7 +1955,7 @@ kbd {
   visibility: hidden;
 }
 .mark-lines
-  g:is(:hover, :has(:focus-visible))
+  g:is(:hover, [data-controls-nearby], :has(:focus-visible))
   .shape-caption
   :is(.shape-caption-pencil, .shape-caption-trash) {
   visibility: visible;
@@ -1998,7 +2006,7 @@ kbd {
 .mark-lines g:has(.mark-hit:focus-visible) > .mark-stroke {
   stroke-dasharray: 5 4;
 }
-.mark-lines g:hover .mark-endpoint,
+.mark-lines g:is(:hover, [data-controls-nearby]) .mark-endpoint,
 .mark-lines g:focus-within .mark-endpoint,
 .mark-lines g[data-active] .mark-endpoint {
   visibility: visible;
@@ -2171,7 +2179,9 @@ kbd {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .mind-card:is(:not(:hover), [data-actions-dismissed]):not(:has(:focus-visible))
+  .mind-card:is(:not(:hover, [data-controls-nearby]), [data-actions-dismissed]):not(
+      :has(:focus-visible)
+    )
     > .card-actions
     > div {
     opacity: 0;
@@ -2182,9 +2192,9 @@ kbd {
   visibility: hidden;
   pointer-events: none;
 }
-.mark-lines g:hover > .mark-trash,
+.mark-lines g:is(:hover, [data-controls-nearby]) > .mark-trash,
 .mark-lines g:focus-within > .mark-trash,
-.canvas-label-item:hover > .mark-trash,
+.canvas-label-item:is(:hover, [data-controls-nearby]) > .mark-trash,
 .canvas-label-item:focus-within > .mark-trash {
   visibility: visible;
   pointer-events: auto;
@@ -2502,7 +2512,7 @@ select {
 .canvas-label-resize.top-right {
   cursor: nesw-resize;
 }
-.canvas-label-item:hover .canvas-label-resize,
+.canvas-label-item:is(:hover, [data-controls-nearby]) .canvas-label-resize,
 .canvas-label-item:focus-within .canvas-label-resize {
   opacity: 1;
 }

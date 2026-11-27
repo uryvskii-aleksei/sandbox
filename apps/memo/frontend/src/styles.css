@@ -187,13 +187,14 @@ button {
   display: flex;
 }
 .sidebar {
+  --sidebar-inset: 20px;
   width: 248px;
   flex-shrink: 0;
   background: #fff;
   color: var(--accent);
   border-right: 1px solid var(--accent);
   box-shadow: 2px 0 12px #10274f30;
-  padding: 30px 20px 18px;
+  padding: 0 var(--sidebar-inset) 18px;
   display: flex;
   flex-direction: column;
   height: 100dvh;
@@ -595,6 +596,7 @@ button {
   z-index: 1;
   display: flex;
   --card-padding: 18px;
+  --card-top-border: 4px;
   align-items: center;
   min-height: 70px;
   max-height: 760px;
@@ -602,7 +604,7 @@ button {
   background: white;
   color: var(--accent);
   border: 1px solid #aebedb;
-  border-top: 4px solid var(--accent);
+  border-top: var(--card-top-border) solid var(--accent);
   border-radius: 10px;
   box-shadow: 0 4px 16px #10274f14;
   cursor: grab;
@@ -700,11 +702,23 @@ button {
 .card-actions {
   position: absolute;
   z-index: 1;
-  top: 100%;
+  inset: 0;
+  pointer-events: none;
+}
+.card-actions > div {
+  position: absolute;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   gap: 4px;
+  pointer-events: auto;
+}
+.card-actions-above {
+  bottom: calc(100% + var(--card-top-border));
+  padding-bottom: 7px;
+}
+.card-actions-below {
+  top: 100%;
   padding-top: 8px;
 }
 .link-output {
@@ -1002,8 +1016,9 @@ audio {
 }
 @media (max-width: 900px) {
   .sidebar {
+    --sidebar-inset: 12px;
     width: 205px;
-    padding: 24px 12px;
+    padding-bottom: 24px;
   }
   .project-toolbar {
     padding: 12px 20px;
@@ -2092,7 +2107,7 @@ kbd {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .mind-card:not(:hover):not(:focus-within) > .card-actions {
+  .mind-card:not(:hover):not(:focus-within) > .card-actions > div {
     opacity: 0;
     pointer-events: none;
   }
@@ -2396,7 +2411,11 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 22px;
+  flex-shrink: 0;
+  min-height: var(--workspace-header-height);
+  margin-inline: calc(-1 * var(--sidebar-inset));
+  padding-inline: var(--sidebar-inset);
+  border-bottom: 1px solid var(--accent);
 }
 .sidebar-top .brand {
   margin: 0;
@@ -2408,11 +2427,25 @@ select {
   display: none;
 }
 .application .sidebar-collapsed {
-  padding-inline: 8px;
+  --sidebar-inset: 8px;
+  padding-inline: var(--sidebar-inset);
 }
-.sidebar-collapsed .sidebar-top {
-  flex-direction: column-reverse;
-  margin-bottom: 16px;
+@media (min-width: 621px) {
+  .sidebar-collapsed .sidebar-top {
+    justify-content: center;
+    gap: 4px;
+    padding-inline: 4px;
+  }
+  .sidebar-collapsed .sidebar-top .brand-mark,
+  .sidebar-collapsed .sidebar-toggle {
+    width: 24px;
+    height: 24px;
+    min-width: 0;
+    min-height: 0;
+  }
+  .sidebar-collapsed .sidebar-top .brand-mark {
+    font-size: 18px;
+  }
 }
 .sidebar-collapsed .sidebar-label,
 .sidebar-collapsed .nav-section,
@@ -2467,7 +2500,7 @@ select {
 .record-dock .editor-header {
   background: white;
   color: var(--accent);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--accent);
   flex: 0 0 auto;
   min-height: var(--workspace-header-height);
   align-items: center;
@@ -2541,11 +2574,10 @@ select {
   .sidebar-top {
     grid-column: 1;
     grid-row: 1;
+    min-height: 0;
     margin: 0;
-  }
-  .sidebar-collapsed .sidebar-top {
-    flex-direction: row;
-    margin: 0;
+    padding: 0;
+    border: 0;
   }
   .sidebar-account {
     grid-column: 2;

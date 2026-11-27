@@ -36,6 +36,7 @@ interface Props {
   keyboardDisabled: boolean;
   storageKey: string;
   focusId: number | null;
+  editingCardId: number | null;
   clipboard: BoardClipboard | null;
   copy: (item: BoardClipboard) => void;
   pasteCard: (source: number, at: Card['coordinates']) => void;
@@ -196,6 +197,7 @@ export function Board({
   keyboardDisabled,
   storageKey,
   focusId,
+  editingCardId,
   clipboard,
   copy,
   pasteCard,
@@ -258,7 +260,9 @@ export function Board({
     | null
   >(null);
   const root = useRef<HTMLElement>(null);
-  const viewport = useRef<{ width: number; height: number } | null>(null);
+  const viewport = useRef<{ width: number; height: number; editingCardId: number | null } | null>(
+    null,
+  );
   const drag = useRef<Drag | null>(null);
   // Счётчик кликов учитываем только после отпускания мыши без перетаскивания.
   const mouseClick = useRef<{ id: number; title: boolean } | null>(null);
@@ -478,16 +482,28 @@ export function Board({
       }
     }
   }, [focusId]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const board = root.current;
     if (!board) return;
-    const observer = new ResizeObserver(() => {
+    const resizeViewport = () => {
       const width = board.clientWidth;
       const height = board.clientHeight;
       const before = viewport.current;
-      viewport.current = { width, height };
-      if (!before || (before.width === width && before.height === height)) return;
+      viewport.current = { width, height, editingCardId };
+      if (!before?.width || !before.height || (before.width === width && before.height === height))
+        return;
+      const anchor = allCards.find((card) => card.id === (editingCardId ?? before.editingCardId));
       setCamera((current) => {
+        if (anchor) {
+          const { width: cardWidth, height: cardHeight } = displayedSize(anchor);
+          const cx = (anchor.coordinates.x + cardWidth / 2) * current.scale + current.x;
+          const cy = (anchor.coordinates.y + cardHeight / 2) * current.scale + current.y;
+          return {
+            ...current,
+            x: current.x + (cx / before.width) * (width - before.width),
+            y: current.y + (cy / before.height) * (height - before.height),
+          };
+        }
         const x = current.x + (width - before.width) / 2;
         const y = current.y + (height - before.height) / 2;
         const card = cards.find((item) => item.id === selectedId);
@@ -505,10 +521,12 @@ export function Board({
           y: y + inset(cy, height, bounds.height),
         };
       });
-    });
+    };
+    resizeViewport();
+    const observer = new ResizeObserver(resizeViewport);
     observer.observe(board);
     return () => observer.disconnect();
-  }, [cards, selectedId]);
+  }, [allCards, autoHeights, cards, editingCardId, selectedId]);
   useEffect(() => {
     const element = root.current;
     if (!element) return;
@@ -1580,46 +1598,52 @@ export function Board({
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => event.stopPropagation()}
               >
-                <IconButton
-                  icon="pencil"
-                  iconSize={22.5}
-                  label={`Открыть карточку: ${card.name}`}
-                  disabled={busy || source !== null || !!marks.tool}
-                  onClick={() => selectCard(card)}
-                />
-                <IconButton
-                  className="card-action link-output"
-                  icon={local ? 'plus' : 'board'}
-                  iconSize={27}
-                  label={
-                    local
-                      ? `Добавить потомка к ${card.name}`
-                      : `Открыть исходный проект ${card.name}`
-                  }
-                  tooltip={
-                    local ? 'Клик — добавить потомка. Перетащите, чтобы создать связь.' : undefined
-                  }
-                  disabled={busy}
-                  onPointerDown={(event) => {
-                    if (busy || source !== null || event.button !== 0) return;
-                    marks.cancel();
-                    setGroup(emptySelection);
-                    cancelLink();
-                    setSource(card.id);
-                    captureLink(event, card);
-                  }}
-                  onClick={(event) => {
-                    if (event.detail === 0) usePlus(card);
-                  }}
-                />
-                <IconButton
-                  className="canvas-trash card-trash"
-                  icon="trash"
-                  iconSize={22.5}
-                  label={`Удалить: ${card.name}`}
-                  disabled={busy}
-                  onClick={() => setTrashCandidate(card)}
-                />
+                <div className="card-actions-above">
+                  <IconButton
+                    icon="pencil"
+                    iconSize={22.5}
+                    label={`Открыть карточку: ${card.name}`}
+                    disabled={busy || source !== null || !!marks.tool}
+                    onClick={() => selectCard(card)}
+                  />
+                  <IconButton
+                    className="canvas-trash card-trash"
+                    icon="trash"
+                    iconSize={22.5}
+                    label={`Удалить: ${card.name}`}
+                    disabled={busy}
+                    onClick={() => setTrashCandidate(card)}
+                  />
+                </div>
+                <div className="card-actions-below">
+                  <IconButton
+                    className="card-action link-output"
+                    icon={local ? 'plus' : 'board'}
+                    iconSize={27}
+                    label={
+                      local
+                        ? `Добавить потомка к ${card.name}`
+                        : `Открыть исходный проект ${card.name}`
+                    }
+                    tooltip={
+                      local
+                        ? 'Клик — добавить потомка. Перетащите, чтобы создать связь.'
+                        : undefined
+                    }
+                    disabled={busy}
+                    onPointerDown={(event) => {
+                      if (busy || source !== null || event.button !== 0) return;
+                      marks.cancel();
+                      setGroup(emptySelection);
+                      cancelLink();
+                      setSource(card.id);
+                      captureLink(event, card);
+                    }}
+                    onClick={(event) => {
+                      if (event.detail === 0) usePlus(card);
+                    }}
+                  />
+                </div>
               </div>
             </article>
           );

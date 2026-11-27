@@ -1300,6 +1300,7 @@ export function App() {
                 keyboardDisabled={authOpen || shortcutsOpen || searchOpen}
                 storageKey={`memo:${user.id}:camera:${selected}${folder === null ? '' : `:${folder}`}`}
                 focusId={focusId}
+                editingCardId={editing?.id ?? null}
                 clipboard={boardClipboard}
                 copy={(item) => {
                   pendingPaste.current = null;

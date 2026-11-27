@@ -1521,19 +1521,19 @@ export function Board({
               )}
               <div className="card-tools">
                 <IconButton
+                  icon="pencil"
+                  iconSize={22.5}
+                  label={`Изменить название: ${card.name}`}
+                  disabled={busy || source !== null || !!marks.tool || titleCardId === card.id}
+                  onClick={() => setTitleCardId(card.id)}
+                />
+                <IconButton
                   className="canvas-trash card-trash"
                   icon="trash"
                   iconSize={22.5}
                   label={`Удалить: ${card.name}`}
                   disabled={busy}
                   onClick={() => setTrashCandidate(card)}
-                />
-                <IconButton
-                  icon="pencil"
-                  iconSize={22.5}
-                  label={`Изменить название: ${card.name}`}
-                  disabled={busy || source !== null || !!marks.tool || titleCardId === card.id}
-                  onClick={() => setTitleCardId(card.id)}
                 />
               </div>
               {local &&

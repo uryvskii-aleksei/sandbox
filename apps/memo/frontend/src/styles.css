@@ -644,10 +644,10 @@ button {
   background-image: radial-gradient(#cbd5e6 1px, transparent 1px);
   background-size: 24px 24px;
 }
-.board[data-card-drag-area] {
+.board[data-element-drag-area] {
   cursor: grab;
 }
-.board[data-card-drag-area]:active {
+.board[data-element-drag-area]:active {
   cursor: grabbing;
 }
 .board-world {

@@ -1,5 +1,5 @@
 export type EntityRef = number | string;
-type Page = 'dashboard' | 'inbox' | 'recent' | 'search' | 'trash' | 'drafts';
+type Page = 'home' | 'dashboard' | 'inbox' | 'recent' | 'search' | 'trash' | 'drafts';
 export type Route =
   | { view: Page }
   | { view: 'project'; project: EntityRef; folder?: EntityRef }
@@ -17,7 +17,7 @@ export const isPublicId = (value: unknown): value is string =>
 const entityRef = (value: string): EntityRef => (isPublicId(value) ? value : Number(value));
 
 export function parseRoute(pathname: string, base: string): Route {
-  if (!pathname.startsWith(base)) return { view: 'dashboard' };
+  if (!pathname.startsWith(base)) return { view: 'home' };
   const relative = pathname.slice(base.length);
   const record = recordPattern.exec(relative);
   if (record) return { view: 'record', record: record[1] };
@@ -32,17 +32,19 @@ export function parseRoute(pathname: string, base: string): Route {
   const view = relative.replace(/\/$/, '');
   return {
     view:
+      view === 'dashboard' ||
       view === 'inbox' ||
       view === 'recent' ||
       view === 'search' ||
       view === 'trash' ||
       view === 'drafts'
         ? view
-        : 'dashboard',
+        : 'home',
   };
 }
 
 export function routeUrl(base: string, route: Route): string {
+  if (route.view === 'home') return base;
   if (route.view === 'record') return `${base}record/${route.record}`;
   if (route.view !== 'project') return `${base}${route.view}`;
   const folder = route.folder === undefined ? '' : `/folder/${route.folder}`;

@@ -54,7 +54,7 @@ test('workspace routes round-trip opaque IDs and still resolve numeric bookmarks
     folder: 456,
   });
   assert.deepEqual(parseRoute(`${base}workspace/${project}/folder/invalid`, base), {
-    view: 'dashboard',
+    view: 'home',
   });
 });
 
@@ -66,7 +66,17 @@ test('record bookmarks identify a note independently of its workspace or folder'
   assert.equal(bookmark, `${base}record/${record}`);
   assert.deepEqual(parseRoute(bookmark, base), route);
   assert.deepEqual(parseRoute(`${bookmark}/`, base), route);
-  assert.deepEqual(parseRoute(`${base}record/123`, base), { view: 'dashboard' });
+  assert.deepEqual(parseRoute(`${base}record/123`, base), { view: 'home' });
+});
+
+test('the app address opens the project workspace and saved utility routes still resolve', () => {
+  const base = '/memo/';
+  assert.deepEqual(parseRoute(base, base), { view: 'home' });
+  assert.equal(routeUrl(base, { view: 'home' }), base);
+  for (const view of ['dashboard', 'inbox', 'recent', 'search', 'trash', 'drafts']) {
+    const route = { view };
+    assert.deepEqual(parseRoute(routeUrl(base, route), base), route);
+  }
 });
 
 const block = (id, x, y, width, height) => ({ id, x, y, width, height });

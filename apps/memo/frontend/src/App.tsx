@@ -88,6 +88,8 @@ type PreparedWorkspace = {
 };
 const currentRoute = () => parseRoute(location.pathname, base);
 const urlFor = (route: Route) => routeUrl(base, route);
+const startingProject = (projects: Project[]) =>
+  projects.find((item) => !item.inbox) ?? projects[0];
 const reasonText = (reason: unknown) =>
   reason instanceof Error ? reason.message : 'Не удалось выполнить действие.';
 const cameraKey = (user: number, project: number, folder: number | null) =>
@@ -210,6 +212,7 @@ function WorkspaceTitle({
 }
 
 const names: Record<View, ReactNode> = {
+  home: 'Проекты',
   dashboard: 'Мои проекты',
   project: 'Проект',
   record: 'Запись',
@@ -223,14 +226,6 @@ const names: Record<View, ReactNode> = {
   trash: 'Корзина',
   drafts: 'Черновики на устройстве',
 };
-const navigation: { view: Exclude<View, 'project' | 'record'>; icon: string; label: string }[] = [
-  { view: 'dashboard', icon: '▦', label: 'Мои проекты' },
-  { view: 'inbox', icon: '↓', label: 'Входящие' },
-  { view: 'recent', icon: '◷', label: 'Недавние' },
-  { view: 'drafts', icon: '✎', label: 'Черновики' },
-  { view: 'trash', icon: '⌫', label: 'Корзина' },
-];
-
 function CardList({
   cards,
   projects,
@@ -349,6 +344,10 @@ export function App() {
     writeLocal(panelKey, panels);
   }, [panels]);
   const showingProjects = route.view === 'dashboard';
+  const home = route.view === 'home';
+  const projectIndex = home || showingProjects;
+  const homeProject =
+    home && account && projectsStatus === 'ready' ? startingProject(projects) : null;
   const visibleProjects = projects.filter((project) => !project.inbox);
   const projectRef = route.view === 'project' ? route.project : undefined;
   const folderRef = route.view === 'project' ? route.folder : undefined;
@@ -371,6 +370,12 @@ export function App() {
   const currentUrl = urlFor(route.view === 'project' && boardRoute ? boardRoute : route);
   const drafts = user ? listDrafts(user.id) : [];
 
+  useEffect(() => {
+    if (!homeProject) return;
+    const next: Route = { view: 'project', project: homeProject.publicId ?? homeProject.id };
+    history.replaceState(null, '', urlFor(next));
+    setRoute(next);
+  }, [homeProject]);
   useEffect(() => {
     let live = true;
     const enterGuest = () => {
@@ -413,11 +418,11 @@ export function App() {
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) {
           setProjectsStatus('error');
-          if (!showingProjects) setError(reasonText(reason));
+          if (!projectIndex) setError(reasonText(reason));
         }
       });
     return () => controller.abort();
-  }, [user, revision, showingProjects]);
+  }, [user, revision, projectIndex]);
   useEffect(() => {
     if (!user) return;
     const controller = new AbortController();
@@ -446,7 +451,7 @@ export function App() {
     )
       return;
     preparedWorkspace.current = null;
-    if (!user || route.view === 'dashboard') return;
+    if (!user || route.view === 'home' || route.view === 'dashboard') return;
     const controller = new AbortController();
     setLoading(true);
     setLoaded(false);
@@ -658,6 +663,7 @@ export function App() {
     setCards(prepared?.cards ?? []);
     setLinks(prepared?.links ?? []);
     setProjects(prepared?.projects ?? []);
+    setProjectsStatus(prepared ? 'ready' : 'loading');
     setWorkspace(prepared?.board ?? null);
     setLoading(false);
     setLoaded(Boolean(prepared));
@@ -742,24 +748,20 @@ export function App() {
       await api.session();
       const { user: signedIn } = await api.auth(mode, email, String(data.get('password')));
       if (!signedIn) throw new Error('Не удалось открыть аккаунт.');
-      let snapshot = guest.snapshot();
+      const snapshot = guest.snapshot();
       if (!snapshot) {
-        if (entryRoute.current.view !== 'dashboard') {
+        if (entryRoute.current.view !== 'home') {
           finishAuth(signedIn);
           return;
         }
         const items = await api.projects();
-        const project = items.find((item) => !item.inbox) ?? items[0];
+        const project = startingProject(items);
         if (project) {
           await openAuthenticatedBoard(signedIn, project, { projects: items });
           return;
         }
-        if (createProjectAfterAuth.current) {
-          finishAuth(signedIn);
-          return;
-        }
-        const { name } = await guest.client.project(guestProjectId);
-        snapshot = { name, cards: [], links: [], marks: [] };
+        finishAuth(signedIn);
+        return;
       }
       const pending = { account: signedIn, snapshot, requestId: crypto.randomUUID() };
       setTransfer(pending);
@@ -774,7 +776,7 @@ export function App() {
       setAccount(null);
       setLoaded(false);
       setLoadedKey('');
-      entryRoute.current = { view: 'dashboard' };
+      entryRoute.current = { view: 'home' };
       setRoute(guestRoute);
       setViewMode('board');
       history.replaceState(null, '', base);
@@ -1103,7 +1105,7 @@ export function App() {
               href={base}
               onClick={(event) => {
                 event.preventDefault();
-                navigate(guestMode ? guestRoute : { view: 'dashboard' });
+                navigate(guestMode ? guestRoute : { view: 'home' });
               }}
             >
               <span className="brand-mark">memo</span>
@@ -1119,34 +1121,37 @@ export function App() {
               }
             />
           </div>
-          <Button
-            ref={projectCreateButton}
-            className="sidebar-new-project add-button"
-            variant="primary"
-            icon="plus"
-            aria-label="Новый проект"
-            aria-haspopup="dialog"
-            title={panels.collapsed ? 'Новый проект' : undefined}
-            disabled={busy}
-            onClick={() => {
-              setShortcutsOpen(false);
-              if (guestMode) openGuestAuth(true);
-              else setProjectCreateOpen(true);
-            }}
-          >
-            <span className="sidebar-label">Новый проект</span>
-          </Button>
+          <div className="sidebar-project-tools">
+            <Button
+              ref={projectCreateButton}
+              className="sidebar-new-project add-button"
+              variant="primary"
+              icon="plus"
+              aria-label="Создать проект"
+              aria-haspopup="dialog"
+              title={panels.collapsed ? 'Создать проект' : undefined}
+              disabled={busy}
+              onClick={() => {
+                setShortcutsOpen(false);
+                if (guestMode) openGuestAuth(true);
+                else setProjectCreateOpen(true);
+              }}
+            >
+              <span className="sidebar-label">Создать проект</span>
+            </Button>
+          </div>
           {visibleProjects.length > 0 && (
             <nav className="project-navigation" aria-label="Проекты">
               {visibleProjects.map((project) => (
                 <button
                   key={project.id}
-                  className={`nav-item ${selected === project.id ? 'selected' : ''}`}
+                  className="nav-item"
                   disabled={busy}
                   onClick={() =>
                     navigate({ view: 'project', project: project.publicId ?? project.id })
                   }
                   aria-label={project.name}
+                  aria-current={selected === project.id ? 'page' : undefined}
                   title={panels.collapsed ? project.name : undefined}
                 >
                   <span className="project-dot" aria-hidden="true">
@@ -1157,28 +1162,6 @@ export function App() {
                 </button>
               ))}
             </nav>
-          )}
-          {!guestMode && (
-            <>
-              <p className="nav-section">ЛИЧНОЕ ПРОСТРАНСТВО</p>
-              <nav className="main-navigation" aria-label="Личное пространство">
-                {navigation.map((item) => (
-                  <button
-                    key={item.view}
-                    className={`nav-item ${route.view === item.view ? 'selected' : ''}`}
-                    disabled={busy}
-                    onClick={() => navigate({ view: item.view })}
-                    aria-label={item.label}
-                    title={panels.collapsed ? item.label : undefined}
-                    aria-current={route.view === item.view ? 'page' : undefined}
-                  >
-                    <span aria-hidden="true">{item.icon}</span>
-                    <span className="sidebar-label">{item.label}</span>
-                    {item.view === 'drafts' && drafts.length > 0 && <small>{drafts.length}</small>}
-                  </button>
-                ))}
-              </nav>
-            </>
           )}
           <div className="sidebar-account">
             {guestMode ? (
@@ -1381,16 +1364,20 @@ export function App() {
             )}
           </div>
           {toasts}
-          {(showingProjects ? projectsStatus === 'loading' : loading || loadedKey !== loadKey) ? (
+          {(
+            projectIndex
+              ? projectsStatus === 'loading' || homeProject
+              : loading || loadedKey !== loadKey
+          ) ? (
             <div className="loading-screen" role="status">
-              {showingProjects ? 'Загружаем проекты…' : 'Загружаем записи…'}
+              {projectIndex ? 'Загружаем проекты…' : 'Загружаем записи…'}
             </div>
-          ) : !(showingProjects ? projectsStatus === 'ready' : loaded) ? (
+          ) : !(projectIndex ? projectsStatus === 'ready' : loaded) ? (
             <div className="loading-screen">
               <p>
                 {recordRoute
                   ? 'Не удалось открыть запись.'
-                  : showingProjects
+                  : projectIndex
                     ? 'Не удалось загрузить проекты.'
                     : 'Не удалось загрузить записи.'}
               </p>
@@ -1398,6 +1385,10 @@ export function App() {
                 Повторить загрузку
               </button>
             </div>
+          ) : home ? (
+            <section className="library-panel">
+              <p className="empty-message">У вас пока нет проектов.</p>
+            </section>
           ) : workspaceView ? (
             viewMode === 'board' ? (
               <Board

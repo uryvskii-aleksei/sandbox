@@ -990,8 +990,7 @@ export function App() {
                 navigate(guestMode ? guestRoute : { view: 'dashboard' });
               }}
             >
-              <span className="brand-mark">m.</span>
-              <span className="sidebar-label">Memo</span>
+              <span className="brand-mark">Memo</span>
             </a>
             <IconButton
               icon="sidebar"

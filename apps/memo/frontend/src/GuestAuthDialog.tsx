@@ -55,10 +55,7 @@ export function GuestAuthDialog({
             onClick={dismiss}
           />
           <section className="auth-intro">
-            <span className="brand-mark" aria-hidden="true">
-              m.
-            </span>
-            <p className="eyebrow">MEMO</p>
+            <span className="brand-mark">Memo</span>
             <h2>
               Дайте мыслям
               <br />

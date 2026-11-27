@@ -152,17 +152,17 @@ button {
   border: 0;
 }
 .brand-mark {
-  background: var(--accent);
-  color: white;
-  width: 36px;
-  height: 36px;
-  border-radius: 5px;
   display: inline-grid;
   place-items: center;
-  font-size: 25px;
-  font-weight: 700;
-  letter-spacing: -2px;
-  padding-right: 3px;
+  height: 32px;
+  padding-inline: 9px;
+  border-radius: 5px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.6px;
+  white-space: nowrap;
 }
 .guest-auth {
   width: min(920px, calc(100% - 32px));
@@ -187,18 +187,16 @@ button {
   background: var(--accent);
   color: #fff;
 }
-.auth-intro .eyebrow {
-  color: #dbe6ff;
-}
 .auth-intro > .brand-mark {
-  width: 48px;
+  align-self: flex-start;
   height: 48px;
   margin-bottom: 36px;
+  padding-inline: 12px;
   border: 1px solid #fff;
 }
 .auth-intro h2 {
   margin: 0 0 18px;
-  font-size: clamp(32px, 3.5vw, 48px);
+  font-size: clamp(30px, 3.2vw, 38px);
   font-weight: 600;
   letter-spacing: -0.04em;
   line-height: 1.12;
@@ -282,12 +280,8 @@ button {
     padding: 22px 24px;
   }
   .auth-intro > .brand-mark {
-    width: 36px;
     height: 36px;
     margin-bottom: 12px;
-  }
-  .auth-intro .eyebrow {
-    margin-bottom: 6px;
   }
   .auth-intro h2 {
     margin-bottom: 0;
@@ -350,10 +344,6 @@ button {
   font-weight: 650;
   letter-spacing: -0.6px;
   margin-bottom: 38px;
-}
-.brand .brand-mark {
-  width: 32px;
-  height: 32px;
 }
 .nav-section {
   font-size: 9px;
@@ -2553,8 +2543,8 @@ select {
 @media (min-width: 621px) {
   .sidebar-collapsed .sidebar-top {
     justify-content: center;
-    gap: 4px;
-    padding-inline: 4px;
+    gap: 2px;
+    padding-inline: 2px;
   }
   .sidebar-collapsed .sidebar-top .brand-mark,
   .sidebar-collapsed .sidebar-toggle {
@@ -2564,7 +2554,10 @@ select {
     min-height: 0;
   }
   .sidebar-collapsed .sidebar-top .brand-mark {
-    font-size: 18px;
+    width: 31px;
+    padding-inline: 0;
+    font-size: 10px;
+    letter-spacing: -0.2px;
   }
 }
 .sidebar-collapsed .sidebar-label,

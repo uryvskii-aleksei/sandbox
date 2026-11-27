@@ -2611,9 +2611,9 @@ select {
   width: 22px;
   height: 22px;
   place-items: center;
-  border-radius: 5px;
-  background: #e8eef9;
-  font-size: 11px;
+  background: transparent;
+  font-size: 16px;
+  line-height: 1;
 }
 .sidebar-collapsed .project-dot > span {
   display: inline;

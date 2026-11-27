@@ -15,6 +15,10 @@
   --accent-active: #15306b;
   --border: #cbd5e6;
   --workspace-header-height: 52px;
+  --panel-header-inset: 16px;
+  --panel-inset: 14px;
+  --workspace-divider-shadow: 0 2px 12px #10274f30;
+  --workspace-footer-shadow: 0 -2px 12px #10274f30;
 }
 * {
   box-sizing: border-box;
@@ -187,13 +191,14 @@ button {
   display: flex;
 }
 .sidebar {
+  --sidebar-inset: var(--panel-inset);
   width: 248px;
   flex-shrink: 0;
   background: #fff;
   color: var(--accent);
   border-right: 1px solid var(--accent);
   box-shadow: 2px 0 12px #10274f30;
-  padding: 30px 20px 18px;
+  padding: 0 var(--sidebar-inset);
   display: flex;
   flex-direction: column;
   height: 100dvh;
@@ -261,13 +266,16 @@ button {
   flex-shrink: 0;
 }
 .sidebar-account {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  margin-top: auto;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  margin: auto calc(-1 * var(--sidebar-inset)) 0;
+  padding: 12px var(--sidebar-inset);
+  border-top: 1px solid var(--accent);
+  box-shadow: var(--workspace-footer-shadow);
   font-size: 12px;
 }
 .sidebar-email {
@@ -276,12 +284,15 @@ button {
   white-space: nowrap;
 }
 .sidebar-account > .icon-button {
+  width: 36px;
+  height: 36px;
   margin-inline-start: auto;
 }
 .sidebar-account > .sidebar-auth-button {
   width: 100%;
   min-height: 36px;
-  padding: 7px 10px;
+  padding: 8px 10px;
+  font-size: 12px;
   white-space: nowrap;
 }
 @media (pointer: coarse) {
@@ -318,8 +329,8 @@ button {
   align-items: center;
   background: var(--accent);
   color: #fff;
-  border-bottom: 1px solid #fff;
-  box-shadow: 0 2px 12px #10274f30;
+  border-bottom: 1px solid var(--accent);
+  box-shadow: var(--workspace-divider-shadow);
   position: relative;
   z-index: 4;
 }
@@ -488,7 +499,8 @@ button {
   gap: 10px;
   align-items: center;
   padding: 12px 30px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--accent);
+  box-shadow: var(--workspace-divider-shadow);
   background: #fff;
   font-size: 12px;
   color: var(--muted);
@@ -595,6 +607,7 @@ button {
   z-index: 1;
   display: flex;
   --card-padding: 18px;
+  --card-top-border: 4px;
   align-items: center;
   min-height: 70px;
   max-height: 760px;
@@ -602,7 +615,7 @@ button {
   background: white;
   color: var(--accent);
   border: 1px solid #aebedb;
-  border-top: 4px solid var(--accent);
+  border-top: var(--card-top-border) solid var(--accent);
   border-radius: 10px;
   box-shadow: 0 4px 16px #10274f14;
   cursor: grab;
@@ -700,11 +713,23 @@ button {
 .card-actions {
   position: absolute;
   z-index: 1;
-  top: 100%;
+  inset: 0;
+  pointer-events: none;
+}
+.card-actions > div {
+  position: absolute;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   gap: 4px;
+  pointer-events: auto;
+}
+.card-actions-above {
+  bottom: calc(100% + var(--card-top-border));
+  padding-bottom: 7px;
+}
+.card-actions-below {
+  top: 100%;
   padding-top: 8px;
 }
 .link-output {
@@ -1003,7 +1028,6 @@ audio {
 @media (max-width: 900px) {
   .sidebar {
     width: 205px;
-    padding: 24px 12px;
   }
   .project-toolbar {
     padding: 12px 20px;
@@ -1088,6 +1112,7 @@ audio {
 .project-navigation {
   flex: 1;
   min-height: 40px;
+  margin-block-start: var(--panel-inset);
 }
 .sidebar .brand {
   margin-bottom: 24px;
@@ -1606,7 +1631,7 @@ kbd {
 .board-add {
   position: relative;
 }
-.board-add > .ui-button {
+.add-button {
   min-height: 36px;
   padding: 6px 12px;
   font-size: 13px;
@@ -2092,7 +2117,7 @@ kbd {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .mind-card:not(:hover):not(:focus-within) > .card-actions {
+  .mind-card:not(:hover):not(:focus-within) > .card-actions > div {
     opacity: 0;
     pointer-events: none;
   }
@@ -2182,19 +2207,56 @@ select {
 }
 .record-sections {
   display: grid;
-  gap: 16px;
 }
-.record-text-input {
-  line-height: 1.55;
-}
-.record-sections > button {
-  justify-self: start;
-}
-.record-content {
+.record-block {
   min-width: 0;
-  padding: 10px 8px;
+}
+.record-block + .record-block {
+  position: relative;
+  margin-block-start: 8px;
+  padding-block-start: 9px;
+}
+.record-block + .record-block::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: calc(-1 * var(--panel-inset));
+  height: 9px;
+  border-top: 1px solid var(--accent);
+  background: linear-gradient(#10274f26, transparent);
+  pointer-events: none;
+}
+.record-sections > .add-button {
+  justify-self: center;
+  margin-block-start: 12px;
+}
+.record-text-draft {
+  display: grid;
+}
+.record-content,
+.record-text-draft > * {
+  min-width: 0;
+  padding: 8px 0;
   line-height: 1.55;
   overflow-wrap: anywhere;
+}
+.record-text-draft > * {
+  grid-area: 1 / 1;
+  white-space: pre-wrap;
+}
+.record-text-mirror {
+  visibility: hidden;
+}
+.record-text-draft .record-text-input {
+  height: 100%;
+  border: 0;
+  background: transparent;
+  font-size: inherit;
+  overflow: hidden;
+  resize: none;
+}
+.record-text-input:focus {
+  outline: none;
 }
 .editable-section {
   cursor: text;
@@ -2202,9 +2264,6 @@ select {
 }
 .editable-section:hover {
   background: #e8eef9;
-}
-.record-content + .record-content {
-  border-top: 1px solid var(--border);
 }
 .record-content > :first-child {
   margin-top: 0;
@@ -2396,7 +2455,12 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 22px;
+  flex-shrink: 0;
+  min-height: var(--workspace-header-height);
+  margin-inline: calc(-1 * var(--sidebar-inset));
+  padding-inline: var(--panel-header-inset);
+  border-bottom: 1px solid var(--accent);
+  box-shadow: var(--workspace-divider-shadow);
 }
 .sidebar-top .brand {
   margin: 0;
@@ -2408,11 +2472,25 @@ select {
   display: none;
 }
 .application .sidebar-collapsed {
-  padding-inline: 8px;
+  --sidebar-inset: 8px;
+  padding-inline: var(--sidebar-inset);
 }
-.sidebar-collapsed .sidebar-top {
-  flex-direction: column-reverse;
-  margin-bottom: 16px;
+@media (min-width: 621px) {
+  .sidebar-collapsed .sidebar-top {
+    justify-content: center;
+    gap: 4px;
+    padding-inline: 4px;
+  }
+  .sidebar-collapsed .sidebar-top .brand-mark,
+  .sidebar-collapsed .sidebar-toggle {
+    width: 24px;
+    height: 24px;
+    min-width: 0;
+    min-height: 0;
+  }
+  .sidebar-collapsed .sidebar-top .brand-mark {
+    font-size: 18px;
+  }
 }
 .sidebar-collapsed .sidebar-label,
 .sidebar-collapsed .nav-section,
@@ -2465,13 +2543,15 @@ select {
   height: 100%;
 }
 .record-dock .editor-header {
+  position: relative;
   background: white;
   color: var(--accent);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--accent);
+  box-shadow: var(--workspace-divider-shadow);
   flex: 0 0 auto;
   min-height: var(--workspace-header-height);
   align-items: center;
-  padding: 0 16px;
+  padding: 0 var(--panel-header-inset);
 }
 .record-dock .editor-title {
   color: var(--accent);
@@ -2484,12 +2564,15 @@ select {
   color: var(--muted);
 }
 .record-dock .editor-body {
-  padding: 14px;
+  padding: var(--panel-inset);
 }
 .record-dock .editor-footer {
+  position: relative;
   flex-wrap: wrap;
-  padding: 12px 14px;
+  padding: 12px var(--panel-inset);
   gap: 6px;
+  border-top-color: var(--accent);
+  box-shadow: var(--workspace-footer-shadow);
 }
 .record-dock .editor-footer > button {
   padding: 8px 10px;
@@ -2536,16 +2619,16 @@ select {
     position: static;
     border-right: 0;
     border-bottom: 1px solid var(--accent);
-    box-shadow: 0 2px 12px #10274f30;
+    box-shadow: var(--workspace-divider-shadow);
   }
   .sidebar-top {
     grid-column: 1;
     grid-row: 1;
+    min-height: 0;
     margin: 0;
-  }
-  .sidebar-collapsed .sidebar-top {
-    flex-direction: row;
-    margin: 0;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
   }
   .sidebar-account {
     grid-column: 2;
@@ -2554,6 +2637,7 @@ select {
     margin: 0;
     padding: 0;
     border: 0;
+    box-shadow: none;
   }
   .sidebar-collapsed .sidebar-account {
     flex-direction: row;

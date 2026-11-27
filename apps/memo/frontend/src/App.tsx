@@ -1024,29 +1024,26 @@ export function App() {
             </>
           )}
           {visibleProjects.length > 0 && (
-            <>
-              <p className="nav-section">ПРОЕКТЫ</p>
-              <nav className="project-navigation" aria-label="Проекты">
-                {visibleProjects.map((project) => (
-                  <button
-                    key={project.id}
-                    className={`nav-item ${selected === project.id ? 'selected' : ''}`}
-                    disabled={busy}
-                    onClick={() =>
-                      navigate({ view: 'project', project: project.publicId ?? project.id })
-                    }
-                    aria-label={project.name}
-                    title={panels.collapsed ? project.name : undefined}
-                  >
-                    <span className="project-dot" aria-hidden="true">
-                      <span>{project.name.slice(0, 1).toLocaleUpperCase('ru')}</span>
-                    </span>
-                    <span className="sidebar-label">{project.name}</span>
-                    <small>{project.cards ?? 0}</small>
-                  </button>
-                ))}
-              </nav>
-            </>
+            <nav className="project-navigation" aria-label="Проекты">
+              {visibleProjects.map((project) => (
+                <button
+                  key={project.id}
+                  className={`nav-item ${selected === project.id ? 'selected' : ''}`}
+                  disabled={busy}
+                  onClick={() =>
+                    navigate({ view: 'project', project: project.publicId ?? project.id })
+                  }
+                  aria-label={project.name}
+                  title={panels.collapsed ? project.name : undefined}
+                >
+                  <span className="project-dot" aria-hidden="true">
+                    <span>{project.name.slice(0, 1).toLocaleUpperCase('ru')}</span>
+                  </span>
+                  <span className="sidebar-label">{project.name}</span>
+                  <small>{project.cards ?? 0}</small>
+                </button>
+              ))}
+            </nav>
           )}
           <div className="sidebar-account">
             {guestMode ? (
@@ -1191,6 +1188,7 @@ export function App() {
               <div className="board-add">
                 <Button
                   ref={boardAddButton}
+                  className="add-button"
                   variant="primary"
                   icon="plus"
                   aria-label="Добавить на полотно"
@@ -1300,6 +1298,7 @@ export function App() {
                 keyboardDisabled={authOpen || shortcutsOpen || searchOpen}
                 storageKey={`memo:${user.id}:camera:${selected}${folder === null ? '' : `:${folder}`}`}
                 focusId={focusId}
+                editingCardId={editing?.id ?? null}
                 clipboard={boardClipboard}
                 copy={(item) => {
                   pendingPaste.current = null;

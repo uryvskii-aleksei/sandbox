@@ -591,10 +591,14 @@ button {
   color: var(--muted);
 }
 .board-empty {
+  position: absolute;
+  inset: 0;
+  width: min(390px, calc(100% - 2 * var(--panel-inset)));
+  height: max-content;
+  margin: auto;
   text-align: center;
   color: var(--muted);
-  max-width: 390px;
-  margin: 65px auto;
+  pointer-events: none;
 }
 .board-empty > span {
   font-size: 50px;
@@ -872,11 +876,6 @@ button {
 }
 .connection-label:hover {
   background: #e8eef9;
-}
-.board-empty {
-  position: absolute;
-  inset: 90px 20px auto;
-  pointer-events: none;
 }
 .zoom-controls {
   position: absolute;

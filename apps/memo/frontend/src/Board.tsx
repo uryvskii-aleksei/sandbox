@@ -1648,9 +1648,11 @@ export function Board({
               >
                 <div className="card-actions-above">
                   <IconButton
-                    icon="pencil"
+                    icon={isFolder ? 'folder' : 'pencil'}
                     iconSize={22.5}
-                    label={`Открыть карточку: ${card.name}`}
+                    label={
+                      isFolder ? `Открыть папку: ${card.name}` : `Открыть карточку: ${card.name}`
+                    }
                     disabled={busy || source !== null || !!marks.tool}
                     onClick={() => selectCard(card)}
                   />

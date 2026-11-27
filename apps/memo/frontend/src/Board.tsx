@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent, ReactNode } from 'react';
 import { ApiError } from './api';
 import { useWorkspaceClient } from './WorkspaceClient';
@@ -57,10 +57,11 @@ interface Camera {
   x: number;
   y: number;
 }
-const defaultScale = 0.5;
+const defaultScale = 0.65;
+const previousDefaultScale = 0.5;
 const minScale = 0.1;
 const maxScale = 2;
-const zoomStep = 0.05;
+const zoomStep = defaultScale / 10;
 
 const resizeEdges = [
   'top',
@@ -212,9 +213,12 @@ export function Board({
   reconnect,
 }: Props) {
   const api = useWorkspaceClient();
-  const cached = readLocal(storageKey);
-  const [camera, setCamera] = useState<Camera>(() =>
-    cameraValue(cached) ? cached : { scale: defaultScale, x: 40, y: 60 },
+  const [savedCamera] = useState(() => {
+    const value = readLocal(storageKey);
+    return cameraValue(value) ? value : null;
+  });
+  const [camera, setCamera] = useState<Camera>(
+    savedCamera ?? { scale: defaultScale, x: 40, y: 60 },
   );
   const [temporary, setTemporary] = useState<Record<number, Card['coordinates']>>({});
   const [resizePreview, setResizePreview] = useState<(Bounds & { id: number }) | null>(null);
@@ -427,11 +431,24 @@ export function Board({
       y: (height - (bottom - top) * scale) / 2 - top * scale,
     });
   };
+  const zoom = (requestedScale: number) => {
+    const scale = Math.max(minScale, Math.min(maxScale, requestedScale));
+    const element = root.current;
+    if (!element) return;
+    setCamera((current) => ({
+      scale,
+      x: element.clientWidth / 2 - ((element.clientWidth / 2 - current.x) * scale) / current.scale,
+      y:
+        element.clientHeight / 2 - ((element.clientHeight / 2 - current.y) * scale) / current.scale,
+    }));
+  };
   useEffect(() => {
-    writeLocal(storageKey, camera);
+    writeLocal(storageKey, { ...camera, defaultScale });
   }, [camera, storageKey]);
-  useEffect(() => {
-    if (!cameraValue(cached)) fit(allCards);
+  useLayoutEffect(() => {
+    if (!savedCamera) fit(allCards);
+    else if (!('defaultScale' in savedCamera) && savedCamera.scale === previousDefaultScale)
+      zoom(defaultScale);
     // Полотно монтируется отдельно для каждого проекта.
   }, []);
   useEffect(() => {
@@ -1087,16 +1104,6 @@ export function Board({
     setReferences(next);
     setExternal((items) => items.filter((item) => item.id !== card.id));
   };
-  const zoom = (scale: number) => {
-    const element = root.current;
-    if (!element) return;
-    setCamera((current) => ({
-      scale,
-      x: element.clientWidth / 2 - ((element.clientWidth / 2 - current.x) * scale) / current.scale,
-      y:
-        element.clientHeight / 2 - ((element.clientHeight / 2 - current.y) * scale) / current.scale,
-    }));
-  };
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
       if (
@@ -1131,12 +1138,7 @@ export function Board({
       const card = visible.find((item) => item.id === selection);
       if (event.key === '+' || event.key === '-' || event.key === '−') {
         event.preventDefault();
-        zoom(
-          Math.max(
-            minScale,
-            Math.min(maxScale, camera.scale + (event.key === '+' ? zoomStep : -zoomStep)),
-          ),
-        );
+        zoom(camera.scale + (event.key === '+' ? zoomStep : -zoomStep));
       } else if (event.key === 'Escape') {
         setSelectedId(null);
       } else if (
@@ -1519,23 +1521,6 @@ export function Board({
                   <span>{card.name}</span>
                 </button>
               )}
-              <div className="card-tools">
-                <IconButton
-                  icon="pencil"
-                  iconSize={22.5}
-                  label={`Изменить название: ${card.name}`}
-                  disabled={busy || source !== null || !!marks.tool || titleCardId === card.id}
-                  onClick={() => setTitleCardId(card.id)}
-                />
-                <IconButton
-                  className="canvas-trash card-trash"
-                  icon="trash"
-                  iconSize={22.5}
-                  label={`Удалить: ${card.name}`}
-                  disabled={busy}
-                  onClick={() => setTrashCandidate(card)}
-                />
-              </div>
               {local &&
                 !marks.tool &&
                 source === null &&
@@ -1590,7 +1575,18 @@ export function Board({
                     />
                   );
                 })}
-              <div className="card-actions" onPointerDown={(event) => event.stopPropagation()}>
+              <div
+                className="card-actions"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <IconButton
+                  icon="pencil"
+                  iconSize={22.5}
+                  label={`Открыть карточку: ${card.name}`}
+                  disabled={busy || source !== null || !!marks.tool}
+                  onClick={() => selectCard(card)}
+                />
                 <IconButton
                   className="card-action link-output"
                   icon={local ? 'plus' : 'board'}
@@ -1616,6 +1612,14 @@ export function Board({
                     if (event.detail === 0) usePlus(card);
                   }}
                 />
+                <IconButton
+                  className="canvas-trash card-trash"
+                  icon="trash"
+                  iconSize={22.5}
+                  label={`Удалить: ${card.name}`}
+                  disabled={busy}
+                  onClick={() => setTrashCandidate(card)}
+                />
               </div>
             </article>
           );
@@ -1629,17 +1633,14 @@ export function Board({
         </div>
       )}
       <div className="zoom-controls" onPointerDown={(event) => event.stopPropagation()}>
-        <button
-          aria-label="Уменьшить масштаб"
-          onClick={() => zoom(Math.max(minScale, camera.scale - zoomStep))}
-        >
+        <button aria-label="Уменьшить масштаб" onClick={() => zoom(camera.scale - zoomStep)}>
           −
         </button>
         <input
           aria-label="Масштаб полотна"
           type="range"
-          min={(minScale / defaultScale) * 100}
-          max={(maxScale / defaultScale) * 100}
+          min={Math.round((minScale / defaultScale) * 100)}
+          max={Math.round((maxScale / defaultScale) * 100)}
           step="1"
           value={Math.round((camera.scale / defaultScale) * 100)}
           aria-valuetext={`${Math.round((camera.scale / defaultScale) * 100)}%`}
@@ -1652,10 +1653,7 @@ export function Board({
         >
           {Math.round((camera.scale / defaultScale) * 100)}%
         </button>
-        <button
-          aria-label="Увеличить масштаб"
-          onClick={() => zoom(Math.min(maxScale, camera.scale + zoomStep))}
-        >
+        <button aria-label="Увеличить масштаб" onClick={() => zoom(camera.scale + zoomStep)}>
           ＋
         </button>
       </div>

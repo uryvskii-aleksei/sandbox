@@ -1049,6 +1049,7 @@ export function App() {
             {guestMode ? (
               <Button
                 className="sidebar-auth-button"
+                variant="primary"
                 icon="login"
                 aria-label="Войти"
                 aria-haspopup="dialog"

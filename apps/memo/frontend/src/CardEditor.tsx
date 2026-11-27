@@ -46,7 +46,9 @@ export function CardEditor({
   );
   const [editingSections, setEditingSections] = useState<string[]>(() => {
     if (!initiallyEditing || card.kind === 'folder') return [];
-    const first = recordSections(card).find((section) => sectionText(section) !== null);
+    const first = recordSections(card).find(
+      (section) => hasSectionContent(section) && sectionText(section) !== null,
+    );
     return first ? [first.id] : [];
   });
   const [edit, renderEdit] = useState(() => structuredClone(card));
@@ -86,6 +88,7 @@ export function CardEditor({
   const saving = useRef(false);
   const attempt = useRef<SaveAttempt | undefined>(undefined);
   const dialog = useRef<HTMLElement>(null);
+  const addSectionButton = useRef<HTMLButtonElement>(null);
   const sections = useMemo(() => recordSections(edit), [edit.document, edit.content]);
   const copyKey = useRef(`draft-copy-${card.id}-${recovery?.savedAt ?? Date.now()}`);
   const savedCallback = useRef(saved);
@@ -257,8 +260,18 @@ export function CardEditor({
   };
   const addSection = () => {
     const id = crypto.randomUUID();
-    setEditingSections((current) => [...(empty ? [sections[0].id] : current), id]);
-    updateSections((current) => [...current, { id, title: '', document: textDocument('') }]);
+    setEditingSections((current) => [...current, id]);
+    updateSections((current) => [
+      ...current.filter(
+        (section) => hasSectionContent(section) || editingSections.includes(section.id),
+      ),
+      { id, title: '', document: textDocument('') },
+    ]);
+  };
+  const removeSection = (id: string) => {
+    setEditingSections((current) => current.filter((item) => item !== id));
+    updateSections((current) => current.filter((section) => section.id !== id));
+    addSectionButton.current?.focus({ preventScroll: true });
   };
   const work = async (operation: () => Promise<void>) => {
     setWorking(true);
@@ -290,8 +303,6 @@ export function CardEditor({
   const visibleSections = sections.filter(
     (section) => hasSectionContent(section) || editingSections.includes(section.id),
   );
-  const empty = !visibleSections.length;
-  const textSections = empty ? sections.slice(0, 1) : visibleSections;
   return (
     <>
       <section ref={dialog} className="editor" aria-label={edit.name}>
@@ -350,6 +361,7 @@ export function CardEditor({
               )}
               <IconButton
                 id="close-editor"
+                className="record-end-action"
                 icon="close"
                 label="Закрыть редактор"
                 disabled={working || status === 'saving'}
@@ -483,11 +495,11 @@ export function CardEditor({
             )}
             {card.kind !== 'folder' && (
               <div className="editor-body record-sections">
-                {textSections.map((section, index) => {
+                {visibleSections.map((section, index) => {
                   const text = sectionText(section);
                   return (
                     <div className="record-block" key={section.id}>
-                      {text !== null && (empty || editingSections.includes(section.id)) ? (
+                      {text !== null && editingSections.includes(section.id) ? (
                         <div className="record-text-draft">
                           <span className="record-text-mirror" aria-hidden="true">
                             {text + '\u200b'}
@@ -495,13 +507,11 @@ export function CardEditor({
                           <textarea
                             className="record-text-input"
                             aria-label={`Текст ${index + 1}`}
-                            placeholder="Введите текст"
                             rows={1}
-                            autoFocus={canEdit && (empty || editingSections.at(-1) === section.id)}
+                            autoFocus={canEdit && editingSections.at(-1) === section.id}
                             value={text}
                             readOnly={!canEdit || status === 'saving'}
                             onChange={(event) => {
-                              if (empty) editSection(section.id);
                               updateSection(section.id, {
                                 document: textDocument(event.target.value),
                               });
@@ -517,14 +527,25 @@ export function CardEditor({
                           index={index}
                         />
                       )}
+                      {text !== null && (
+                        <IconButton
+                          className="record-end-action record-block-delete danger"
+                          icon="trash"
+                          label={`Удалить текстовый блок ${index + 1}`}
+                          disabled={!canEdit || status === 'saving'}
+                          onClick={() => removeSection(section.id)}
+                        />
+                      )}
                     </div>
                   );
                 })}
                 <Button
+                  ref={addSectionButton}
                   icon="plus"
                   variant="primary"
                   className="add-button"
                   aria-label="Добавить текст"
+                  autoFocus={canEdit && !visibleSections.length}
                   disabled={!canEdit || status === 'saving'}
                   onClick={addSection}
                 >
@@ -551,6 +572,7 @@ export function CardEditor({
             <Button
               type="submit"
               variant="primary"
+              icon="save"
               disabled={
                 !canEdit ||
                 status === 'saving' ||

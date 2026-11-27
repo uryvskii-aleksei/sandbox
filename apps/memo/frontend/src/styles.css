@@ -15,6 +15,8 @@
   --accent-active: #15306b;
   --border: #cbd5e6;
   --workspace-header-height: 52px;
+  --workspace-row-inset: 8px;
+  --workspace-control-height: 36px;
   --panel-header-inset: 16px;
   --panel-inset: 14px;
   --workspace-divider-shadow: 0 2px 12px #10274f30;
@@ -498,7 +500,7 @@ button {
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
-  padding: 12px 30px;
+  padding: var(--workspace-row-inset) 30px;
   border-bottom: 1px solid var(--accent);
   box-shadow: var(--workspace-divider-shadow);
   background: #fff;
@@ -1030,7 +1032,7 @@ audio {
     width: 205px;
   }
   .project-toolbar {
-    padding: 12px 20px;
+    padding-inline: 20px;
     gap: 12px;
     flex-wrap: wrap;
   }
@@ -1112,7 +1114,11 @@ audio {
 .project-navigation {
   flex: 1;
   min-height: 40px;
-  margin-block-start: var(--panel-inset);
+  margin-block-start: var(--workspace-row-inset);
+}
+.sidebar .project-navigation .nav-item {
+  min-height: var(--workspace-control-height);
+  padding-block: 6px;
 }
 .sidebar .brand {
   margin-bottom: 24px;
@@ -1300,6 +1306,8 @@ kbd {
   padding: 3px;
 }
 .view-switch button {
+  width: 30px;
+  height: 30px;
   padding: 0;
   color: var(--accent);
 }
@@ -1497,7 +1505,7 @@ kbd {
     padding: 20px 16px;
   }
   .project-toolbar {
-    padding: 8px 14px;
+    padding-inline: 14px;
     gap: 10px;
   }
   .board {
@@ -1573,6 +1581,9 @@ kbd {
   }
 }
 @media (pointer: coarse) {
+  :root {
+    --workspace-control-height: 50px;
+  }
   .field-group > header .icon-button {
     min-width: 36px;
     min-height: 44px;
@@ -1632,7 +1643,7 @@ kbd {
   position: relative;
 }
 .add-button {
-  min-height: 36px;
+  min-height: var(--workspace-control-height);
   padding: 6px 12px;
   font-size: 13px;
   font-weight: 400;
@@ -2209,12 +2220,26 @@ select {
   display: grid;
 }
 .record-block {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
   min-width: 0;
+  min-height: var(--workspace-control-height);
+}
+.record-block > :only-child {
+  grid-column: 1 / -1;
+}
+.record-block-delete {
+  height: var(--workspace-control-height);
+}
+.record-block-delete:hover:not(:disabled) {
+  background: #fff0f2;
 }
 .record-block + .record-block {
   position: relative;
-  margin-block-start: 8px;
-  padding-block-start: 9px;
+  margin-block-start: var(--workspace-row-inset);
+  padding-block-start: calc(1px + var(--workspace-row-inset));
 }
 .record-block + .record-block::before {
   content: '';
@@ -2228,7 +2253,9 @@ select {
 }
 .record-sections > .add-button {
   justify-self: center;
-  margin-block-start: 12px;
+}
+.record-block + .add-button {
+  margin-block-start: calc(2 * var(--workspace-row-inset));
 }
 .record-text-draft {
   display: grid;
@@ -2236,7 +2263,7 @@ select {
 .record-content,
 .record-text-draft > * {
   min-width: 0;
-  padding: 8px 0;
+  padding: calc((var(--workspace-control-height) - 1.55em) / 2) 0;
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
@@ -2551,7 +2578,11 @@ select {
   flex: 0 0 auto;
   min-height: var(--workspace-header-height);
   align-items: center;
-  padding: 0 var(--panel-header-inset);
+  padding-block: 0;
+  padding-inline: var(--panel-header-inset) var(--panel-inset);
+}
+.record-dock .record-end-action {
+  justify-items: end;
 }
 .record-dock .editor-title {
   color: var(--accent);
@@ -2565,6 +2596,9 @@ select {
 }
 .record-dock .editor-body {
   padding: var(--panel-inset);
+}
+.record-dock .record-sections {
+  padding-block: var(--workspace-row-inset);
 }
 .record-dock .editor-footer {
   position: relative;
@@ -2652,7 +2686,7 @@ select {
 
 @container (max-width: 470px) {
   .project-toolbar {
-    padding: 8px 12px;
+    padding-inline: 12px;
     gap: 6px;
   }
   .project-toolbar .icon-button {

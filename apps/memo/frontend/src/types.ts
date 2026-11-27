@@ -24,6 +24,9 @@ export interface Project {
   inbox?: boolean;
   deletedAt?: string | null;
 }
+export interface ImportedGuestProject extends Project {
+  cardIds?: Record<number, number>;
+}
 export const fieldTypes = ['textarea', 'url', 'date', 'image', 'video', 'audio'] as const;
 export type FieldType = (typeof fieldTypes)[number];
 export interface Field {

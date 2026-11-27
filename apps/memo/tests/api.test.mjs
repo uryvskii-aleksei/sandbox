@@ -87,6 +87,8 @@ test('guest transfer is private, preserves a complete board and deduplicates ret
   const savedFolder = folders.find(({ name }) => name === 'Папка');
   assert(savedFolder?.publicId);
   const entries = await owner('/projects/' + imported.id + '/cards?folder=' + savedFolder.id);
+  assert.equal(imported.cardIds[payload.cards[0].id], savedFolder.id);
+  assert.equal(imported.cardIds[payload.cards[1].id], entries[0].id);
   assert.equal(entries[0].name, payload.cards[1].name);
   assert.equal(entries[0].parent, savedFolder.id);
   assert.equal(entries[0].autoHeight, false);

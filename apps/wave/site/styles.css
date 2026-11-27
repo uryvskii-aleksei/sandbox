@@ -104,13 +104,11 @@ button:disabled {
 }
 
 .wordmark {
-  color: color-mix(in srgb, #f7eeeb 82%, var(--accent));
-  font-size: 5rem;
-  font-style: italic;
-  font-weight: 820;
-  line-height: var(--control-size);
-  letter-spacing: -0.035em;
-  transform: translateY(-0.5rem);
+  color: #fff;
+  font-size: 4.5rem;
+  line-height: 2.75rem;
+  font-weight: 780;
+  letter-spacing: -0.045em;
 }
 
 .account {
@@ -130,7 +128,7 @@ button:disabled {
 }
 
 .text-button {
-  min-height: var(--control-size);
+  min-height: 2.75rem;
   padding: 0.4rem 0.85rem;
   border: 1px solid var(--line);
   border-radius: var(--control-radius);

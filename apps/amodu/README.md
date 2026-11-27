@@ -14,7 +14,7 @@ HTML, стили и изображения лежат в `site/`. Сборка �
 
 ## 2. Изображения
 
-Фотография Stone Haus используется в [концепции v2](../stonehaus/site/v2/index.html). Для «Пурпура» взят [кадр из видео](../purpur/site/assets/purpur-film-poster.jpg). Карточка «Wave» использует уменьшенную версию [заставки приложения](../wave/site/assets/station.jpg). Полотно Memo собрано в HTML и CSS, данные в нём вымышленные.
+Фотография Stone Haus используется в [концепции v2](../stonehaus/site/v2/index.html). Для «Пурпура» взят [кадр из видео](../purpur/site/assets/purpur-film-poster.jpg). Карточка «Wave» использует уменьшенную версию [иллюстрации, созданной в ImageGen](../wave/site/assets/station.jpg). Полотно Memo собрано в HTML и CSS, данные в нём вымышленные.
 
 ## 3. Публикация
 

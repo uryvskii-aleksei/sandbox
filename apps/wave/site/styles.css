@@ -10,8 +10,8 @@
   --line: #3e3039;
   --stage-gap: 0.75rem;
   --panel-gap: 0.65rem;
+  --control-size: 2.75rem;
   --control-radius: 0.625rem;
-  --bar-surface: 28 21 28;
 }
 
 :root.has-clip {
@@ -91,15 +91,12 @@ button:disabled {
 .deck-panel {
   position: relative;
   z-index: 2;
-  background: rgb(var(--bar-surface) / 0.92);
 }
 
 .page-header {
   padding: calc(var(--stage-gap) + env(safe-area-inset-top))
     calc(var(--stage-gap) + env(safe-area-inset-right)) var(--stage-gap)
     calc(var(--stage-gap) + env(safe-area-inset-left));
-  border-bottom: 1px solid var(--line);
-  box-shadow: 0 4px 14px #0b070c70;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -126,6 +123,7 @@ button:disabled {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .text-button {
@@ -139,8 +137,7 @@ button:disabled {
 }
 
 .text-button:hover:not(:disabled),
-.control:hover:not(:disabled),
-.splash:hover:not(:disabled) .poster-play {
+.close:hover:not(:disabled) {
   background-color: #402b36;
 }
 
@@ -163,108 +160,43 @@ button:disabled {
 }
 
 .deck {
+  --track-height: 2.5rem;
   display: grid;
   width: min(100%, 64rem);
-  width: min(100%, 64rem, calc(100cqh * 16 / 9));
-  aspect-ratio: 16 / 9;
+  width: min(100%, 64rem, max(8rem, calc((100cqh - var(--track-height)) * 16 / 9)));
   min-height: 0;
   min-width: 0;
-  box-shadow: 0 0 18px #0b070c85;
-  transform: translateY(calc(var(--panel-height, 0px) / 2));
-}
-
-.has-clip .deck {
-  transform: translateY(0);
-  transition: transform 300ms ease-out;
 }
 
 .screen {
   position: relative;
+  aspect-ratio: 16 / 9;
+  box-shadow: 0 0 18px #0b070c85;
   isolation: isolate;
   min-height: 0;
   overflow: hidden;
   background: #100d1159;
 }
 
-.splash,
 .video {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   cursor: pointer;
-}
-
-.splash {
-  --play-size: clamp(3.5rem, 7vw, 5.5rem);
-  display: grid;
-  place-items: center;
-  border: 0;
-  padding: 0;
-  background: #411e26 url('./assets/station.jpg') center / cover no-repeat;
-}
-
-.splash:disabled {
-  opacity: 1;
-  cursor: default;
-}
-
-.splash:focus-visible {
-  outline-offset: -4px;
-}
-
-.poster-play {
-  display: grid;
-  place-items: center;
-  width: var(--play-size);
-  aspect-ratio: 1;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  background: rgb(var(--bar-surface));
-  color: #fff;
-  box-shadow: 0 4px 14px #0b070c70;
-}
-
-.poster-play .symbol {
-  width: 34%;
-  height: 34%;
-  margin-inline-start: 0.2rem;
-}
-
-.video {
   object-fit: contain;
 }
 
 .deck-panel {
   display: grid;
-  grid-template: 'track transport reactions' / minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: 0.4rem 1rem;
+  justify-items: center;
   padding: var(--panel-gap) calc(var(--panel-gap) + env(safe-area-inset-right))
     calc(var(--panel-gap) + env(safe-area-inset-bottom))
     calc(var(--panel-gap) + env(safe-area-inset-left));
-  border-top: 1px solid var(--line);
-  box-shadow: 0 -4px 14px #0b070c70;
-  visibility: hidden;
-  opacity: 0;
-  transform: translateY(100%);
-  transition:
-    transform 300ms ease-out,
-    opacity 260ms ease-out;
-}
-
-.has-clip .deck-panel {
-  visibility: visible;
-  opacity: 1;
-  transform: translateY(0);
 }
 
 .shortcut {
   position: relative;
-}
-
-.splash.shortcut {
-  position: absolute;
 }
 
 .shortcut::after {
@@ -299,44 +231,26 @@ button:disabled {
   }
 }
 
-.splash.shortcut::after {
-  inset-block: calc(50% + var(--play-size) / 2 + 0.7rem) auto;
-  max-width: calc(100% - 1rem);
-}
-
-.reactions .shortcut::after {
-  inset-inline: auto 0;
-  transform: none;
-}
-
-.track-details.shortcut::after {
-  inset-inline-start: 0;
-  transform: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .has-clip .deck,
-  .deck-panel {
-    transition: none;
-  }
-}
-
 .track {
-  grid-area: track;
+  display: grid;
   min-width: 0;
+  min-height: var(--track-height);
+  place-items: center;
+  padding-block-start: 0.25rem;
 }
 
 .track-details {
-  display: grid;
-  min-height: 2.75rem;
+  display: flex;
+  min-width: 0;
   max-width: 100%;
-  align-content: center;
-  gap: 0.2rem;
-  padding: 0;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.1rem 0.35rem;
   border: 0;
   border-radius: var(--control-radius);
-  text-align: start;
   background: transparent;
+  font-size: 0.95rem;
 }
 
 .track-details:hover .track-title,
@@ -347,6 +261,7 @@ button:disabled {
 
 .track-artist,
 .track-title {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -354,40 +269,40 @@ button:disabled {
 
 .track-artist {
   color: var(--accent);
-  font:
-    650 0.75rem/1.4 ui-monospace,
-    monospace;
-  letter-spacing: 0.075em;
-  text-transform: uppercase;
 }
 
 .track-title {
-  font-size: 1.05rem;
   font-weight: 680;
 }
 
+.track-separator {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
 .transport {
-  grid-area: transport;
-  justify-self: center;
-}
-
-.transport,
-.reactions {
-  display: flex;
+  --transport-gap: 0.35rem;
+  --transport-size: 4.125rem;
+  --reaction-column: calc(var(--control-size) + var(--stage-gap) - var(--transport-gap));
+  display: grid;
+  grid-template-columns: var(--reaction-column) repeat(3, minmax(0, 1fr)) var(--reaction-column);
   align-items: center;
-  gap: 0.35rem;
+  gap: var(--transport-gap);
+  width: min(
+    100%,
+    calc(2 * var(--reaction-column) + 3 * var(--transport-size) + 4 * var(--transport-gap))
+  );
 }
 
-.reactions {
-  grid-area: reactions;
+.transport > .reaction:last-child {
   justify-self: end;
 }
 
 .control {
   display: grid;
   place-items: center;
-  inline-size: 2.75rem;
-  block-size: 2.75rem;
+  inline-size: var(--control-size);
+  block-size: var(--control-size);
   flex-shrink: 0;
   border: 1px solid transparent;
   border-radius: var(--control-radius);
@@ -399,25 +314,64 @@ button:disabled {
   height: 1.25rem;
 }
 
+.transport .control:not(.reaction) {
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 1;
+}
+
+.transport .control:not(.reaction) .symbol {
+  width: 1.875rem;
+  height: 1.875rem;
+}
+
 .transport-play {
   border-radius: 50%;
+}
+
+.transport-skip .symbol {
+  position: relative;
+}
+
+.transport-skip:hover:not(:disabled)::before {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  inline-size: min(100%, calc((var(--control-size) + var(--transport-size)) / 2));
+  aspect-ratio: 1;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  pointer-events: none;
+  content: '';
+}
+
+.accent-button {
   background: var(--accent-button);
   color: #fff;
 }
 
-.transport-play:hover:not(:disabled) {
+.accent-button:hover:not(:disabled) {
   background: var(--accent-hover);
 }
 
 .reaction {
-  border-color: var(--line);
-  color: var(--muted);
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
 }
 
 .reaction[aria-pressed='true'] {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 22%, #201820);
-  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+.transport .reaction:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.transport .reaction[aria-pressed='true']:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
 }
 
 .symbol {
@@ -561,6 +515,17 @@ dialog::backdrop {
   font-size: 1.5rem;
 }
 
+#account-dialog {
+  --account-line: color-mix(in srgb, var(--accent) 50%, #181218);
+  border-color: var(--account-line);
+  background: color-mix(in srgb, var(--accent) 14%, #181218);
+}
+
+#account-dialog .close:hover:not(:disabled),
+.mode-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
 #account-description {
   color: var(--muted);
   font-size: 0.9375rem;
@@ -577,9 +542,22 @@ dialog::backdrop {
   width: 100%;
   color: inherit;
   padding: 0.6rem;
-  border: 1px solid #85636d;
+  border: 1px solid var(--account-line);
   border-radius: var(--control-radius);
-  background: #181218;
+  background: color-mix(in srgb, var(--accent) 6%, #181218);
+  caret-color: var(--accent);
+}
+
+.account-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+@media (forced-colors: active) {
+  .account-form input:focus {
+    border-color: Highlight;
+  }
 }
 
 .account-form label:not(:first-child) {
@@ -599,23 +577,11 @@ dialog::backdrop {
   margin-top: 0.55rem;
   border: 0;
   border-radius: var(--control-radius);
-  color: #fff;
-  background: var(--accent-button);
   font-weight: 720;
 }
 
 .mode-button {
+  color: var(--accent);
+  border-color: var(--account-line);
   white-space: normal;
-}
-
-@media (max-width: 35rem) {
-  .deck-panel {
-    grid-template:
-      'transport transport'
-      'track reactions' / minmax(0, 1fr) auto;
-  }
-
-  .track-title {
-    font-size: 0.95rem;
-  }
 }

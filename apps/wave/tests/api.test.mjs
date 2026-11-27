@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -107,15 +107,17 @@ test('гостевые оценки переносятся, а данные ак
   const guest = await visit();
   assert.equal(guest.username, null);
   assert.deepEqual(guest.ratings, {});
-  const credentials = { login: 'ClipTester', password: 'testing-only-passphrase' };
+  const credentials = { login: ' ClipTester@Example.com ', password: 'testing-only-passphrase' };
   await visit({ action: 'register', ...credentials, csrf: 'invalid' }, 403);
   await visit({ action: 'rate', id: first.id, value: 1 }, 401);
+  await visit({ action: 'register', ...credentials, login: 'ClipTester' }, 400);
+  await visit({ action: 'register', ...credentials, login: 'cliptester@' }, 400);
 
   const account = await visit(
     { action: 'register', ...credentials, ratings: { [first.id]: 1, unknown: 1 } },
     200,
   );
-  assert.equal(account.username, 'cliptester');
+  assert.equal(account.username, 'cliptester@example.com');
   assert.deepEqual(account.ratings, { [first.id]: 1 });
   assert.notEqual(account.csrf, guest.csrf);
   await visit({ action: 'rate', id: 'unknown', value: 1 }, 400);
@@ -127,6 +129,7 @@ test('гостевые оценки переносятся, а данные ак
   const reloaded = await otherVisit({
     action: 'login',
     ...credentials,
+    login: 'CLIPTESTER@example.com',
     ratings: { [first.id]: -1, [third.id]: 1 },
   });
   assert.deepEqual(reloaded.ratings, { [first.id]: 1, [second.id]: -1, [third.id]: 1 });
@@ -137,9 +140,46 @@ test('гостевые оценки переносятся, а данные ак
   assert.equal(signedOut.username, null);
   assert.deepEqual(signedOut.ratings, {});
   await visit({ action: 'rate', id: third.id, value: 1 }, 401);
-  await visit({ action: 'register', ...credentials }, 409);
-  const separate = await visit({ action: 'register', ...credentials, login: 'SecondTester' });
+  await visit({ action: 'register', ...credentials, login: 'cliptester@example.com' }, 409);
+  const separate = await visit({
+    action: 'register',
+    ...credentials,
+    login: 'SecondTester@example.com',
+  });
   assert.deepEqual(separate.ratings, {});
+});
+
+test('имя пользователя и оценки существующего аккаунта сохранены', async (t) => {
+  const temp = await mkdtemp(path.join(tmpdir(), 'wave-legacy-test-'));
+  const dbPath = path.join(temp, 'wave.sqlite3');
+  const root = await startPreview(t, temp, { dbPath });
+  execFileSync('php', [
+    '-r',
+    `$db = new PDO('sqlite:' . $argv[1]);
+     $db->exec('CREATE TABLE users (
+         id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL
+     );
+     CREATE TABLE ratings (
+         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+         clip_id TEXT NOT NULL, value INTEGER NOT NULL CHECK (value IN (-1, 1)),
+         PRIMARY KEY (user_id, clip_id)
+     );');
+     $db->prepare('INSERT INTO users VALUES (7, ?, ?)')
+         ->execute(['old_listener', password_hash('legacy-passphrase', PASSWORD_BCRYPT)]);
+     $db->prepare('INSERT INTO ratings VALUES (7, ?, 1)')->execute([$argv[2]]);`,
+    dbPath,
+    first.id,
+  ]);
+
+  const visit = client(root + '/wave/api.php');
+  await visit();
+  const account = await visit({
+    action: 'login',
+    login: 'Old_Listener',
+    password: 'legacy-passphrase',
+  });
+  assert.equal(account.username, 'old_listener');
+  assert.deepEqual(account.ratings, { [first.id]: 1 });
 });
 
 test(
@@ -156,7 +196,7 @@ test(
 
     const login = {
       action: 'register',
-      login: 'StorageTest',
+      login: 'StorageTest@example.com',
       password: 'test-passphrase-for-storage',
     };
     await visit(login, 503);
@@ -164,7 +204,7 @@ test(
     await writeFile(denyFile, 'Require all granted\n');
     await visit(login, 503);
     await writeFile(denyFile, await readFile(new URL('deploy/data.htaccess', app)));
-    assert.equal((await visit(login)).username, 'storagetest');
+    assert.equal((await visit(login)).username, 'storagetest@example.com');
     const database = await stat(path.join(directory, 'wave.sqlite3'));
     assert.equal(database.mode & 0o777, 0o600);
   },

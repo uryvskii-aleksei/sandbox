@@ -76,13 +76,11 @@ export function setupAccount(onChange) {
     document.querySelector('#account-title').textContent = action;
     submit.textContent = action;
     modeButton.textContent = register ? 'Уже есть аккаунт? Войти' : 'Создать аккаунт';
-    document.querySelector('#login-hint').hidden = !register;
+    login.type = register ? 'email' : 'text';
     document.querySelector('#password-hint').hidden = !register;
-    login.setAttribute('aria-describedby', 'login-hint');
-    password.setAttribute('aria-describedby', 'password-hint');
+    if (register) password.setAttribute('aria-describedby', 'password-hint');
+    else password.removeAttribute('aria-describedby');
     password.autocomplete = register ? 'new-password' : 'current-password';
-    if (register) login.pattern = '[A-Za-z0-9_]{3,24}';
-    else login.removeAttribute('pattern');
     password.minLength = register ? 12 : 1;
     errorMessage.textContent = '';
   }

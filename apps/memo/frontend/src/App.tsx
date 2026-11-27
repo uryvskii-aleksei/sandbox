@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, FormEvent, ReactNode } from 'react';
 import { api } from './api';
 import { Board } from './Board';
+import type { BoardFocus } from './Board';
 import { CardEditor } from './CardEditor';
 import { GuestAuthDialog } from './GuestAuthDialog';
 import { createGuestWorkspace, guestProjectId } from './guestWorkspace';
@@ -30,6 +31,7 @@ import type {
   CardLink,
   Folder,
   GuestProjectSnapshot,
+  ImportedGuestProject,
   Project,
   Template,
   Trash,
@@ -37,6 +39,7 @@ import type {
 } from './types';
 import { Button, ConfirmDialog, Icon, IconButton, Popover, Toast } from './ui';
 import { WorkspaceClient } from './WorkspaceClient';
+import type { WorkspaceDataClient } from './WorkspaceClient';
 
 type BlockKind = 'record' | 'folder';
 
@@ -63,14 +66,55 @@ function panelPreferences() {
 
 type View = Route['view'];
 type RecordRoute = Extract<Route, { view: 'record' }>;
+type ProjectRoute = Extract<Route, { view: 'project' }>;
 const base = import.meta.env.BASE_URL;
 const guestRoute: Route = { view: 'project', project: guestProjectId };
 const guestIdentity: User = { id: guestUserId, email: '' };
 type PendingTransfer = { account: User; snapshot: GuestProjectSnapshot; requestId: string };
+type WorkspaceBoard = {
+  project: Project;
+  folders: Folder[];
+  folder: number | null;
+  linked?: { route: RecordRoute; card: Card };
+};
+type PreparedWorkspace = {
+  route: ProjectRoute;
+  board: WorkspaceBoard;
+  cards: Card[];
+  projects: Project[];
+  links: CardLink[];
+  editing: Card | null;
+  keepGuestView: boolean;
+};
 const currentRoute = () => parseRoute(location.pathname, base);
 const urlFor = (route: Route) => routeUrl(base, route);
 const reasonText = (reason: unknown) =>
   reason instanceof Error ? reason.message : 'Не удалось выполнить действие.';
+const cameraKey = (user: number, project: number, folder: number | null) =>
+  `memo:${user}:camera:${project}${folder === null ? '' : `:${folder}`}`;
+const loadKeyFor = (route: Route, query: string) => {
+  const target =
+    route.view === 'project' ? route.project : route.view === 'record' ? route.record : '';
+  const folder = route.view === 'project' ? (route.folder ?? '') : '';
+  return `${route.view}:${target}:${folder}:${route.view === 'search' ? query : ''}`;
+};
+
+async function loadWorkspaceBoard(
+  client: WorkspaceDataClient,
+  projectRef: EntityRef,
+  folderRef?: EntityRef,
+  signal?: AbortSignal,
+): Promise<{ board: WorkspaceBoard; cards: Card[] }> {
+  const [project, folders] = await Promise.all([
+    client.project(projectRef, signal),
+    client.folders(projectRef, signal),
+  ]);
+  const target = folders.find((item) => item.id === folderRef || item.publicId === folderRef);
+  if (folderRef !== undefined && !target) throw new Error('Папка не найдена.');
+  const folder = target?.id ?? null;
+  const cards = await client.cards(project.id, folder, signal);
+  return { board: { project, folders, folder }, cards };
+}
 
 function WorkspaceTitle({
   name,
@@ -242,21 +286,19 @@ export function App() {
   const entryRoute = useRef(currentRoute());
   const [authOpen, setAuthOpen] = useState(false);
   const guestAuthButton = useRef<HTMLButtonElement>(null);
+  const createProjectAfterAuth = useRef(false);
   const [authError, setAuthError] = useState('');
   const [transfer, setTransfer] = useState<PendingTransfer | null>(null);
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [error, setError] = useState('');
+  const [moveError, setMoveError] = useState('');
   const [busy, setBusy] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsStatus, setProjectsStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [route, setRoute] = useState<Route>(currentRoute);
   const [cards, setCards] = useState<Card[]>([]);
-  const [workspace, setWorkspace] = useState<{
-    project: Project;
-    folders: Folder[];
-    folder: number | null;
-    linked?: { route: RecordRoute; card: Card };
-  } | null>(null);
+  const [workspace, setWorkspace] = useState<WorkspaceBoard | null>(null);
+  const preparedWorkspace = useRef<{ user: number; key: string; revision: number } | null>(null);
   const openedLink = useRef<RecordRoute | undefined>(undefined);
   const [links, setLinks] = useState<CardLink[]>([]);
   const [trash, setTrash] = useState<Trash>({ cards: [], projects: [] });
@@ -270,7 +312,7 @@ export function App() {
   const [query, setQuery] = useState('');
   const [hasMore, setHasMore] = useState(false);
   const [revision, setRevision] = useState(0);
-  const [focusId, setFocusId] = useState<number | null>(null);
+  const [focus, setFocus] = useState<BoardFocus | null>(null);
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
   const pendingBlock = useRef<
     Partial<Record<BlockKind, { requestId: string; coordinates?: Card['coordinates'] }>>
@@ -312,7 +354,7 @@ export function App() {
   const folderRef = route.view === 'project' ? route.folder : undefined;
   const recordRoute = route.view === 'record' ? route : undefined;
   const workspaceView = route.view === 'project' || route.view === 'record';
-  const loadKey = `${route.view}:${projectRef ?? recordRoute?.record ?? ''}:${folderRef ?? ''}:${route.view === 'search' ? query : ''}`;
+  const loadKey = loadKeyFor(route, query);
   const currentBoard = workspaceView && loadedKey === loadKey ? workspace : null;
   const selected = currentBoard?.project.id;
   const folder = currentBoard?.folder ?? null;
@@ -395,6 +437,15 @@ export function App() {
     pendingPaste.current = null;
   }, [route.view, projectRef, folderRef, recordRoute]);
   useEffect(() => {
+    const prepared = preparedWorkspace.current;
+    if (
+      prepared &&
+      prepared.user === user?.id &&
+      prepared.key === loadKey &&
+      prepared.revision === revision
+    )
+      return;
+    preparedWorkspace.current = null;
     if (!user || route.view === 'dashboard') return;
     const controller = new AbortController();
     setLoading(true);
@@ -412,25 +463,18 @@ export function App() {
           if (card && openLink) card = await workspaceApi.visit(card.id, signal);
           const projectRefForBoard = card?.project ?? projectRef;
           if (projectRefForBoard !== undefined) {
-            const [project, tree] = await Promise.all([
-              workspaceApi.project(projectRefForBoard, signal),
-              workspaceApi.folders(projectRefForBoard, signal),
-            ]);
-            const folderRefForBoard = card?.folder ?? folderRef;
-            const target = tree.find(
-              (item) => item.publicId === folderRefForBoard || item.id === folderRefForBoard,
+            const result = await loadWorkspaceBoard(
+              workspaceApi,
+              projectRefForBoard,
+              card?.folder ?? folderRef,
+              signal,
             );
-            if (folderRefForBoard !== undefined && !target) throw new Error('Папка не найдена.');
-            const folder = target?.id ?? null;
-            const result = await workspaceApi.cards(project.id, folder, signal);
             if (!signal.aborted) {
               setWorkspace({
-                project,
-                folders: tree,
-                folder,
+                ...result.board,
                 linked: card && recordRoute && openLink ? { route: recordRoute, card } : undefined,
               });
-              setCards(result);
+              setCards(result.cards);
             }
           } else if (route.view === 'trash') {
             const result = await api.trash();
@@ -473,7 +517,7 @@ export function App() {
       return;
     openedLink.current = recordRoute;
     setViewMode('board');
-    setFocusId(linked.card.id);
+    setFocus({ id: linked.card.id, center: true });
     setOpenForEditing(false);
     setEditing(linked.card);
   }, [currentBoard, recordRoute, editing]);
@@ -489,7 +533,8 @@ export function App() {
       setRoute(currentRoute());
       setBoardAddOpen(false);
       setDrawingTool(null);
-      setFocusId(null);
+      setFocus(null);
+      setMoveError('');
     };
     window.addEventListener('popstate', update);
     return () => window.removeEventListener('popstate', update);
@@ -500,8 +545,9 @@ export function App() {
     setRoute(next);
     setBoardAddOpen(false);
     setDrawingTool(null);
-    setFocusId(focus);
+    setFocus(focus === null ? null : { id: focus, center: true });
     setError('');
+    setMoveError('');
   };
   const perform = async <T,>(work: () => Promise<T>) => {
     setBusy(true);
@@ -599,38 +645,83 @@ export function App() {
     if (card.kind === 'folder') enterFolder(card.publicId ?? card.id, card.project);
     else openId(card.id);
   };
-  const finishAuth = (signedIn: User, project?: Project) => {
-    const next: Route = project
-      ? { view: 'project', project: project.publicId ?? project.id }
-      : entryRoute.current;
+  const finishAuth = (signedIn: User, prepared?: PreparedWorkspace) => {
+    const next = prepared?.route ?? entryRoute.current;
+    const key = prepared ? loadKeyFor(next, query) : '';
+    preparedWorkspace.current = prepared ? { user: signedIn.id, key, revision } : null;
     clearGuestStorage();
     setGuest(createGuestWorkspace());
     setTransfer(null);
     setAuthOpen(false);
-    setEditing(null);
-    setCards([]);
-    setLinks([]);
-    setProjects([]);
-    setWorkspace(null);
-    setLoaded(false);
-    setLoadedKey('');
+    setEditing(prepared?.editing ?? null);
+    setOpenForEditing(false);
+    setCards(prepared?.cards ?? []);
+    setLinks(prepared?.links ?? []);
+    setProjects(prepared?.projects ?? []);
+    setWorkspace(prepared?.board ?? null);
+    setLoading(false);
+    setLoaded(Boolean(prepared));
+    setLoadedKey(key);
     setBoardClipboard(null);
-    setFocusId(null);
-    setViewMode('board');
+    setFocus(null);
+    if (!prepared?.keepGuestView) setViewMode('board');
     setSearchOpen(next.view === 'search');
     setDeletedItem(null);
-    setNotice(project ? 'Полотно сохранено в аккаунте.' : '');
+    setError('');
+    setMoveError('');
+    setNotice(prepared?.keepGuestView ? 'Полотно сохранено в аккаунте.' : '');
+    if (createProjectAfterAuth.current) {
+      createProjectAfterAuth.current = false;
+      setProjectCreateOpen(true);
+    }
     setAccount(signedIn);
     history.replaceState(null, '', urlFor(next));
     setRoute(next);
   };
+  const openAuthenticatedBoard = async (
+    signedIn: User,
+    project: Project,
+    options: { imported?: ImportedGuestProject; projects?: Project[] },
+  ) => {
+    const imported = options.imported;
+    const importedFolder = imported && folder !== null ? imported.cardIds?.[folder] : undefined;
+    const projectRef = project.publicId ?? project.id;
+    const [result, items, edges] = await Promise.all([
+      loadWorkspaceBoard(api, projectRef, importedFolder),
+      options.projects ?? api.projects(),
+      api.links(),
+    ]);
+    if (imported) {
+      const camera = readLocal(cameraKey(guestUserId, guestProjectId, folder));
+      if (camera !== null)
+        writeLocal(cameraKey(signedIn.id, project.id, result.board.folder), camera);
+    }
+    const activeFolder = result.board.folders.find((item) => item.id === result.board.folder);
+    const editingId = editing && imported?.cardIds?.[editing.id];
+    finishAuth(signedIn, {
+      route: { view: 'project', project: projectRef, folder: activeFolder?.publicId },
+      ...result,
+      projects: items,
+      links: edges,
+      editing: result.cards.find((item) => item.id === editingId) ?? null,
+      keepGuestView: Boolean(imported),
+    });
+  };
+  const openGuestAuth = (forProject = false) => {
+    createProjectAfterAuth.current = forProject;
+    setAuthError('');
+    setMode('login');
+    setAuthOpen(true);
+  };
   const dismissGuestAuth = () => {
+    const trigger = createProjectAfterAuth.current ? projectCreateButton : guestAuthButton;
+    createProjectAfterAuth.current = false;
     setAuthOpen(false);
-    requestAnimationFrame(() => guestAuthButton.current?.focus({ preventScroll: true }));
+    requestAnimationFrame(() => trigger.current?.focus({ preventScroll: true }));
   };
   const importWorkspace = async (pending: PendingTransfer) => {
     const project = await api.importGuest(pending.snapshot, pending.requestId);
-    finishAuth(pending.account, project);
+    await openAuthenticatedBoard(pending.account, project, { imported: project });
   };
   const runAuth = (work: () => Promise<void>) => {
     setAuthError('');
@@ -651,10 +742,24 @@ export function App() {
       await api.session();
       const { user: signedIn } = await api.auth(mode, email, String(data.get('password')));
       if (!signedIn) throw new Error('Не удалось открыть аккаунт.');
-      const snapshot = guest.snapshot();
+      let snapshot = guest.snapshot();
       if (!snapshot) {
-        finishAuth(signedIn);
-        return;
+        if (entryRoute.current.view !== 'dashboard') {
+          finishAuth(signedIn);
+          return;
+        }
+        const items = await api.projects();
+        const project = items.find((item) => !item.inbox) ?? items[0];
+        if (project) {
+          await openAuthenticatedBoard(signedIn, project, { projects: items });
+          return;
+        }
+        if (createProjectAfterAuth.current) {
+          finishAuth(signedIn);
+          return;
+        }
+        const { name } = await guest.client.project(guestProjectId);
+        snapshot = { name, cards: [], links: [], marks: [] };
       }
       const pending = { account: signedIn, snapshot, requestId: crypto.randomUUID() };
       setTransfer(pending);
@@ -684,6 +789,7 @@ export function App() {
       setBoardClipboard(null);
       setDeletedItem(null);
       setNotice('');
+      setMoveError('');
       setEditing(null);
     });
   const createProject = async (name: string, template: Template, requestId: string) => {
@@ -722,7 +828,7 @@ export function App() {
         content: [],
       });
       delete pending[kind];
-      if (!operation.coordinates) setFocusId(created.id);
+      if (!operation.coordinates) setFocus({ id: created.id, center: false });
       refresh();
     });
   };
@@ -808,7 +914,7 @@ export function App() {
         text: '',
       });
       setCards((items) => [...items, withText]);
-      setFocusId(withText.id);
+      setFocus({ id: withText.id, center: false });
       await refreshLinks();
     });
   const updatePosition = (card: Card) =>
@@ -822,7 +928,7 @@ export function App() {
       const byId = new Map(saved.cards.map((card) => [card.id, card]));
       if ('destination' in motion) {
         setCards((items) => items.filter((item) => !byId.has(item.id)));
-        setFocusId(null);
+        setFocus(null);
         setDeletedItem(null);
         setNotice('Выбранные элементы перемещены в папку.');
         if (moving.some((card) => card.kind === 'folder')) refresh();
@@ -842,7 +948,7 @@ export function App() {
         requestId,
       );
       setCards((items) => items.filter((item) => !selection.cards.includes(item.id)));
-      setFocusId(null);
+      setFocus(null);
       setDeletedItem(null);
       setNotice('Выбранные элементы удалены.');
       refresh();
@@ -927,10 +1033,16 @@ export function App() {
 
   if (!user) return <main className="loading-screen">Загружаем пространство…</main>;
 
-  const toasts = (error || notice) && (
-    <>
+  const toasts = (error || moveError || notice) && (
+    <div className="memo-toast-stack">
+      {moveError && (
+        <Toast key={`move:${moveError}`} kind="error" onDismiss={() => setMoveError('')}>
+          {moveError}
+        </Toast>
+      )}
       {error && (
         <Toast
+          key={error}
           kind="error"
           action={{
             label: 'Повторить',
@@ -947,6 +1059,7 @@ export function App() {
       )}
       {notice && (
         <Toast
+          key={notice}
           kind="success"
           action={
             deletedItem
@@ -965,10 +1078,8 @@ export function App() {
           {notice}
         </Toast>
       )}
-    </>
+    </div>
   );
-  const showingBoard =
-    workspaceView && viewMode === 'board' && !loading && loaded && loadedKey === loadKey;
   const sidebarWidth = panels.collapsed ? 62 : panels.left;
   const docking: CSSProperties & Record<'--memo-sidebar-width' | '--memo-record-width', string> = {
     '--memo-sidebar-width': `${sidebarWidth}px`,
@@ -1008,28 +1119,23 @@ export function App() {
               }
             />
           </div>
-          {!guestMode && (
-            <>
-              <p className="nav-section">ЛИЧНОЕ ПРОСТРАНСТВО</p>
-              <nav className="main-navigation" aria-label="Личное пространство">
-                {navigation.map((item) => (
-                  <button
-                    key={item.view}
-                    className={`nav-item ${route.view === item.view ? 'selected' : ''}`}
-                    disabled={busy}
-                    onClick={() => navigate({ view: item.view })}
-                    aria-label={item.label}
-                    title={panels.collapsed ? item.label : undefined}
-                    aria-current={route.view === item.view ? 'page' : undefined}
-                  >
-                    <span aria-hidden="true">{item.icon}</span>
-                    <span className="sidebar-label">{item.label}</span>
-                    {item.view === 'drafts' && drafts.length > 0 && <small>{drafts.length}</small>}
-                  </button>
-                ))}
-              </nav>
-            </>
-          )}
+          <Button
+            ref={projectCreateButton}
+            className="sidebar-new-project add-button"
+            variant="primary"
+            icon="plus"
+            aria-label="Новый проект"
+            aria-haspopup="dialog"
+            title={panels.collapsed ? 'Новый проект' : undefined}
+            disabled={busy}
+            onClick={() => {
+              setShortcutsOpen(false);
+              if (guestMode) openGuestAuth(true);
+              else setProjectCreateOpen(true);
+            }}
+          >
+            <span className="sidebar-label">Новый проект</span>
+          </Button>
           {visibleProjects.length > 0 && (
             <nav className="project-navigation" aria-label="Проекты">
               {visibleProjects.map((project) => (
@@ -1052,6 +1158,28 @@ export function App() {
               ))}
             </nav>
           )}
+          {!guestMode && (
+            <>
+              <p className="nav-section">ЛИЧНОЕ ПРОСТРАНСТВО</p>
+              <nav className="main-navigation" aria-label="Личное пространство">
+                {navigation.map((item) => (
+                  <button
+                    key={item.view}
+                    className={`nav-item ${route.view === item.view ? 'selected' : ''}`}
+                    disabled={busy}
+                    onClick={() => navigate({ view: item.view })}
+                    aria-label={item.label}
+                    title={panels.collapsed ? item.label : undefined}
+                    aria-current={route.view === item.view ? 'page' : undefined}
+                  >
+                    <span aria-hidden="true">{item.icon}</span>
+                    <span className="sidebar-label">{item.label}</span>
+                    {item.view === 'drafts' && drafts.length > 0 && <small>{drafts.length}</small>}
+                  </button>
+                ))}
+              </nav>
+            </>
+          )}
           <div className="sidebar-account">
             {guestMode ? (
               <Button
@@ -1062,11 +1190,7 @@ export function App() {
                 aria-label="Войти"
                 aria-haspopup="dialog"
                 disabled={busy}
-                onClick={() => {
-                  setAuthError('');
-                  setMode('login');
-                  setAuthOpen(true);
-                }}
+                onClick={() => openGuestAuth()}
               >
                 <span className="sidebar-label">Войти</span>
               </Button>
@@ -1178,21 +1302,6 @@ export function App() {
             </div>
           </header>
           <div className="project-toolbar">
-            {showingProjects && (
-              <Button
-                ref={projectCreateButton}
-                variant="primary"
-                icon="plus"
-                aria-haspopup="dialog"
-                disabled={busy}
-                onClick={() => {
-                  setShortcutsOpen(false);
-                  setProjectCreateOpen(true);
-                }}
-              >
-                Создать проект
-              </Button>
-            )}
             {active && (
               <div className="board-add">
                 <Button
@@ -1270,10 +1379,8 @@ export function App() {
                 />
               </div>
             )}
-            {!showingBoard && toasts && (
-              <div className="memo-toast-stack toolbar-toasts">{toasts}</div>
-            )}
           </div>
+          {toasts}
           {(showingProjects ? projectsStatus === 'loading' : loading || loadedKey !== loadKey) ? (
             <div className="loading-screen" role="status">
               {showingProjects ? 'Загружаем проекты…' : 'Загружаем записи…'}
@@ -1301,12 +1408,12 @@ export function App() {
                 folderId={folder}
                 drawingTool={drawingTool}
                 consumeDrawingTool={() => setDrawingTool(null)}
-                notifications={toasts}
+                setMoveError={setMoveError}
                 locate={locate}
                 busy={busy || projectCreateOpen}
                 keyboardDisabled={authOpen || shortcutsOpen || searchOpen}
-                storageKey={`memo:${user.id}:camera:${selected}${folder === null ? '' : `:${folder}`}`}
-                focusId={focusId}
+                storageKey={cameraKey(user.id, selected ?? 0, folder)}
+                focus={focus}
                 editingCardId={editing?.id ?? null}
                 sidebarWidth={sidebarWidth}
                 clipboard={boardClipboard}

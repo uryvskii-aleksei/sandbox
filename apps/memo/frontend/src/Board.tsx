@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, PointerEvent, ReactNode } from 'react';
+import type { CSSProperties, PointerEvent } from 'react';
 import { ApiError } from './api';
 import { useWorkspaceClient } from './WorkspaceClient';
 import { BoardContextMenu } from './BoardContextMenu';
@@ -10,7 +10,7 @@ import { nearbyControls } from './canvasControls';
 import { CardTitleEditor } from './CardTitleEditor';
 import { linkPort, routeBoardLinks, routeConnection } from './connectionRoutes';
 import { LinkControl } from './LinkControl';
-import { IconButton, Toast } from './ui';
+import { IconButton } from './ui';
 import { canConnect, cardDimensions, cardHeight, clampCardSize } from './graph';
 import { isTextInput, markTools } from './shortcuts';
 import { readLocal, writeLocal } from './storage';
@@ -25,6 +25,8 @@ import type {
   NewBoardMark,
 } from './types';
 
+export type BoardFocus = { id: number; center: boolean };
+
 interface Props {
   cards: Card[];
   links: CardLink[];
@@ -32,12 +34,12 @@ interface Props {
   folderId: number | null;
   drawingTool: (typeof markTools)[number]['kind'] | null;
   consumeDrawingTool: () => void;
-  notifications: ReactNode;
+  setMoveError: (message: string) => void;
   locate: (card: Card) => void;
   busy: boolean;
   keyboardDisabled: boolean;
   storageKey: string;
-  focusId: number | null;
+  focus: BoardFocus | null;
   editingCardId: number | null;
   sidebarWidth: number;
   clipboard: BoardClipboard | null;
@@ -202,12 +204,12 @@ export function Board({
   folderId,
   drawingTool,
   consumeDrawingTool,
-  notifications,
+  setMoveError,
   locate,
   busy,
   keyboardDisabled,
   storageKey,
-  focusId,
+  focus,
   editingCardId,
   sidebarWidth,
   clipboard,
@@ -240,7 +242,6 @@ export function Board({
   const [trashCandidate, setTrashCandidate] = useState<Card | null>(null);
   const [marquee, setMarquee] = useState<{ rect: DOMRect; selection: BoardSelection } | null>(null);
   const [groupOffset, setGroupOffset] = useState<Card['coordinates'] | null>(null);
-  const [moveError, setMoveError] = useState('');
   const [group, setGroup] = useState<BoardSelection>(emptySelection);
   const [trashGroup, setTrashGroup] = useState<{
     selection: BoardSelection;
@@ -260,7 +261,7 @@ export function Board({
     link: CardLink;
     moving: 'source' | 'target';
   } | null>(null);
-  const [selectedId, setSelectedId] = useState(focusId);
+  const [selectedId, setSelectedId] = useState(focus?.id ?? null);
   const [dismissedCardActions, setDismissedCardActions] = useState<number | null>(null);
   const [titleCardId, setTitleCardId] = useState<number | null>(null);
   const [hoveredLink, setHoveredLink] = useState<string | null>(null);
@@ -288,7 +289,7 @@ export function Board({
   const mouseClick = useRef<{ id: number; title: boolean } | null>(null);
   const previousBodyClick = useRef<number | null>(null);
   const centerAfterClick = useRef(0);
-  const lastCenteredFocus = useRef<number | null>(null);
+  const appliedFocus = useRef<BoardFocus | null>(null);
   const modifierSelectionHandled = useRef(false);
   const markPointer = useRef<number | null>(null);
   const resizing = useRef<ResizeGesture | null>(null);
@@ -494,17 +495,17 @@ export function Board({
     // Полотно монтируется отдельно для каждого проекта.
   }, []);
   useLayoutEffect(() => {
-    if (focusId === null) {
-      lastCenteredFocus.current = null;
+    if (focus === null) {
+      appliedFocus.current = null;
       return;
     }
-    if (lastCenteredFocus.current === focusId) return;
-    const card = allCards.find((item) => item.id === focusId);
+    if (appliedFocus.current === focus) return;
+    const card = allCards.find((item) => item.id === focus.id);
     if (!card) return;
-    lastCenteredFocus.current = focusId;
+    appliedFocus.current = focus;
     setSelectedId(card.id);
-    centerCard(card);
-  }, [allCards, focusId]);
+    if (focus.center) centerCard(card);
+  }, [allCards, focus]);
   useLayoutEffect(() => {
     const board = root.current;
     if (!board) return;
@@ -1161,11 +1162,14 @@ export function Board({
     try {
       if (cancelled) return;
       if (!moved) {
-        if (current.card && !current.fromCardHalo) {
-          if (event.pointerType === 'mouse')
+        if (current.card) {
+          if (current.fromCardHalo) {
+            highlightCard(current.card.id);
+            centerCard(current.card);
+          } else if (event.pointerType === 'mouse')
             mouseClick.current = { id: current.card.id, title: current.title };
           else if (!current.selection) selectCard(current.card);
-        } else if (!current.selection || current.fromCardHalo) {
+        } else if (!current.selection) {
           marks.cancel();
           setSelectedId(null);
           setGroup(emptySelection);
@@ -1498,16 +1502,6 @@ export function Board({
             height: marquee.rect.height,
           }}
         />
-      )}
-      {(notifications || moveError) && (
-        <div className="memo-toast-stack" onPointerDown={(event) => event.stopPropagation()}>
-          {moveError && (
-            <Toast kind="error" onDismiss={() => setMoveError('')}>
-              {moveError}
-            </Toast>
-          )}
-          {notifications}
-        </div>
       )}
       {dropFolder?.allowed === false && (
         <div className="board-move-error" role="status">

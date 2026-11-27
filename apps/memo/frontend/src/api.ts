@@ -13,6 +13,7 @@ import type {
   FieldGroup,
   Folder,
   GuestProjectSnapshot,
+  ImportedGuestProject,
   LinkPreview,
   Project,
   SearchResult,
@@ -67,6 +68,15 @@ const isProject = (value: unknown): value is Project =>
   (value.deletedAt === undefined ||
     value.deletedAt === null ||
     typeof value.deletedAt === 'string');
+const isImportedGuestProject = (value: unknown): value is ImportedGuestProject =>
+  record(value) &&
+  (value.cardIds === undefined ||
+    (record(value.cardIds) &&
+      Object.entries(value.cardIds).every(
+        ([from, to]) =>
+          /^[1-9]\d*$/.test(from) && typeof to === 'number' && Number.isSafeInteger(to) && to > 0,
+      ))) &&
+  isProject(value);
 const isFolder = (value: unknown): value is Folder =>
   record(value) &&
   number(value.id) &&
@@ -216,7 +226,7 @@ export const api = {
       body: JSON.stringify({ name, template, requestId }),
     }),
   importGuest: (snapshot: GuestProjectSnapshot, requestId: string) =>
-    request('/projects/import-guest', isProject, {
+    request('/projects/import-guest', isImportedGuestProject, {
       method: 'POST',
       body: JSON.stringify({ ...snapshot, requestId }),
     }),

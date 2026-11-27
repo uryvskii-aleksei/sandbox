@@ -92,6 +92,8 @@ function importGuestProject(int $owner, array $body): array
             if ($folder !== null && ($cards[$folder]['kind'] ?? null) !== 'folder') fail(422, 'Папка гостевой разметки не найдена.');
             storeBoardMark($projectId, $folder === null ? null : $map[$folder], $mark);
         }
-        return project($projectId, $owner);
+        $project = project($projectId, $owner);
+        if ($map) $project['cardIds'] = $map;
+        return $project;
     });
 }

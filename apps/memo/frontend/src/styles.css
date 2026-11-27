@@ -697,30 +697,9 @@ button {
   color: #9e324a;
   font-size: 18px;
 }
-.card-tools {
-  position: absolute;
-  z-index: 1;
-  inset-inline: 8px;
-  bottom: calc(100% + 2px);
-  transform: translateY(50%);
-  display: flex;
-  justify-content: space-between;
-  visibility: hidden;
-  pointer-events: none;
-}
-.card-tools > button {
-  pointer-events: auto;
-}
-.mind-card:is(:hover, :has(:focus-visible)) .card-tools {
-  visibility: visible;
-}
-@media (hover: none) {
-  .mind-card:is(.focused-card, :focus-within) .card-tools {
-    visibility: visible;
-  }
-}
 .card-actions {
   position: absolute;
+  z-index: 1;
   bottom: 0;
   left: 50%;
   transform: translate(-50%, 50%);
@@ -2111,9 +2090,6 @@ kbd {
   white-space: nowrap;
 }
 
-.card-actions {
-  z-index: 1;
-}
 @media (hover: hover) and (pointer: fine) {
   .mind-card:not(:hover):not(:focus-within) > .card-actions {
     opacity: 0;
@@ -2134,7 +2110,6 @@ kbd {
 .canvas-trash.icon-button,
 .shape-caption-pencil.icon-button,
 .card-actions .icon-button,
-.card-tools .icon-button,
 .connection-actions .icon-button {
   width: 27px;
   height: 27px;
@@ -2146,7 +2121,6 @@ kbd {
   color: var(--accent);
 }
 .shape-caption-pencil.icon-button:hover:not(:disabled),
-.card-tools .icon-button:hover:not(:disabled),
 .card-actions .icon-button:hover:not(:disabled),
 .connection-actions .icon-button:hover:not(:disabled) {
   background: #e0e9f8;

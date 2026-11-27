@@ -5,6 +5,7 @@ import { useWorkspaceClient } from './WorkspaceClient';
 import { BoardContextMenu } from './BoardContextMenu';
 import type { BoardMenuItem } from './BoardContextMenu';
 import { MarkLayer, useCanvasMarks } from './CanvasMarks';
+import { nearbyControls } from './canvasControls';
 import { CardTitleEditor } from './CardTitleEditor';
 import { linkPort, routeBoardLinks, routeConnection } from './connectionRoutes';
 import { LinkControl } from './LinkControl';
@@ -273,6 +274,8 @@ export function Board({
     sidebarWidth: number;
   } | null>(null);
   const drag = useRef<Drag | null>(null);
+  const nearbyControlOwner = useRef<Element | null>(null);
+  const mousePosition = useRef<MenuPosition | null>(null);
   const handledRightPress = useRef(false);
   // Счётчик кликов учитываем только после отпускания мыши без перетаскивания.
   const mouseClick = useRef<{ id: number; title: boolean } | null>(null);
@@ -977,7 +980,46 @@ export function Board({
       );
     return { x: limit(x, 'x'), y: limit(y, 'y') };
   };
+  const showNearbyControls = (owner: Element | null) => {
+    if (nearbyControlOwner.current !== owner) {
+      nearbyControlOwner.current?.removeAttribute('data-controls-nearby');
+      owner?.setAttribute('data-controls-nearby', '');
+      nearbyControlOwner.current = owner;
+    }
+    if (
+      dismissedCardActions !== null &&
+      owner?.getAttribute('data-card-id') !== String(dismissedCardActions)
+    ) {
+      setDismissedCardActions(null);
+    }
+  };
+  const updateNearbyControls = (target: EventTarget | null, position: MenuPosition) => {
+    const board = root.current;
+    showNearbyControls(
+      board && !marks.tool && source === null
+        ? nearbyControls(
+            board,
+            target,
+            position.clientX,
+            position.clientY,
+            camera.scale,
+            worldPoint(position),
+          )
+        : null,
+    );
+  };
+  useLayoutEffect(() => {
+    const position = mousePosition.current;
+    if (position && !drag.current) {
+      updateNearbyControls(document.elementFromPoint(position.clientX, position.clientY), position);
+    }
+  }, [camera, marks.tool, source]);
   const move = (event: PointerEvent<HTMLElement>) => {
+    if (event.pointerType === 'mouse' && !event.buttons) {
+      const position = { clientX: event.clientX, clientY: event.clientY };
+      mousePosition.current = position;
+      updateNearbyControls(event.target, position);
+    }
     if (resizing.current) {
       if (event.pointerId === resizing.current.pointer)
         setResizePreview({ id: resizing.current.card.id, ...resized(event, resizing.current) });
@@ -1392,6 +1434,10 @@ export function Board({
         start(event, null);
       }}
       onPointerMove={move}
+      onPointerLeave={() => {
+        mousePosition.current = null;
+        showNearbyControls(null);
+      }}
       onPointerUp={(event) => void end(event)}
       onPointerCancel={(event) => void end(event, true)}
     >
@@ -1475,6 +1521,7 @@ export function Board({
                   d={d}
                   className={`${appearance} ${reconnecting?.link.source === link.source && reconnecting.link.target === link.target ? 'reconnecting-link' : ''}`}
                 />
+                <path d={d} className="canvas-controls-range" data-link-label={`edge-${key}`} />
                 <path
                   d={d}
                   className="link-hit"
@@ -1536,9 +1583,6 @@ export function Board({
               className={`mind-card ${local ? '' : 'reference-card'} ${connected ? (validTarget(source ?? card.id, card.id) ? 'valid-target' : 'invalid-target') : ''} ${grouped ? 'grouped-card' : selection === card.id ? 'focused-card' : neighbors.has(card.id) ? 'related-card' : ''} ${dropFolder?.id === card.id ? (dropFolder.allowed ? 'folder-drop-target' : 'folder-drop-rejected') : ''} ${temporary[card.id] ? 'dragging-card' : ''}`}
               style={style}
               onPointerDown={(event) => start(event, card)}
-              onPointerLeave={() => {
-                if (dismissedCardActions === card.id) setDismissedCardActions(null);
-              }}
               onClick={(event) => {
                 const click = mouseClick.current;
                 if (!event.detail || click?.id !== card.id) return;

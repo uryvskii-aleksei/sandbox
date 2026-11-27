@@ -387,6 +387,7 @@ export function MarkLayer({
   offset: Point | null;
 }) {
   const gesture = useRef<Gesture | null>(null);
+  const captionEditor = useRef<HTMLFormElement>(null);
   const [moving, setMoving] = useState<BoardMark | null>(null);
   useEffect(() => () => gesture.current?.listeners.abort(), []);
   const start = (
@@ -536,6 +537,16 @@ export function MarkLayer({
   const draft = marks.draft;
   const draftShape =
     draft && draft.kind !== 'label' ? sketches.find(({ id }) => id === draft.id) : undefined;
+  useEffect(() => {
+    if (!draftShape) return;
+    const saveOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !captionEditor.current?.contains(event.target)) {
+        marks.saveLabel();
+      }
+    };
+    document.addEventListener('pointerdown', saveOutside, true);
+    return () => document.removeEventListener('pointerdown', saveOutside, true);
+  }, [draftShape, marks.saveLabel]);
   const trash = (mark: BoardMark, label: string) => (
     <IconButton
       className="canvas-trash"
@@ -566,6 +577,9 @@ export function MarkLayer({
                 className={`mark-stroke ${mark.kind === 'line' ? '' : 'mark-fill'} ${grouped ? 'mark-grouped' : ''}`}
                 data-mark-id={mark.id}
               />
+              {mark.kind === 'line' && (
+                <MarkStroke sketch={mark} className="canvas-controls-range" />
+              )}
               <MarkStroke
                 sketch={mark}
                 className="mark-hit"
@@ -671,6 +685,7 @@ export function MarkLayer({
       )}
       {draft && (
         <form
+          ref={captionEditor}
           className={`canvas-label-editor ${draftShape ? 'shape-caption-editor' : ''}`}
           style={{
             left: draft.at.x,
@@ -700,6 +715,7 @@ export function MarkLayer({
                   currentTarget.setSelectionRange(draft.text.length, draft.text.length)
                 }
                 onChange={(event) => marks.setText(event.target.value)}
+                onBlur={marks.saveLabel}
                 onKeyDown={(event) => {
                   if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing)
                     return;

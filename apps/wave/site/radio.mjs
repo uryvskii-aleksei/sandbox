@@ -1,6 +1,6 @@
-import { setupAccount } from './account.mjs';
+import { setupAccount } from './account.mjs?v=2';
 import { pickClip } from './selection.mjs';
-import { setupSoundscape, trackHue } from './soundscape.mjs';
+import { setupSoundscape, trackHue } from './soundscape.mjs?v=2';
 
 const get = (id) => document.getElementById(id);
 const toggle = get('toggle');

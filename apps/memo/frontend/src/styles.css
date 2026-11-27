@@ -688,17 +688,16 @@ button {
   z-index: 1;
   display: flex;
   --card-padding: 18px;
-  --card-top-border: 4px;
-  --card-side-border: 1px;
-  --card-edge-offset: calc(1px - var(--card-side-border));
-  --card-side-padding: calc(var(--card-padding) + var(--card-edge-offset));
+  --card-base-top-border: 4px;
+  --card-top-border: var(--card-base-top-border);
   align-items: center;
   min-height: 70px;
   max-height: 760px;
-  padding: var(--card-padding) var(--card-side-padding) var(--card-side-padding);
+  padding: var(--card-padding);
+  padding-top: calc(var(--card-padding) + var(--card-base-top-border) - var(--card-top-border));
   background: white;
   color: var(--accent);
-  border: var(--card-side-border) solid #aebedb;
+  border: 1px solid #aebedb;
   border-top: var(--card-top-border) solid var(--accent);
   border-radius: 10px;
   box-shadow: 0 4px 16px #10274f14;
@@ -723,7 +722,7 @@ button {
   border-style: dashed;
 }
 .mind-card:is(.focused-card, .grouped-card) {
-  --card-side-border: var(--card-top-border);
+  --card-top-border: 2px;
   border-color: var(--accent);
 }
 .card-title,
@@ -816,7 +815,7 @@ button {
 }
 .card-actions-below {
   top: 100%;
-  padding-top: calc(7px + var(--card-side-border));
+  padding-top: 8px;
 }
 .link-output {
   cursor: crosshair;
@@ -1828,17 +1827,17 @@ kbd {
 .card-edge.bottom,
 .card-edge.bottom-left,
 .card-edge.bottom-right {
-  bottom: var(--card-edge-offset);
+  bottom: 0;
 }
 .card-edge.left,
 .card-edge.top-left,
 .card-edge.bottom-left {
-  left: var(--card-edge-offset);
+  left: 0;
 }
 .card-edge.right,
 .card-edge.top-right,
 .card-edge.bottom-right {
-  right: var(--card-edge-offset);
+  right: 0;
 }
 .card-edge.top-left,
 .card-edge.top-right,

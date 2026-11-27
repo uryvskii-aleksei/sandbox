@@ -121,7 +121,7 @@ try {
   });
   assert.equal(unchanged.status, 304);
   assert.match(unchanged.headers.get('cache-control') ?? '', /no-cache/);
-  assert.match(index, /<title>Memo/);
+  assert.match(index, /<title>memo\b/);
   for (const route of [
     `workspace/m${'a'.repeat(32)}/folder/m${'b'.repeat(32)}`,
     `record/m${'c'.repeat(32)}`,

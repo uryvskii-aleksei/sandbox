@@ -87,6 +87,7 @@ type ResizeGesture = {
 };
 interface Drag {
   card: Card | null;
+  rightClickTarget: Element | null;
   title: boolean;
   selecting: boolean;
   selection: BoardSelection | null;
@@ -98,6 +99,8 @@ interface Drag {
   moved: boolean;
 }
 const emptySelection: BoardSelection = { cards: [], marks: [] };
+const nativeContextTargets =
+  'input,textarea,select,[contenteditable],.mark-error,.zoom-controls,.connection-control,.link-hit';
 type MenuTarget = { card: Card } | { mark: BoardMark } | null;
 type MenuPosition = { clientX: number; clientY: number };
 const isAutoHeight = (card: Card) => card.autoHeight ?? cardDimensions(card).height === cardHeight;
@@ -270,6 +273,7 @@ export function Board({
     sidebarWidth: number;
   } | null>(null);
   const drag = useRef<Drag | null>(null);
+  const handledRightPress = useRef(false);
   // Счётчик кликов учитываем только после отпускания мыши без перетаскивания.
   const mouseClick = useRef<{ id: number; title: boolean } | null>(null);
   const previousBodyClick = useRef<number | null>(null);
@@ -623,12 +627,7 @@ export function Board({
   const showMenu = (element: Element, position: MenuPosition) => {
     const board = root.current;
     if (!board || busy || trashCandidate || trashGroup) return false;
-    if (
-      element.closest(
-        'input,textarea,select,[contenteditable],.mark-error,.zoom-controls,.connection-control,.link-hit',
-      )
-    )
-      return false;
+    if (element.closest(nativeContextTargets)) return false;
     const cardId = Number(element.closest('[data-card-id]')?.getAttribute('data-card-id'));
     const markId = Number(element.closest('[data-menu-mark]')?.getAttribute('data-menu-mark'));
     const card = visible.find((item) => item.id === cardId);
@@ -807,11 +806,7 @@ export function Board({
     }
     setMoveError('');
     const selection = moveGroup || (card && group.cards.includes(card.id)) ? group : null;
-    const selecting =
-      !card &&
-      !selection &&
-      !pan &&
-      (event.pointerType === 'mouse' ? event.shiftKey : event.pointerType !== 'touch');
+    const selecting = !card && !selection && !pan && event.pointerType !== 'touch';
     if (!card) {
       const input = document.activeElement;
       if (
@@ -830,8 +825,12 @@ export function Board({
       marks.cancel();
     }
     const origin = card ? point(card) : { x: camera.x, y: camera.y };
+    const rightClickTarget =
+      pan && event.button === 2 && event.target instanceof Element ? event.target : null;
+    if (rightClickTarget) handledRightPress.current = true;
     drag.current = {
       card,
+      rightClickTarget,
       title: !!card && event.target instanceof Element && !!event.target.closest('.card-title'),
       selecting,
       selection,
@@ -1085,6 +1084,13 @@ export function Board({
     if (!current || current.pointer !== event.pointerId) return;
     drag.current = null;
     setDropFolder(null);
+    const moved =
+      current.moved ||
+      Math.abs(event.clientX - current.x) + Math.abs(event.clientY - current.y) > 5;
+    if (current.rightClickTarget) {
+      if (!cancelled && !moved) showMenu(current.rightClickTarget, event);
+      return;
+    }
     if (current.selecting) {
       setMarquee(null);
       const board = root.current;
@@ -1095,9 +1101,6 @@ export function Board({
     }
     try {
       if (cancelled) return;
-      const moved =
-        current.moved ||
-        Math.abs(event.clientX - current.x) + Math.abs(event.clientY - current.y) > 5;
       if (!moved) {
         if (current.card) {
           if (event.pointerType === 'mouse')
@@ -1277,6 +1280,11 @@ export function Board({
       aria-label="Полотно проекта"
       tabIndex={0}
       onContextMenu={(event) => {
+        // Браузер может вызвать contextmenu до отпускания кнопки мыши.
+        if (event.button === 2 && handledRightPress.current) {
+          event.preventDefault();
+          return;
+        }
         if (event.ctrlKey && event.target instanceof Element) {
           const item = selectionTarget(event.target);
           if (item) {
@@ -1336,6 +1344,7 @@ export function Board({
         window.clearTimeout(centerAfterClick.current);
         mouseClick.current = null;
         modifierSelectionHandled.current = false;
+        handledRightPress.current = false;
         if (
           event.button === 0 &&
           event.target instanceof Element &&
@@ -1361,9 +1370,10 @@ export function Board({
           }
         }
         if (
-          event.button === 1 &&
           event.target instanceof Element &&
-          event.target.closest('.board') === root.current
+          event.target.closest('.board') === root.current &&
+          (event.button === 1 ||
+            (event.button === 2 && !event.ctrlKey && !event.target.closest(nativeContextTargets)))
         ) {
           event.preventDefault();
           start(event, null, true);

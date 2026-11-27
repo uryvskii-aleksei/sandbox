@@ -88,6 +88,7 @@ type ResizeGesture = {
 };
 interface Drag {
   card: Card | null;
+  fromCardHalo: boolean;
   rightClickTarget: Element | null;
   title: boolean;
   selecting: boolean;
@@ -810,7 +811,8 @@ export function Board({
     setMoveError('');
     const selection = moveGroup || (card && group.cards.includes(card.id)) ? group : null;
     const selecting = !card && !selection && !pan && event.pointerType !== 'touch';
-    if (!card) {
+    const fromCardHalo = !!card && event.currentTarget === root.current;
+    if (!card || fromCardHalo) {
       const input = document.activeElement;
       if (
         !pan &&
@@ -833,6 +835,7 @@ export function Board({
     if (rightClickTarget) handledRightPress.current = true;
     drag.current = {
       card,
+      fromCardHalo,
       rightClickTarget,
       title: !!card && event.target instanceof Element && !!event.target.closest('.card-title'),
       selecting,
@@ -980,7 +983,8 @@ export function Board({
       );
     return { x: limit(x, 'x'), y: limit(y, 'y') };
   };
-  const showNearbyControls = (owner: Element | null) => {
+  const showNearbyControls = (owner: Element | null, cardDragArea = false) => {
+    root.current?.toggleAttribute('data-card-drag-area', cardDragArea);
     if (nearbyControlOwner.current !== owner) {
       nearbyControlOwner.current?.removeAttribute('data-controls-nearby');
       owner?.setAttribute('data-controls-nearby', '');
@@ -993,19 +997,23 @@ export function Board({
       setDismissedCardActions(null);
     }
   };
-  const updateNearbyControls = (target: EventTarget | null, position: MenuPosition) => {
+  const controlOwnerAt = (target: EventTarget | null, position: MenuPosition) => {
     const board = root.current;
+    if (!board || marks.tool || source !== null) return null;
+    return nearbyControls(
+      board,
+      target,
+      position.clientX,
+      position.clientY,
+      camera.scale,
+      worldPoint(position),
+    );
+  };
+  const updateNearbyControls = (target: EventTarget | null, position: MenuPosition) => {
+    const owner = controlOwnerAt(target, position);
     showNearbyControls(
-      board && !marks.tool && source === null
-        ? nearbyControls(
-            board,
-            target,
-            position.clientX,
-            position.clientY,
-            camera.scale,
-            worldPoint(position),
-          )
-        : null,
+      owner,
+      !busy && target === root.current && owner?.hasAttribute('data-card-id') === true,
     );
   };
   useLayoutEffect(() => {
@@ -1144,11 +1152,11 @@ export function Board({
     try {
       if (cancelled) return;
       if (!moved) {
-        if (current.card) {
+        if (current.card && !current.fromCardHalo) {
           if (event.pointerType === 'mouse')
             mouseClick.current = { id: current.card.id, title: current.title };
           else if (!current.selection) selectCard(current.card);
-        } else if (!current.selection) {
+        } else if (!current.selection || current.fromCardHalo) {
           marks.cancel();
           setSelectedId(null);
           setGroup(emptySelection);
@@ -1431,7 +1439,13 @@ export function Board({
           cancelLink();
           return;
         }
-        start(event, null);
+        const cardId =
+          event.button === 0 &&
+          event.pointerType === 'mouse' &&
+          event.target === event.currentTarget
+            ? controlOwnerAt(event.target, event)?.getAttribute('data-card-id')
+            : null;
+        start(event, cardId ? (visible.find((card) => card.id === Number(cardId)) ?? null) : null);
       }}
       onPointerMove={move}
       onPointerLeave={() => {

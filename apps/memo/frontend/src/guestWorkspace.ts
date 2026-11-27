@@ -1,7 +1,7 @@
 import { ApiError } from './api';
 import type { WorkspaceDataClient } from './WorkspaceClient';
 import { withoutEmptySections } from './document';
-import { canConnect, cardDimensions, cardHeight, cardWidth } from './graph';
+import { canConnect, cardColumnStep, cardDimensions, cardHeight, cardWidth } from './graph';
 import type { EntityRef } from './routes';
 import { guestUserId, readDraft } from './storage';
 import type { BoardMark, Card, CardLink, Folder, GuestProjectSnapshot, Project } from './types';
@@ -82,18 +82,19 @@ export function createGuestWorkspace() {
   };
   const nextPoint = (folder: number | null): Point => {
     const neighbors = boardCards(folder);
+    const clearance = 24;
     for (let index = 0; index <= neighbors.length * 20; index++) {
-      const x = 80 + (index % 3) * (cardWidth + 40);
-      const y = 80 + Math.floor(index / 3) * (cardHeight + 45);
+      const x = 80 + (index % 3) * cardColumnStep;
+      const y = 80 + Math.floor(index / 3) * (cardHeight + 67.5);
       if (
         neighbors.every((card) => {
           const point = card.coordinates;
           const size = cardDimensions(card);
           return (
-            x + cardWidth + 16 <= point.x ||
-            point.x + size.width + 16 <= x ||
-            y + cardHeight + 16 <= point.y ||
-            point.y + size.height + 16 <= y
+            x + cardWidth + clearance <= point.x ||
+            point.x + size.width + clearance <= x ||
+            y + cardHeight + clearance <= point.y ||
+            point.y + size.height + clearance <= y
           );
         })
       )

@@ -485,40 +485,51 @@ export function CardEditor({
               <div className="editor-body record-sections">
                 {textSections.map((section, index) => {
                   const text = sectionText(section);
-                  if (text !== null && (empty || editingSections.includes(section.id))) {
-                    return (
-                      <textarea
-                        key={section.id}
-                        className="record-text-input"
-                        aria-label={`Текст ${index + 1}`}
-                        placeholder="Введите текст"
-                        rows={4}
-                        autoFocus={canEdit && (empty || editingSections.at(-1) === section.id)}
-                        value={text}
-                        readOnly={!canEdit || status === 'saving'}
-                        onChange={(event) => {
-                          if (empty) editSection(section.id);
-                          updateSection(section.id, { document: textDocument(event.target.value) });
-                        }}
-                      />
-                    );
-                  }
                   return (
-                    <RecordContent
-                      key={section.id}
-                      section={section}
-                      edit={canEdit && text !== null ? () => editSection(section.id) : undefined}
-                      index={index}
-                    />
+                    <div className="record-block" key={section.id}>
+                      {text !== null && (empty || editingSections.includes(section.id)) ? (
+                        <div className="record-text-draft">
+                          <span className="record-text-mirror" aria-hidden="true">
+                            {text + '\u200b'}
+                          </span>
+                          <textarea
+                            className="record-text-input"
+                            aria-label={`Текст ${index + 1}`}
+                            placeholder="Введите текст"
+                            rows={1}
+                            autoFocus={canEdit && (empty || editingSections.at(-1) === section.id)}
+                            value={text}
+                            readOnly={!canEdit || status === 'saving'}
+                            onChange={(event) => {
+                              if (empty) editSection(section.id);
+                              updateSection(section.id, {
+                                document: textDocument(event.target.value),
+                              });
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <RecordContent
+                          section={section}
+                          edit={
+                            canEdit && text !== null ? () => editSection(section.id) : undefined
+                          }
+                          index={index}
+                        />
+                      )}
+                    </div>
                   );
                 })}
-                <IconButton
+                <Button
                   icon="plus"
-                  className="primary"
-                  label="Добавить текст"
+                  variant="primary"
+                  className="add-button"
+                  aria-label="Добавить текст"
                   disabled={!canEdit || status === 'saving'}
                   onClick={addSection}
-                />
+                >
+                  Добавить
+                </Button>
               </div>
             )}
           </div>

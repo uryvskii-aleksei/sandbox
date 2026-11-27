@@ -1112,6 +1112,7 @@ audio {
 .project-navigation {
   flex: 1;
   min-height: 40px;
+  margin-block-start: var(--panel-inset);
 }
 .sidebar .brand {
   margin-bottom: 24px;
@@ -1630,7 +1631,7 @@ kbd {
 .board-add {
   position: relative;
 }
-.board-add > .ui-button {
+.add-button {
   min-height: 36px;
   padding: 6px 12px;
   font-size: 13px;
@@ -2206,19 +2207,56 @@ select {
 }
 .record-sections {
   display: grid;
-  gap: 16px;
 }
-.record-text-input {
-  line-height: 1.55;
-}
-.record-sections > button {
-  justify-self: start;
-}
-.record-content {
+.record-block {
   min-width: 0;
-  padding: 10px 8px;
+}
+.record-block + .record-block {
+  position: relative;
+  margin-block-start: 8px;
+  padding-block-start: 9px;
+}
+.record-block + .record-block::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: calc(-1 * var(--panel-inset));
+  height: 9px;
+  border-top: 1px solid var(--accent);
+  background: linear-gradient(#10274f26, transparent);
+  pointer-events: none;
+}
+.record-sections > .add-button {
+  justify-self: center;
+  margin-block-start: 12px;
+}
+.record-text-draft {
+  display: grid;
+}
+.record-content,
+.record-text-draft > * {
+  min-width: 0;
+  padding: 8px 0;
   line-height: 1.55;
   overflow-wrap: anywhere;
+}
+.record-text-draft > * {
+  grid-area: 1 / 1;
+  white-space: pre-wrap;
+}
+.record-text-mirror {
+  visibility: hidden;
+}
+.record-text-draft .record-text-input {
+  height: 100%;
+  border: 0;
+  background: transparent;
+  font-size: inherit;
+  overflow: hidden;
+  resize: none;
+}
+.record-text-input:focus {
+  outline: none;
 }
 .editable-section {
   cursor: text;
@@ -2226,9 +2264,6 @@ select {
 }
 .editable-section:hover {
   background: #e8eef9;
-}
-.record-content + .record-content {
-  border-top: 1px solid var(--border);
 }
 .record-content > :first-child {
   margin-top: 0;

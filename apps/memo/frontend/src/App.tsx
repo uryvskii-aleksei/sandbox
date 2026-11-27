@@ -663,6 +663,7 @@ export function App() {
     setCards(prepared?.cards ?? []);
     setLinks(prepared?.links ?? []);
     setProjects(prepared?.projects ?? []);
+    setProjectsStatus(prepared ? 'ready' : 'loading');
     setWorkspace(prepared?.board ?? null);
     setLoading(false);
     setLoaded(Boolean(prepared));
@@ -747,7 +748,7 @@ export function App() {
       await api.session();
       const { user: signedIn } = await api.auth(mode, email, String(data.get('password')));
       if (!signedIn) throw new Error('Не удалось открыть аккаунт.');
-      let snapshot = guest.snapshot();
+      const snapshot = guest.snapshot();
       if (!snapshot) {
         if (entryRoute.current.view !== 'home') {
           finishAuth(signedIn);
@@ -759,12 +760,8 @@ export function App() {
           await openAuthenticatedBoard(signedIn, project, { projects: items });
           return;
         }
-        if (createProjectAfterAuth.current) {
-          finishAuth(signedIn);
-          return;
-        }
-        const { name } = await guest.client.project(guestProjectId);
-        snapshot = { name, cards: [], links: [], marks: [] };
+        finishAuth(signedIn);
+        return;
       }
       const pending = { account: signedIn, snapshot, requestId: crypto.randomUUID() };
       setTransfer(pending);

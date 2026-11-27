@@ -18,6 +18,7 @@
   --panel-header-inset: 16px;
   --panel-inset: 14px;
   --workspace-divider-shadow: 0 2px 12px #10274f30;
+  --workspace-footer-shadow: 0 -2px 12px #10274f30;
 }
 * {
   box-sizing: border-box;
@@ -265,6 +266,7 @@ button {
   flex-shrink: 0;
 }
 .sidebar-account {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -272,7 +274,8 @@ button {
   flex-shrink: 0;
   margin: auto calc(-1 * var(--sidebar-inset)) 0;
   padding: 12px var(--sidebar-inset);
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--accent);
+  box-shadow: var(--workspace-footer-shadow);
   font-size: 12px;
 }
 .sidebar-email {
@@ -2529,9 +2532,12 @@ select {
   padding: var(--panel-inset);
 }
 .record-dock .editor-footer {
+  position: relative;
   flex-wrap: wrap;
   padding: 12px var(--panel-inset);
   gap: 6px;
+  border-top-color: var(--accent);
+  box-shadow: var(--workspace-footer-shadow);
 }
 .record-dock .editor-footer > button {
   padding: 8px 10px;
@@ -2596,6 +2602,7 @@ select {
     margin: 0;
     padding: 0;
     border: 0;
+    box-shadow: none;
   }
   .sidebar-collapsed .sidebar-account {
     flex-direction: row;

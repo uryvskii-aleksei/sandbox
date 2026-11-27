@@ -1121,29 +1121,31 @@ export function App() {
               }
             />
           </div>
-          <Button
-            ref={projectCreateButton}
-            className="sidebar-new-project add-button"
-            variant="primary"
-            icon="plus"
-            aria-label="Создать проект"
-            aria-haspopup="dialog"
-            title={panels.collapsed ? 'Создать проект' : undefined}
-            disabled={busy}
-            onClick={() => {
-              setShortcutsOpen(false);
-              if (guestMode) openGuestAuth(true);
-              else setProjectCreateOpen(true);
-            }}
-          >
-            <span className="sidebar-label">Создать проект</span>
-          </Button>
+          <div className="sidebar-project-tools">
+            <Button
+              ref={projectCreateButton}
+              className="sidebar-new-project add-button"
+              variant="primary"
+              icon="plus"
+              aria-label="Создать проект"
+              aria-haspopup="dialog"
+              title={panels.collapsed ? 'Создать проект' : undefined}
+              disabled={busy}
+              onClick={() => {
+                setShortcutsOpen(false);
+                if (guestMode) openGuestAuth(true);
+                else setProjectCreateOpen(true);
+              }}
+            >
+              <span className="sidebar-label">Создать проект</span>
+            </Button>
+          </div>
           {visibleProjects.length > 0 && (
             <nav className="project-navigation" aria-label="Проекты">
               {visibleProjects.map((project) => (
                 <button
                   key={project.id}
-                  className={`nav-item ${selected === project.id ? 'selected' : ''}`}
+                  className="nav-item"
                   disabled={busy}
                   onClick={() =>
                     navigate({ view: 'project', project: project.publicId ?? project.id })

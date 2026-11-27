@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties, FormEvent } from 'react';
+import type { CSSProperties, FormEvent, ReactNode } from 'react';
 import { api } from './api';
 import { Board } from './Board';
 import { CardEditor } from './CardEditor';
@@ -165,13 +165,17 @@ function WorkspaceTitle({
   );
 }
 
-const names: Record<View, string> = {
+const names: Record<View, ReactNode> = {
   dashboard: 'Мои проекты',
   project: 'Проект',
   record: 'Запись',
   inbox: 'Входящие',
   recent: 'Недавние записи',
-  search: 'Поиск по Memo',
+  search: (
+    <>
+      Поиск по <i>memo</i>
+    </>
+  ),
   trash: 'Корзина',
   drafts: 'Черновики на устройстве',
 };
@@ -237,6 +241,7 @@ export function App() {
   const workspaceApi = guestMode ? guest.client : api;
   const entryRoute = useRef(currentRoute());
   const [authOpen, setAuthOpen] = useState(false);
+  const guestAuthButton = useRef<HTMLButtonElement>(null);
   const [authError, setAuthError] = useState('');
   const [transfer, setTransfer] = useState<PendingTransfer | null>(null);
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -329,9 +334,7 @@ export function App() {
     const enterGuest = () => {
       setRoute(guestRoute);
       setSearchOpen(false);
-      if (entryRoute.current.view === 'project' || entryRoute.current.view === 'record') {
-        setAuthOpen(true);
-      }
+      setAuthOpen(true);
     };
     void api
       .session()
@@ -620,6 +623,10 @@ export function App() {
     setAccount(signedIn);
     history.replaceState(null, '', urlFor(next));
     setRoute(next);
+  };
+  const dismissGuestAuth = () => {
+    setAuthOpen(false);
+    requestAnimationFrame(() => guestAuthButton.current?.focus({ preventScroll: true }));
   };
   const importWorkspace = async (pending: PendingTransfer) => {
     const project = await api.importGuest(pending.snapshot, pending.requestId);
@@ -962,8 +969,9 @@ export function App() {
   );
   const showingBoard =
     workspaceView && viewMode === 'board' && !loading && loaded && loadedKey === loadKey;
+  const sidebarWidth = panels.collapsed ? 62 : panels.left;
   const docking: CSSProperties & Record<'--memo-sidebar-width' | '--memo-record-width', string> = {
-    '--memo-sidebar-width': `${panels.collapsed ? 62 : panels.left}px`,
+    '--memo-sidebar-width': `${sidebarWidth}px`,
     '--memo-record-width': `${panels.right}px`,
   };
   return (
@@ -980,15 +988,14 @@ export function App() {
           <div className="sidebar-top">
             <a
               className="brand"
-              aria-label="Memo"
+              aria-label="memo"
               href={base}
               onClick={(event) => {
                 event.preventDefault();
                 navigate(guestMode ? guestRoute : { view: 'dashboard' });
               }}
             >
-              <span className="brand-mark">m.</span>
-              <span className="sidebar-label">Memo</span>
+              <span className="brand-mark">memo</span>
             </a>
             <IconButton
               icon="sidebar"
@@ -1048,7 +1055,8 @@ export function App() {
           <div className="sidebar-account">
             {guestMode ? (
               <Button
-                className="sidebar-auth-button"
+                ref={guestAuthButton}
+                className="sidebar-auth-button login-button"
                 variant="primary"
                 icon="login"
                 aria-label="Войти"
@@ -1300,6 +1308,7 @@ export function App() {
                 storageKey={`memo:${user.id}:camera:${selected}${folder === null ? '' : `:${folder}`}`}
                 focusId={focusId}
                 editingCardId={editing?.id ?? null}
+                sidebarWidth={sidebarWidth}
                 clipboard={boardClipboard}
                 copy={(item) => {
                   pendingPaste.current = null;
@@ -1401,8 +1410,8 @@ export function App() {
           ) : route.view === 'drafts' ? (
             <section className="library-panel">
               <p className="lead">
-                Несохранённый ввод на этом устройстве. При открытии Memo предложит восстановить его
-                или сохранить отдельной записью.
+                Несохранённый ввод на этом устройстве. При открытии <i>memo</i> предложит
+                восстановить его или сохранить отдельной записью.
               </p>
               {drafts.map((draft) => (
                 <article className="trash-row" key={draft.card.id}>
@@ -1541,7 +1550,7 @@ export function App() {
           busy={busy}
           transferring={transfer !== null}
           error={authError}
-          dismiss={() => setAuthOpen(false)}
+          dismiss={dismissGuestAuth}
           authenticate={authenticate}
           retry={() => {
             if (transfer) runAuth(() => importWorkspace(transfer));

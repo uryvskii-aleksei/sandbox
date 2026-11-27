@@ -192,6 +192,7 @@ button {
   background: #fff;
   color: var(--accent);
   border-right: 1px solid var(--accent);
+  box-shadow: 2px 0 12px #10274f30;
   padding: 30px 20px 18px;
   display: flex;
   flex-direction: column;
@@ -832,7 +833,6 @@ button {
   width: min(680px, 100%);
   background: #fff;
   height: 100dvh;
-  box-shadow: -20px 0 80px #10274f26;
 }
 .editor > form {
   display: flex;
@@ -2476,17 +2476,18 @@ select {
 }
 .record-dock {
   position: relative;
+  z-index: 5;
   flex-shrink: 0;
   width: min(var(--memo-record-width), max(270px, calc(100vw - var(--memo-sidebar-width) - 245px)));
   min-width: 0;
   height: 100dvh;
   border-left: 1px solid var(--accent);
   background: #fff;
+  box-shadow: -20px 0 80px #10274f26;
 }
 .record-dock .editor {
   width: 100%;
   height: 100%;
-  box-shadow: none;
 }
 .record-dock .editor-header {
   background: white;
@@ -2548,6 +2549,7 @@ select {
     height: max(340px, 55dvh);
     border-left: 0;
     border-top: 1px solid var(--accent);
+    box-shadow: 0 -20px 80px #10274f26;
   }
   .panel-divider-right {
     display: none;
@@ -2559,6 +2561,7 @@ select {
     position: static;
     border-right: 0;
     border-bottom: 1px solid var(--accent);
+    box-shadow: 0 2px 12px #10274f30;
   }
   .sidebar-top {
     grid-column: 1;

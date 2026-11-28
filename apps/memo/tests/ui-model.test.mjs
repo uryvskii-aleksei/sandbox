@@ -256,6 +256,35 @@ test('adjacent links in a chain can be rerouted without crossing each other', ()
   routesDoNotCross(routes);
 });
 
+test('links go around an occupied passage after the cards are rearranged', () => {
+  const blocks = [
+    block(1, 414, 620, 188, 94),
+    block(2, -29, 761, 188, 94),
+    block(3, -74, 590, 188, 94),
+    block(4, 383, 975, 188, 94),
+  ];
+  const links = [edge(1, 2), edge(2, 3), edge(3, 4)];
+  const routes = routeBoardLinks(links, blocks);
+  assert.deepEqual(
+    routes.map(({ link }) => link),
+    links,
+  );
+  routes.forEach((route) => routeClears(route, blocks));
+  routesDoNotCross(routes);
+});
+
+test('detours stay clear when two links nearly follow the same segment', () => {
+  const blocks = [
+    block(1, 345, 185, 188, 94),
+    block(2, 3, -10, 188, 94),
+    block(3, -19, 265, 188, 94),
+    block(4, 396, -7, 188, 94),
+  ];
+  const routes = routeBoardLinks([edge(1, 2), edge(2, 3), edge(3, 4)], blocks);
+  routes.forEach((route) => routeClears(route, blocks));
+  routesDoNotCross(routes);
+});
+
 test('multiple parents keep both branches reachable and reject cycles across every parent', () => {
   const links = [edge(1, 3), edge(2, 3), edge(3, 4)];
   assert.equal(canConnect(links, 4, 1), false);

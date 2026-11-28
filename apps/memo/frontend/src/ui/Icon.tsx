@@ -20,7 +20,6 @@ export type IconName =
   | 'search'
   | 'sidebar'
   | 'login'
-  | 'person'
   | 'people'
   | 'invite'
   | 'copy'
@@ -52,7 +51,6 @@ const paths: Record<IconName, string> = {
   search: 'M20 20l-4.5-4.5M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0Z',
   sidebar: 'M3 5h18v14H3ZM9 5v14',
   login: 'M13 4h7v16h-7M3 12h11m-4-4 4 4-4 4',
-  person: 'M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z',
   people:
     'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m20 0v-2a4 4 0 0 0-3-4m-3-12a4 4 0 0 1 0 8M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z',
   invite:

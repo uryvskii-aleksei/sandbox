@@ -1,4 +1,4 @@
-import { createSoundscapeArt } from './soundscape-art.mjs';
+import { createSoundscapeArt } from './soundscape-art.mjs?v=3';
 
 const genreHues = { electronic: 264, jazz: 202, folk: 141, 'hip-hop': 23, pop: 326 };
 
@@ -21,7 +21,7 @@ function bandEnergy(spectrum, hzPerBin, from, to) {
   return Math.sqrt(energy / Math.max(1, end - first));
 }
 
-export function setupSoundscape(video, canvas) {
+export function setupSoundscape(video, canvas, glow) {
   const Audio = window.AudioContext ?? window.webkitAudioContext;
   const graphics = canvas.getContext('2d');
   const art = graphics && createSoundscapeArt(graphics);
@@ -73,8 +73,9 @@ export function setupSoundscape(video, canvas) {
     bass += (low - bass) * 0.23;
     floor += (low - floor) * 0.065;
     accent = Math.min(1, Math.max(accent * 0.84, (low - floor - 0.04) * 4));
-    hue += (palette + (brightness - 0.4) * 62 - hue) * 0.14;
-    art.draw(delta, { width, height, bass, accent, high, first: hue, second: 326 });
+    hue += (palette + (brightness - 0.4) * 88 - hue) * 0.14;
+    art.draw(delta, { width, height, bass, accent, mid, high, first: hue, second: hue + 58 });
+    glow.style.setProperty('--glow-pulse', (bass * 0.35 + accent * 0.65).toFixed(3));
   }
 
   function sync() {
@@ -90,6 +91,7 @@ export function setupSoundscape(video, canvas) {
     if (!active) {
       cancelAnimationFrame(frame);
       frame = undefined;
+      glow.style.removeProperty('--glow-pulse');
     } else if (frame === undefined) {
       lastDraw = performance.now();
       frame = requestAnimationFrame(draw);

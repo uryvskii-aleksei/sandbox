@@ -1,6 +1,6 @@
 import { setupAccount } from './account.mjs?v=2';
 import { pickClip } from './selection.mjs';
-import { setupSoundscape, trackHue } from './soundscape.mjs?v=2';
+import { setupSoundscape, trackHue } from './soundscape.mjs?v=3';
 
 const get = (id) => document.getElementById(id);
 const toggle = get('toggle');
@@ -9,7 +9,9 @@ const next = get('next');
 const like = get('like');
 const dislike = get('dislike');
 const video = get('video');
-const soundscape = setupSoundscape(video, get('soundscape'));
+const screen = get('video-screen');
+const deck = screen.closest('.deck');
+const soundscape = setupSoundscape(video, get('soundscape'), get('viewport-glow'));
 const trackDetails = get('track-details');
 const clipDetails = get('clip-details');
 const source = get('video-source');
@@ -209,6 +211,11 @@ dislike.addEventListener('click', () => account.rate(current().id, -1));
 
 video.addEventListener('click', () => {
   if (!current()) playOrPause();
+});
+video.addEventListener('resize', () => {
+  if (video.videoWidth && video.videoHeight) {
+    deck.style.setProperty('--video-ratio', String(video.videoWidth / video.videoHeight));
+  }
 });
 video.addEventListener('loadeddata', () => {
   if (!current()) message.textContent = '';

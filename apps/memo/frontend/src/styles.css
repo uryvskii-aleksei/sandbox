@@ -379,6 +379,12 @@ button {
   height: 22px;
   place-items: center;
 }
+.project-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
 .sidebar-project-edit {
   display: grid;
   gap: 4px;

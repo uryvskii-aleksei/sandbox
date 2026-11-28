@@ -1301,7 +1301,11 @@ export function App() {
                     }
                   >
                     <span className="project-symbol" aria-hidden="true">
-                      <Icon name={project.access === 'editor' ? 'people' : 'person'} size={18} />
+                      {project.access === 'editor' ? (
+                        <Icon name="people" size={18} />
+                      ) : (
+                        <span className="project-dot" />
+                      )}
                     </span>
                     <span className="sidebar-label">{project.name}</span>
                     <small>{project.cards ?? 0}</small>

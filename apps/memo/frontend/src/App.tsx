@@ -12,7 +12,7 @@ import { PanelDivider } from './PanelDivider';
 import { ProjectActions } from './ProjectActions';
 import { ProjectNameEditor } from './ProjectNameEditor';
 import { ProjectInviteDialog } from './ProjectInviteDialog';
-import { cardDimensions, childPosition, clampCardSize, excerpt } from './graph';
+import { childPosition, excerpt } from './graph';
 import { parseRoute, routeUrl } from './routes';
 import type { EntityRef, Route } from './routes';
 import { isTextInput, markTools, shortcutHelp } from './shortcuts';
@@ -596,13 +596,9 @@ export function App() {
       })),
     );
   };
-  const renameCard = async (id: number, name: string, height?: number) => {
+  const renameCard = async (id: number, name: string) => {
     const card = await workspaceApi.card(id);
-    const size =
-      height && card.autoHeight !== false
-        ? clampCardSize(cardDimensions(card).width, height)
-        : card.size;
-    const renamed = await workspaceApi.saveCard({ ...card, name, size }, crypto.randomUUID());
+    const renamed = await workspaceApi.saveCard({ ...card, name }, crypto.randomUUID());
     replaceCard(renamed);
     setEditing((current) => (current?.id === renamed.id ? renamed : current));
     if (renamed.kind === 'folder')
@@ -922,7 +918,7 @@ export function App() {
         content: [],
       });
       delete pending[kind];
-      if (!operation.coordinates) setFocus({ id: created.id, center: false });
+      if (viewMode === 'board') setFocus({ id: created.id, center: false, editTitle: true });
       refresh();
     });
   };
@@ -1016,7 +1012,7 @@ export function App() {
         text: '',
       });
       setCards((items) => [...items, withText]);
-      setFocus({ id: withText.id, center: false });
+      setFocus({ id: withText.id, center: false, editTitle: true });
       await refreshLinks();
     });
   const updatePosition = (card: Card) =>
@@ -1497,39 +1493,38 @@ export function App() {
               </div>
             )}
             {active && (
-              <div className="project-toolbar-end">
-                <div className="view-switch" role="group" aria-label="Вид проекта">
-                  <IconButton
-                    label="Полотно"
-                    tooltip="Полотно · Alt+Shift+B"
-                    aria-keyshortcuts="Alt+Shift+B"
-                    icon="board"
-                    aria-pressed={viewMode === 'board'}
-                    onClick={() => setViewMode('board')}
-                  />
-                  <IconButton
-                    label="Список"
-                    tooltip="Список · Alt+Shift+V"
-                    aria-keyshortcuts="Alt+Shift+V"
-                    icon="list"
-                    aria-pressed={viewMode === 'list'}
-                    onClick={() => setViewMode('list')}
-                  />
-                </div>
-                {canInvite && (
-                  <IconButton
-                    ref={projectInviteButton}
-                    className="project-invite-button"
-                    icon="invite"
-                    iconSize={20}
-                    label="Пригласить в проект"
-                    tooltip="Пригласить в проект"
-                    aria-haspopup="dialog"
-                    disabled={busy}
-                    onClick={() => openProjectInvite(active, projectInviteButton.current)}
-                  />
-                )}
+              <div className="view-switch" role="group" aria-label="Вид проекта">
+                <IconButton
+                  label="Полотно"
+                  tooltip="Полотно · Alt+Shift+B"
+                  aria-keyshortcuts="Alt+Shift+B"
+                  icon="board"
+                  aria-pressed={viewMode === 'board'}
+                  onClick={() => setViewMode('board')}
+                />
+                <IconButton
+                  label="Список"
+                  tooltip="Список · Alt+Shift+V"
+                  aria-keyshortcuts="Alt+Shift+V"
+                  icon="list"
+                  aria-pressed={viewMode === 'list'}
+                  onClick={() => setViewMode('list')}
+                />
               </div>
+            )}
+            {active && canInvite && (
+              <Button
+                ref={projectInviteButton}
+                className="project-invite-button"
+                variant="primary"
+                icon="invite"
+                iconSize={20}
+                aria-label="Пригласить в проект"
+                data-tooltip="Пригласить в проект"
+                aria-haspopup="dialog"
+                disabled={busy}
+                onClick={() => openProjectInvite(active, projectInviteButton.current)}
+              />
             )}
           </div>
           {toasts}
@@ -1582,6 +1577,9 @@ export function App() {
                 }
                 storageKey={cameraKey(user.id, selected ?? 0, folder)}
                 focus={focus}
+                consumeTitleFocus={(opened) =>
+                  setFocus((current) => (current === opened ? null : current))
+                }
                 editingCardId={editing?.id ?? null}
                 sidebarWidth={sidebarWidth}
                 clipboard={boardClipboard}

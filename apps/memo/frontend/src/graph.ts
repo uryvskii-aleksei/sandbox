@@ -1,12 +1,17 @@
 import type { Card, CardLink, DocumentNode, FieldGroup } from './types';
 
 export const cardWidth = 188;
-export const cardHeight = 70;
+export const cardHeight = cardWidth;
 export const cardColumnStep = cardWidth + 60;
-export const cardDimensions = (card: Card) => card.size ?? { width: cardWidth, height: cardHeight };
+export const cardDimensions = (card: Card) =>
+  !card.size ||
+  (card.size.width === cardWidth &&
+    (card.autoHeight === true || (card.autoHeight === undefined && card.size.height === 70)))
+    ? { width: cardWidth, height: cardHeight }
+    : card.size;
 export const clampCardSize = (width: number, height: number) => ({
   width: Math.max(180, Math.min(920, Math.round(width))),
-  height: Math.max(cardHeight, Math.min(760, Math.round(height))),
+  height: Math.max(70, Math.min(760, Math.round(height))),
 });
 
 export function childPosition(cards: Card[], parent: Card): Card['coordinates'] {

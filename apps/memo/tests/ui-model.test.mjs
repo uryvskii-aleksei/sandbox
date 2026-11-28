@@ -5,6 +5,7 @@ import { parseRoute, routeUrl } from '../frontend/src/routes.ts';
 import {
   branchIds,
   canConnect,
+  cardDimensions,
   contentSignature,
   copiedContent,
   reconcileSaved,
@@ -34,6 +35,20 @@ const group = (id, field, value) => ({
   order: 0,
   collapsed: false,
   fields: [{ id: field, type: 'textarea', title: '', order: 0, value: [value] }],
+});
+
+test('default cards are square while manually resized cards keep their geometry', () => {
+  const legacySize = { width: 188, height: 70 };
+  assert.deepEqual(cardDimensions(card([])), { width: 188, height: 188 });
+  assert.deepEqual(cardDimensions({ ...card([]), size: legacySize }), { width: 188, height: 188 });
+  assert.deepEqual(
+    cardDimensions({ ...card([]), size: { width: 188, height: 92 }, autoHeight: true }),
+    { width: 188, height: 188 },
+  );
+  assert.deepEqual(
+    cardDimensions({ ...card([]), size: legacySize, autoHeight: false }),
+    legacySize,
+  );
 });
 
 test('workspace routes round-trip opaque IDs and still resolve numeric bookmarks', () => {

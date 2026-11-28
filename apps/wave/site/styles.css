@@ -184,6 +184,12 @@ button:disabled {
     calc(var(--video-gutter) + env(safe-area-inset-left));
 }
 
+@media (min-width: 96rem) {
+  .player-stage {
+    padding-block: clamp(var(--stage-gap), calc(8dvh - 3rem), 6rem);
+  }
+}
+
 .deck {
   --track-height: 2.5rem;
   --video-ratio: 16 / 9;

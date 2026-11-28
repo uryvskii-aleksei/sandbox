@@ -479,32 +479,50 @@ export function routeBoardLinks(links: CardLink[], blocks: Block[]) {
           pathsCross(segments, other.segments) ? [[i, i + 1 + offset]] : [],
         ),
     );
+  const alternatives = (i: number, j: number) => {
+    const a = plan[i];
+    const b = plan[j];
+    const reordered = [...plan];
+    reordered[i] = b;
+    reordered[j] = a;
+    const side =
+      a.link.source === b.link.source ? 'start' : a.link.target === b.link.target ? 'end' : null;
+    if (!side) return [reordered];
+    const swappedPorts = [...plan];
+    swappedPorts[i] = { ...a, [side]: b[side] };
+    swappedPorts[j] = { ...b, [side]: a[side] };
+    return [swappedPorts, reordered];
+  };
   let routes = draw(plan);
   let crossings = intersections(routes);
+  if (!crossings.length) return routes;
+
+  const attemptLimit = 6;
   let attempts = 0;
-  // У соседних связей может быть другой порядок выходов, даже если их цели расположены слева направо.
-  while (crossings.length && attempts < 6) {
+  // Другой порядок портов или расчёта связей может освободить проход.
+  while (crossings.length && attempts < attemptLimit) {
     let improved = false;
     for (const [i, j] of crossings) {
-      const a = plan[i];
-      const b = plan[j];
-      const side =
-        a.link.source === b.link.source ? 'start' : a.link.target === b.link.target ? 'end' : null;
-      if (!side) continue;
-      if (++attempts > 6) break;
-      const next = [...plan];
-      next[i] = { ...a, [side]: b[side] };
-      next[j] = { ...b, [side]: a[side] };
-      const candidate = draw(next);
-      const remaining = intersections(candidate);
-      if (remaining.length >= crossings.length) continue;
-      plan = next;
-      routes = candidate;
-      crossings = remaining;
-      improved = true;
-      break;
+      for (const next of alternatives(i, j)) {
+        if (attempts >= attemptLimit) break;
+        attempts += 1;
+        const candidate = draw(next);
+        const remaining = intersections(candidate);
+        if (remaining.length >= crossings.length) continue;
+        plan = next;
+        routes = candidate;
+        crossings = remaining;
+        improved = true;
+        break;
+      }
+      if (improved || attempts >= attemptLimit) break;
     }
     if (!improved) break;
   }
-  return routes;
+
+  const byLink = new Map(routes.map((route) => [route.link, route]));
+  return visible.flatMap((link) => {
+    const route = byLink.get(link);
+    return route ? [route] : [];
+  });
 }

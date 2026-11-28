@@ -37,17 +37,18 @@ const group = (id, field, value) => ({
   fields: [{ id: field, type: 'textarea', title: '', order: 0, value: [value] }],
 });
 
-test('default cards are square while manually resized cards keep their geometry', () => {
-  const legacySize = { width: 188, height: 70 };
-  assert.deepEqual(cardDimensions(card([])), { width: 188, height: 188 });
-  assert.deepEqual(cardDimensions({ ...card([]), size: legacySize }), { width: 188, height: 188 });
+test('default cards are 188 by 94 while manually resized cards keep their geometry', () => {
+  const compactSize = { width: 188, height: 94 };
+  const squareSize = { width: 188, height: 188 };
+  assert.deepEqual(cardDimensions(card([])), compactSize);
+  assert.deepEqual(cardDimensions({ ...card([]), size: { width: 188, height: 70 } }), compactSize);
   assert.deepEqual(
-    cardDimensions({ ...card([]), size: { width: 188, height: 92 }, autoHeight: true }),
-    { width: 188, height: 188 },
+    cardDimensions({ ...card([]), size: squareSize, autoHeight: true }),
+    compactSize,
   );
   assert.deepEqual(
-    cardDimensions({ ...card([]), size: legacySize, autoHeight: false }),
-    legacySize,
+    cardDimensions({ ...card([]), size: squareSize, autoHeight: false }),
+    squareSize,
   );
 });
 

@@ -1,7 +1,7 @@
 import type { Card, CardLink, DocumentNode, FieldGroup } from './types';
 
 export const cardWidth = 188;
-export const cardHeight = cardWidth;
+export const cardHeight = 94;
 export const cardColumnStep = cardWidth + 60;
 export const cardDimensions = (card: Card) =>
   !card.size ||

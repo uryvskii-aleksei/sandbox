@@ -26,13 +26,17 @@ try {
     query('INSERT INTO field_groups(card_id,name) VALUES(?,?)', [$child,'Legacy media']);
     $group = (int) database()->lastInsertId();
     query('INSERT INTO fields(group_id,type,values_json) VALUES(?,?,?)', [$group,'image',json_encode(["/memo/api/media/$media"], JSON_THROW_ON_ERROR)]);
-    query("DELETE FROM schema_migrations WHERE name IN ('card-links-v1','project-activity-v1','compact-card-height-v1','growing-card-title-v1','square-default-cards-v1','card-media-v1')");
+    query("DELETE FROM schema_migrations WHERE name IN ('card-links-v1','project-activity-v1','compact-card-height-v1','growing-card-title-v1','default-card-height-94-v1','card-media-v1')");
     query('INSERT INTO cards(project_id,name,width) VALUES(?,?,?)', [$project, 'Earlier default', 188]);
     $earlierDefault = (int) database()->lastInsertId();
+    query('INSERT INTO cards(project_id,name,width,height) VALUES(?,?,?,?)', [$project, 'Square default', 188, 188]);
+    $squareDefault = (int) database()->lastInsertId();
     require '/var/www/memo/database/migrate.php';
-    $migratedSize = query('SELECT width,height FROM cards WHERE id=?', [$earlierDefault])->fetch(PDO::FETCH_NUM);
-    if (array_map('intval', $migratedSize) !== [188,188]) throw new RuntimeException('Earlier default cards did not become square');
-    query('DELETE FROM cards WHERE id=?', [$earlierDefault]);
+    foreach ([$earlierDefault, $squareDefault] as $defaultCard) {
+        $migratedSize = query('SELECT width,height FROM cards WHERE id=?', [$defaultCard])->fetch(PDO::FETCH_NUM);
+        if (array_map('intval', $migratedSize) !== [188,94]) throw new RuntimeException('An earlier default card did not get the new height');
+        query('DELETE FROM cards WHERE id=?', [$defaultCard]);
+    }
     if (query('SELECT media_id FROM card_media WHERE card_id=?', [$child])->fetchColumn() !== $media) throw new RuntimeException('Legacy attachment did not remain associated with its card');
     $sizes = query('SELECT height FROM cards WHERE project_id=? ORDER BY id', [$project])->fetchAll(PDO::FETCH_COLUMN);
     if (array_map('intval', $sizes) !== [70,248]) throw new RuntimeException('Default card height did not compact or a custom height was changed');
@@ -43,7 +47,7 @@ try {
     query('INSERT INTO cards(project_id,name) VALUES(?,?)', [$project, 'New default']);
     $newCard = (int) database()->lastInsertId();
     $newSize = query('SELECT width,height FROM cards WHERE id=?', [$newCard])->fetch(PDO::FETCH_NUM);
-    if (array_map('intval', $newSize) !== [188,188]) throw new RuntimeException('New cards did not get the square default size');
+    if (array_map('intval', $newSize) !== [188,94]) throw new RuntimeException('New cards did not get the default size');
     query('DELETE FROM cards WHERE id=?', [$newCard]);
     $lastEdit = query('SELECT updated_at FROM projects WHERE id=?', [$project])->fetchColumn();
     if ($lastEdit !== '2024-02-01 00:00:00.123456') throw new RuntimeException('Project activity did not preserve the last saved card edit');

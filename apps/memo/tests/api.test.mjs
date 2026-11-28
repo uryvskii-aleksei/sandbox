@@ -1234,7 +1234,7 @@ test('capture and autosave deduplicate a lost response, retain trash, search con
   const captureNext = () =>
     a('/capture', 'POST', { project: layout.id, requestId: randomUUID(), text: 'Запись' }, 201);
   const firstInLayout = await captureNext();
-  assert.deepEqual(firstInLayout.size, { width: 188, height: 188 });
+  assert.deepEqual(firstInLayout.size, { width: 188, height: 94 });
   const secondInLayout = await captureNext();
   await captureNext();
   const nextRow = await captureNext();
@@ -1245,7 +1245,7 @@ test('capture and autosave deduplicate a lost response, retain trash, search con
   assert.equal(nextRow.coordinates.x, firstInLayout.coordinates.x);
   assert.equal(
     nextRow.coordinates.y - firstInLayout.coordinates.y - firstInLayout.size.height,
-    197,
+    291,
   );
   await a(
     '/capture',

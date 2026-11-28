@@ -1,7 +1,7 @@
 import { setupAccount } from './account.mjs?v=6';
 import { setupEmbedPlayer } from './embed-player.mjs?v=5';
 import { playbackSignal, watchedSeconds } from './playback.mjs';
-import { pickClip } from './selection.mjs?v=5';
+import { pickClip } from './selection.mjs?v=6';
 import { setupSoundscape, trackHue } from './soundscape.mjs?v=4';
 
 const get = (id) => document.getElementById(id);
@@ -223,11 +223,16 @@ function show(clip, keepPreviewRatio = false) {
   play();
 }
 
-function chooseClip() {
-  return pickClip(catalog, account.ratings, { recent, unavailable, playback: account.playback });
+function chooseClip(afterDislike) {
+  return pickClip(catalog, account.ratings, {
+    recent,
+    unavailable,
+    playback: account.playback,
+    afterDislike,
+  });
 }
 
-function advance() {
+function advance(afterDislike) {
   const preview = position < 0 ? history[0] : null;
   const forward = history.findIndex(
     (clip, index) =>
@@ -236,7 +241,7 @@ function advance() {
   if (forward >= 0) {
     position = forward;
   } else {
-    const clip = chooseClip();
+    const clip = chooseClip(afterDislike);
     if (!clip) {
       message.textContent = unavailable.size ? noPlayable : noRecommendations;
       render();
@@ -259,7 +264,7 @@ function rateCurrent(direction) {
 
   // После реакции следующий клип выбирается с учётом новых предпочтений.
   history = history.slice(0, position + 1);
-  if (after === -1) advance();
+  if (after === -1) advance(clip.id);
 }
 
 function playOrPause() {
@@ -307,7 +312,11 @@ async function refreshCatalog() {
     const response = await fetch('./api.php?catalog=1', { signal: AbortSignal.timeout(6500) });
     if (!response.ok) return;
     const { clips } = await response.json();
-    catalog = [...new Map([...catalog, ...clips].map((clip) => [clip.id, clip])).values()];
+    const combined = new Map(catalog.map((clip) => [clip.id, clip]));
+    for (const clip of clips) {
+      if (!combined.has(clip.id)) combined.set(clip.id, clip);
+    }
+    catalog = [...combined.values()];
     if (!history.length && position < 0) {
       preparePreview();
       render();
@@ -322,7 +331,7 @@ async function loadCatalog() {
   message.textContent = '';
   render();
   try {
-    const response = await fetch('./catalog.json?v=6', { signal: AbortSignal.timeout(8000) });
+    const response = await fetch('./catalog.json?v=7', { signal: AbortSignal.timeout(8000) });
     if (!response.ok) throw new Error();
     const clips = await response.json();
     if (!Array.isArray(clips) || !clips.length) throw new Error();

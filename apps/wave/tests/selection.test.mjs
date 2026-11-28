@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { createPlaybackProgress, playbackSignal, watchedSeconds } from '../site/playback.mjs';
-import { pickClip } from '../site/selection.mjs';
+import { clipGenre, pickClip } from '../site/selection.mjs';
 
 const seed = { id: 'seed', artist: 'A', tags: ['dance', 'funk'] };
 const similar = { id: 'similar', artist: 'A', tags: ['dance', 'pop'] };
@@ -95,8 +95,55 @@ test('одна оценка заметно меняет частоту близ�
     return count;
   }
   const baseline = countSimilar(0);
-  assert.ok(countSimilar(1) > baseline * 4);
-  assert.ok(countSimilar(-1) < baseline);
+  // В новой подборке редкий жанр заметен ещё до первой оценки.
+  assert.ok(baseline >= 25);
+  assert.ok(countSimilar(1) >= baseline + 25);
+  assert.ok(countSimilar(-1) <= baseline - 15);
+});
+
+test('после дизлайка предлагается другой исполнитель и жанр, если есть выбор', () => {
+  const pop = { id: 'pop', artist: 'Ада', title: 'Утро', tags: ['pop'] };
+  const same = { id: 'same', artist: 'Ада', title: 'Синтез', tags: ['electronic'] };
+  const alike = { id: 'alike', artist: 'Дина', title: 'День', tags: ['pop'] };
+  const different = { id: 'different', artist: 'Мира', title: 'Ночь', tags: ['jazz'] };
+  const options = { recent: ['pop'], afterDislike: 'pop', random: () => 0 };
+  const ratings = { pop: -1, same: 1 };
+  assert.equal(pickClip([pop, same, alike, different], ratings, options), different);
+  assert.equal(pickClip([pop, same, alike], ratings, options), alike);
+  assert.equal(pickClip([pop, same], ratings, options), same);
+});
+
+test('серия дизлайков переключает жанры, пока есть ещё варианты', () => {
+  const station = ['pop', 'jazz', 'folk', 'metal'].flatMap((genre) =>
+    [1, 2].map((number) => ({
+      id: `${genre}-${number}`,
+      artist: `Исполнитель ${genre} ${number}`,
+      tags: [genre],
+    })),
+  );
+  const ratings = {};
+  const recent = [];
+  let clip = station[0];
+  for (const genre of ['pop', 'jazz', 'folk', 'metal']) {
+    assert.equal(clipGenre(clip), genre);
+    ratings[clip.id] = -1;
+    recent.push(clip.id);
+    clip = pickClip(station, ratings, { recent, afterDislike: clip.id, random: () => 0 });
+  }
+  assert.ok(clip, 'Подборка продолжается, когда новые жанры закончились');
+});
+
+test('в стартовой подборке слышны разные жанры даже при большом архиве поп-клипов', () => {
+  const station = JSON.parse(
+    readFileSync(new URL('../site/catalog.json', import.meta.url), 'utf8'),
+  );
+  const draws = Array.from({ length: 200 }, (_, index) =>
+    clipGenre(pickClip(station, {}, { random: () => (index + 0.5) / 200 })),
+  );
+  assert.ok(draws.filter((genre) => genre === 'pop').length <= 90);
+  for (const genre of ['rock', 'metal', 'indie', 'folk', 'jazz', 'classical', 'electronic']) {
+    assert.ok(draws.filter((draw) => draw === genre).length >= 5, genre);
+  }
 });
 
 test('совместный клип учитывает обоих исполнителей, а дизлайк скрывает другую копию песни', () => {

@@ -239,6 +239,23 @@ test('outgoing connections do not cross when the far target needs the lower corr
   routesDoNotCross(routes);
 });
 
+test('adjacent links in a chain can be rerouted without crossing each other', () => {
+  const blocks = [
+    block(1, 414, 620, 188, 94),
+    block(2, 679, 346, 188, 94),
+    block(3, -74, 590, 188, 94),
+    block(4, 291, 827, 188, 94),
+  ];
+  const links = [edge(1, 2), edge(2, 3), edge(3, 4)];
+  const routes = routeBoardLinks(links, blocks);
+  assert.deepEqual(
+    routes.map(({ link }) => link),
+    links,
+  );
+  routes.forEach((route) => routeClears(route, blocks));
+  routesDoNotCross(routes);
+});
+
 test('multiple parents keep both branches reachable and reject cycles across every parent', () => {
   const links = [edge(1, 3), edge(2, 3), edge(3, 4)];
   assert.equal(canConnect(links, 4, 1), false);

@@ -17,12 +17,19 @@ export interface Session {
   csrfToken: string;
 }
 export interface Project {
+  access?: 'owner' | 'editor';
   id: number;
   publicId?: string;
   name: string;
   cards?: number;
   inbox?: boolean;
   deletedAt?: string | null;
+}
+export interface BoardCursor {
+  id: string;
+  user: number;
+  name: string;
+  point: { x: number; y: number };
 }
 export interface ImportedGuestProject extends Project {
   cardIds?: Record<number, number>;
@@ -130,7 +137,6 @@ export interface Trash {
   cards: Card[];
   projects: Project[];
 }
-export type Template = 'blank' | 'family' | 'outline' | 'retro' | 'tasks';
 export interface LinkPreview {
   title: string;
   description: string;

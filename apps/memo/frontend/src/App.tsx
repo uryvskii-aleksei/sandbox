@@ -2,13 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, FormEvent, ReactNode } from 'react';
 import { api } from './api';
 import { Board } from './Board';
+import { BoardContextMenu } from './BoardContextMenu';
+import type { BoardMenuItem } from './BoardContextMenu';
 import type { BoardFocus } from './Board';
 import { CardEditor } from './CardEditor';
 import { GuestAuthDialog } from './GuestAuthDialog';
 import { createGuestWorkspace, guestProjectId } from './guestWorkspace';
 import { PanelDivider } from './PanelDivider';
 import { ProjectActions } from './ProjectActions';
-import { ProjectCreateDialog } from './ProjectCreateDialog';
+import { ProjectNameEditor } from './ProjectNameEditor';
+import { ProjectInviteDialog } from './ProjectInviteDialog';
 import { cardDimensions, childPosition, clampCardSize, excerpt } from './graph';
 import { parseRoute, routeUrl } from './routes';
 import type { EntityRef, Route } from './routes';
@@ -33,7 +36,6 @@ import type {
   GuestProjectSnapshot,
   ImportedGuestProject,
   Project,
-  Template,
   Trash,
   User,
 } from './types';
@@ -283,6 +285,7 @@ export function App() {
   const guestAuthButton = useRef<HTMLButtonElement>(null);
   const createProjectAfterAuth = useRef(false);
   const [authError, setAuthError] = useState('');
+  const [authInfo, setAuthInfo] = useState('');
   const [transfer, setTransfer] = useState<PendingTransfer | null>(null);
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [error, setError] = useState('');
@@ -302,8 +305,18 @@ export function App() {
   const [loadedKey, setLoadedKey] = useState('');
   const [editing, setEditing] = useState<Card | null>(null);
   const [openForEditing, setOpenForEditing] = useState(false);
-  const [projectCreateOpen, setProjectCreateOpen] = useState(false);
+  const [projectNameEdit, setProjectNameEdit] = useState<{ project?: Project } | null>(null);
+  const createAttempt = useRef<{ name: string; requestId: string } | null>(null);
   const projectCreateButton = useRef<HTMLButtonElement>(null);
+  const projectInviteButton = useRef<HTMLButtonElement>(null);
+  const inviteTrigger = useRef<HTMLElement | null>(null);
+  const [inviteProject, setInviteProject] = useState<Project | null>(null);
+  const [sidebarMenu, setSidebarMenu] = useState<{
+    x: number;
+    y: number;
+    project?: Project;
+    trigger?: HTMLElement;
+  } | null>(null);
   const [query, setQuery] = useState('');
   const [hasMore, setHasMore] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -349,6 +362,7 @@ export function App() {
   const homeProject =
     home && account && projectsStatus === 'ready' ? startingProject(projects) : null;
   const visibleProjects = projects.filter((project) => !project.inbox);
+  const sidebarProjects = visibleProjects.slice().sort((first, second) => first.id - second.id);
   const projectRef = route.view === 'project' ? route.project : undefined;
   const folderRef = route.view === 'project' ? route.folder : undefined;
   const recordRoute = route.view === 'record' ? route : undefined;
@@ -358,6 +372,7 @@ export function App() {
   const selected = currentBoard?.project.id;
   const folder = currentBoard?.folder ?? null;
   const active = projects.find((project) => project.id === selected) ?? currentBoard?.project;
+  const canInvite = !guestMode && active && !active.inbox;
   const trail = currentBoard ? folderTrail(currentBoard.folders, folder) : [];
   const activeFolder = trail.at(-1);
   const boardRoute: Route | null = currentBoard
@@ -678,7 +693,7 @@ export function App() {
     setNotice(prepared?.keepGuestView ? 'Полотно сохранено в аккаунте.' : '');
     if (createProjectAfterAuth.current) {
       createProjectAfterAuth.current = false;
-      setProjectCreateOpen(true);
+      startProjectNameEdit();
     }
     setAccount(signedIn);
     history.replaceState(null, '', urlFor(next));
@@ -716,6 +731,7 @@ export function App() {
   const openGuestAuth = (forProject = false) => {
     createProjectAfterAuth.current = forProject;
     setAuthError('');
+    setAuthInfo('');
     setMode('login');
     setAuthOpen(true);
   };
@@ -739,6 +755,16 @@ export function App() {
   const authenticate = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
+    const submitter = event.nativeEvent instanceof SubmitEvent ? event.nativeEvent.submitter : null;
+    setAuthInfo('');
+    if (submitter instanceof HTMLButtonElement && submitter.value === 'email-link') {
+      runAuth(async () => {
+        await api.session();
+        await api.requestEmailLink(String(data.get('email')).trim());
+        setAuthInfo('Если этот email зарегистрирован, скоро придёт ссылка для входа.');
+      });
+      return;
+    }
     runAuth(async () => {
       const identifier = String(data.get('email'));
       const email =
@@ -774,6 +800,7 @@ export function App() {
       clearGuestStorage();
       setGuest(createGuestWorkspace());
       setAccount(null);
+      setProjectNameEdit(null);
       setLoaded(false);
       setLoadedKey('');
       entryRoute.current = { view: 'home' };
@@ -794,17 +821,82 @@ export function App() {
       setMoveError('');
       setEditing(null);
     });
-  const createProject = async (name: string, template: Template, requestId: string) => {
-    const result = await api.createProject(name, template, requestId);
+  const createProject = async (name: string) => {
+    if (createAttempt.current?.name !== name)
+      createAttempt.current = { name, requestId: crypto.randomUUID() };
+    const result = await api.createProject(name, createAttempt.current.requestId);
     setProjects((items) => [result, ...items.filter((item) => item.id !== result.id)]);
-    setProjectCreateOpen(false);
     setViewMode('board');
     navigate({ view: 'project', project: result.publicId ?? result.id });
     refresh();
   };
-  const dismissProjectCreate = () => {
-    setProjectCreateOpen(false);
-    requestAnimationFrame(() => projectCreateButton.current?.focus());
+  const startProjectNameEdit = (project?: Project) => {
+    if (projectNameEdit) return;
+    setPanels((current) => ({ ...current, collapsed: false }));
+    createAttempt.current = null;
+    setProjectNameEdit({ project });
+  };
+  const openProjectCreate = () => {
+    setShortcutsOpen(false);
+    if (guestMode) openGuestAuth(true);
+    else startProjectNameEdit();
+  };
+  const finishProjectNameEdit = (restoreFocus: boolean) => {
+    const projectId = projectNameEdit?.project?.id;
+    setProjectNameEdit(null);
+    if (restoreFocus)
+      requestAnimationFrame(() => {
+        const button = projectId
+          ? document.getElementById('memo-project-' + projectId)
+          : projectCreateButton.current;
+        button?.focus({ preventScroll: true });
+      });
+  };
+  const openProject = (project: Project) =>
+    navigate({ view: 'project', project: project.publicId ?? project.id });
+  const openProjectInvite = (project: Project, trigger: HTMLElement | null) => {
+    inviteTrigger.current = trigger;
+    setInviteProject(project);
+  };
+  const dismissInvite = () => {
+    setInviteProject(null);
+    const trigger = inviteTrigger.current;
+    inviteTrigger.current = null;
+    requestAnimationFrame(() => trigger?.focus({ preventScroll: true }));
+  };
+  const dismissSidebarMenu = () => {
+    const trigger = sidebarMenu?.trigger;
+    setSidebarMenu(null);
+    requestAnimationFrame(() => {
+      if (document.activeElement === document.body) trigger?.focus({ preventScroll: true });
+    });
+  };
+  const sidebarMenuItems = (): BoardMenuItem[] => {
+    const project = sidebarMenu?.project;
+    if (!project) return [{ label: 'Создать проект', icon: 'plus', action: openProjectCreate }];
+    const items: BoardMenuItem[] = [
+      { label: 'Открыть', icon: 'folder', action: () => openProject(project) },
+    ];
+    if (guestMode) return items;
+    if (project.access === 'owner')
+      items.push({
+        label: 'Переименовать',
+        icon: 'pencil',
+        action: () => startProjectNameEdit(project),
+      });
+    items.push({
+      label: 'Поделиться',
+      icon: 'invite',
+      action: () => openProjectInvite(project, sidebarMenu?.trigger ?? null),
+    });
+    if (project.access === 'owner')
+      items.push({
+        label: 'Удалить',
+        icon: 'trash',
+        danger: true,
+        action: () => requestDelete({ project }),
+      });
+    return items;
   };
   const openSearch = () => {
     setShortcutsOpen(false);
@@ -846,7 +938,15 @@ export function App() {
   };
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
-      if (!user || authOpen || projectCreateOpen || event.defaultPrevented || event.isComposing)
+      if (
+        !user ||
+        authOpen ||
+        projectNameEdit ||
+        inviteProject ||
+        sidebarMenu ||
+        event.defaultPrevented ||
+        event.isComposing
+      )
         return;
       if (event.target instanceof Element && event.target.closest('dialog[open]')) return;
       if (
@@ -1092,11 +1192,25 @@ export function App() {
       <div
         className={`application ${editing ? 'has-record-dock' : ''}`}
         style={docking}
-        inert={projectCreateOpen || authOpen}
+        inert={authOpen || inviteProject !== null}
       >
         <aside
           className={`sidebar ${panels.collapsed ? 'sidebar-collapsed' : ''}`}
           id="memo-sidebar"
+          onContextMenu={(event) => {
+            if (
+              busy ||
+              !(event.target instanceof Element) ||
+              event.target.closest('button, a, input, .sidebar-account, [role="separator"]')
+            )
+              return;
+            event.preventDefault();
+            setSidebarMenu({
+              x: event.clientX,
+              y: event.clientY,
+              trigger: projectCreateButton.current ?? undefined,
+            });
+          }}
         >
           <div className="sidebar-top">
             <a
@@ -1128,39 +1242,75 @@ export function App() {
               variant="primary"
               icon="plus"
               aria-label="Создать проект"
-              aria-haspopup="dialog"
+              aria-haspopup={guestMode ? 'dialog' : undefined}
               title={panels.collapsed ? 'Создать проект' : undefined}
-              disabled={busy}
-              onClick={() => {
-                setShortcutsOpen(false);
-                if (guestMode) openGuestAuth(true);
-                else setProjectCreateOpen(true);
-              }}
+              disabled={busy || projectNameEdit !== null}
+              onClick={openProjectCreate}
             >
               <span className="sidebar-label">Создать проект</span>
             </Button>
           </div>
-          {visibleProjects.length > 0 && (
+          {(sidebarProjects.length > 0 || projectNameEdit) && (
             <nav className="project-navigation" aria-label="Проекты">
-              {visibleProjects.map((project) => (
-                <button
-                  key={project.id}
-                  className="nav-item"
-                  disabled={busy}
-                  onClick={() =>
-                    navigate({ view: 'project', project: project.publicId ?? project.id })
-                  }
-                  aria-label={project.name}
-                  aria-current={selected === project.id ? 'page' : undefined}
-                  title={panels.collapsed ? project.name : undefined}
-                >
-                  <span className="project-dot" aria-hidden="true">
-                    <span>{project.name.slice(0, 1).toLocaleUpperCase('ru')}</span>
-                  </span>
-                  <span className="sidebar-label">{project.name}</span>
-                  <small>{project.cards ?? 0}</small>
-                </button>
-              ))}
+              {sidebarProjects.map((project) =>
+                projectNameEdit?.project?.id === project.id ? (
+                  <ProjectNameEditor
+                    key={project.id}
+                    name={project.name}
+                    save={(name) => renameTitle(project, undefined, name)}
+                    finish={finishProjectNameEdit}
+                  />
+                ) : (
+                  <button
+                    key={project.id}
+                    id={'memo-project-' + project.id}
+                    className="nav-item"
+                    disabled={busy}
+                    onClick={() => openProject(project)}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setSidebarMenu({
+                        x: event.clientX,
+                        y: event.clientY,
+                        project,
+                        trigger: event.currentTarget,
+                      });
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10'))
+                        return;
+                      event.preventDefault();
+                      const bounds = event.currentTarget.getBoundingClientRect();
+                      setSidebarMenu({
+                        x: bounds.left,
+                        y: bounds.bottom,
+                        project,
+                        trigger: event.currentTarget,
+                      });
+                    }}
+                    aria-haspopup="menu"
+                    aria-label={
+                      project.access === 'editor' ? project.name + ' (общий проект)' : project.name
+                    }
+                    aria-current={selected === project.id ? 'page' : undefined}
+                    title={
+                      panels.collapsed || project.access === 'editor'
+                        ? project.name + (project.access === 'editor' ? ' · Общий проект' : '')
+                        : undefined
+                    }
+                  >
+                    <span className="project-symbol" aria-hidden="true">
+                      <Icon name={project.access === 'editor' ? 'people' : 'person'} size={18} />
+                    </span>
+                    <span className="sidebar-label">{project.name}</span>
+                    <small>{project.cards ?? 0}</small>
+                  </button>
+                ),
+              )}
+              {projectNameEdit && !projectNameEdit.project && (
+                <ProjectNameEditor save={createProject} finish={finishProjectNameEdit} />
+              )}
             </nav>
           )}
           <div className="sidebar-account">
@@ -1232,7 +1382,7 @@ export function App() {
                       ))}
                   </nav>
                 )}
-                {active && (folder === null || activeFolder) ? (
+                {active && (activeFolder || (folder === null && active.access !== 'editor')) ? (
                   <WorkspaceTitle
                     key={activeFolder ? `folder-${activeFolder.id}` : `project-${active.id}`}
                     name={activeFolder?.name ?? active.name}
@@ -1343,23 +1493,38 @@ export function App() {
               </div>
             )}
             {active && (
-              <div className="view-switch" role="group" aria-label="Вид проекта">
-                <IconButton
-                  label="Полотно"
-                  tooltip="Полотно · Alt+Shift+B"
-                  aria-keyshortcuts="Alt+Shift+B"
-                  icon="board"
-                  aria-pressed={viewMode === 'board'}
-                  onClick={() => setViewMode('board')}
-                />
-                <IconButton
-                  label="Список"
-                  tooltip="Список · Alt+Shift+V"
-                  aria-keyshortcuts="Alt+Shift+V"
-                  icon="list"
-                  aria-pressed={viewMode === 'list'}
-                  onClick={() => setViewMode('list')}
-                />
+              <div className="project-toolbar-end">
+                <div className="view-switch" role="group" aria-label="Вид проекта">
+                  <IconButton
+                    label="Полотно"
+                    tooltip="Полотно · Alt+Shift+B"
+                    aria-keyshortcuts="Alt+Shift+B"
+                    icon="board"
+                    aria-pressed={viewMode === 'board'}
+                    onClick={() => setViewMode('board')}
+                  />
+                  <IconButton
+                    label="Список"
+                    tooltip="Список · Alt+Shift+V"
+                    aria-keyshortcuts="Alt+Shift+V"
+                    icon="list"
+                    aria-pressed={viewMode === 'list'}
+                    onClick={() => setViewMode('list')}
+                  />
+                </div>
+                {canInvite && (
+                  <IconButton
+                    ref={projectInviteButton}
+                    className="project-invite-button"
+                    icon="invite"
+                    iconSize={20}
+                    label="Пригласить в проект"
+                    tooltip="Пригласить в проект"
+                    aria-haspopup="dialog"
+                    disabled={busy}
+                    onClick={() => openProjectInvite(active, projectInviteButton.current)}
+                  />
+                )}
               </div>
             )}
           </div>
@@ -1397,12 +1562,20 @@ export function App() {
                 links={links}
                 projectId={selected ?? 0}
                 folderId={folder}
+                sharedPresence={!guestMode && active !== undefined && !active.inbox}
                 drawingTool={drawingTool}
                 consumeDrawingTool={() => setDrawingTool(null)}
                 setMoveError={setMoveError}
                 locate={locate}
-                busy={busy || projectCreateOpen}
-                keyboardDisabled={authOpen || shortcutsOpen || searchOpen}
+                busy={busy || inviteProject !== null}
+                keyboardDisabled={
+                  authOpen ||
+                  shortcutsOpen ||
+                  searchOpen ||
+                  inviteProject !== null ||
+                  sidebarMenu !== null ||
+                  projectNameEdit !== null
+                }
                 storageKey={cameraKey(user.id, selected ?? 0, folder)}
                 focus={focus}
                 editingCardId={editing?.id ?? null}
@@ -1448,12 +1621,14 @@ export function App() {
                         <span className="project-row-name">{project.name}</span>
                         <span className="project-row-count">Записей: {project.cards ?? 0}</span>
                       </button>
-                      <ProjectActions
-                        project={project}
-                        busy={busy}
-                        exportProject={() => exportProject(project)}
-                        deleteProject={() => requestDelete({ project })}
-                      />
+                      {project.access !== 'editor' && (
+                        <ProjectActions
+                          project={project}
+                          busy={busy}
+                          exportProject={() => exportProject(project)}
+                          deleteProject={() => requestDelete({ project })}
+                        />
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -1644,10 +1819,12 @@ export function App() {
           changeMode={() => {
             setMode(mode === 'login' ? 'register' : 'login');
             setAuthError('');
+            setAuthInfo('');
           }}
           busy={busy}
           transferring={transfer !== null}
           error={authError}
+          info={authInfo}
           dismiss={dismissGuestAuth}
           authenticate={authenticate}
           retry={() => {
@@ -1655,8 +1832,25 @@ export function App() {
           }}
         />
       )}
-      {projectCreateOpen && (
-        <ProjectCreateDialog create={createProject} dismiss={dismissProjectCreate} />
+      {sidebarMenu && (
+        <BoardContextMenu
+          x={sidebarMenu.x}
+          y={sidebarMenu.y}
+          compact
+          label={sidebarMenu.project ? 'Действия с проектом' : 'Действия в левой панели'}
+          items={sidebarMenuItems()}
+          dismiss={dismissSidebarMenu}
+        />
+      )}
+      {inviteProject && (
+        <ProjectInviteDialog
+          project={inviteProject}
+          dismiss={dismissInvite}
+          sent={() => {
+            dismissInvite();
+            setNotice('Приглашение отправлено.');
+          }}
+        />
       )}
       {confirmDelete && (
         <ConfirmDialog

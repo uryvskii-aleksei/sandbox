@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 
 const base = process.env.MEMO_TEST_URL ?? process.env.MIND_ASSISTANT_TEST_URL;
 if (!base || !/^http:\/\/127\.0\.0\.1:\d+(?:\/memo|\/mind-assistant)?\/api$/.test(base)) {
@@ -32,6 +33,192 @@ function client() {
     return result.data ?? result.error;
   };
 }
+
+const mailContainer = process.env.MEMO_TEST_MAIL_CONTAINER;
+
+async function captureEmailToken(send) {
+  const docker = (...args) =>
+    execFileSync('docker', ['exec', mailContainer, ...args], { encoding: 'utf8' });
+  const files = () =>
+    docker('sh', '-c', 'find /tmp/memo-mail -name "*.html" 2>/dev/null || true')
+      .trim()
+      .split('\n')
+      .filter(Boolean);
+  const before = new Set(files());
+  await send();
+  const created = files().filter((path) => !before.has(path));
+  assert.equal(created.length, 1);
+  const html = docker('cat', created[0]);
+  const token = html.match(/\/email-link#token=([a-f0-9]{64})/)?.[1];
+  assert.ok(token, 'В тестовом письме должна быть одноразовая ссылка.');
+  return token;
+}
+
+test(
+  'emails grant membership to existing and new accounts with editor rights',
+  { skip: !mailContainer },
+  async () => {
+    const owner = client();
+    const existing = client();
+    const visitor = client();
+    const fresh = client();
+    const password = 'testing-only-pass';
+    const existingEmail = `editor-${randomUUID()}@example.test`;
+    const freshEmail = `new-${randomUUID()}@example.test`;
+    await owner('/session');
+    await owner('/auth/register', 'POST', {
+      email: `owner-${randomUUID()}@example.test`,
+      password,
+    });
+    await existing('/session');
+    const registered = await existing('/auth/register', 'POST', { email: existingEmail, password });
+    await visitor('/session');
+    await fresh('/session');
+
+    const project = await owner('/projects', 'POST', { name: 'Общий проект' }, 201);
+    const privateProject = await owner('/projects', 'POST', { name: 'Личный проект' }, 201);
+    const route = '/projects/' + project.publicId;
+    const card = await owner(route + '/cards', 'POST', { name: 'Запись для команды' }, 201);
+    const privateCard = await owner(
+      `/projects/${privateProject.id}/cards`,
+      'POST',
+      { name: 'Личная запись' },
+      201,
+    );
+    await owner('/links', 'PUT', { source: privateCard.id, target: card.id });
+
+    const token = await captureEmailToken(() =>
+      owner(route + '/invitations', 'POST', { email: existingEmail }, 201),
+    );
+    assert.deepEqual(await existing('/projects'), []);
+    const accepted = await existing('/auth/redeem-email-link', 'POST', { token });
+    assert.deepEqual(accepted.user, registered.user);
+    assert.equal(accepted.project, project.publicId);
+    assert.deepEqual(
+      (await existing('/projects')).map(({ id, access }) => [id, access]),
+      [[project.id, 'editor']],
+    );
+    assert.equal((await owner(route)).access, 'owner');
+    assert.equal((await existing('/cards/' + card.publicId)).parent, null);
+    assert.deepEqual(await existing('/links'), []);
+    await existing('/cards/' + privateCard.publicId, 'GET', undefined, 404);
+    await existing(route, 'PATCH', { name: 'Запрещено' }, 403);
+    await existing(route, 'DELETE', undefined, 403);
+    await existing(route + '/export', 'GET', undefined, 403);
+    await existing(
+      `/projects/${privateProject.id}/invitations`,
+      'POST',
+      { email: freshEmail },
+      404,
+    );
+
+    const latest = await existing('/cards/' + card.publicId);
+    assert.equal(
+      (await existing('/cards/' + card.id, 'PUT', { ...latest, name: 'Правка участника' })).name,
+      'Правка участника',
+    );
+    const mark = await existing(
+      route + '/marks',
+      'POST',
+      { kind: 'label', at: { x: 5, y: 6 }, text: 'Разметка участника' },
+      201,
+    );
+    assert.equal((await owner(route + '/marks'))[0].id, mark.id);
+    assert.equal(
+      (await existing('/search?q=' + encodeURIComponent('Правка участника'))).cards[0].id,
+      card.id,
+    );
+    await visitor('/auth/redeem-email-link', 'POST', { token }, 410);
+    assert.equal((await visitor('/session')).user, null);
+
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=',
+      'base64',
+    );
+    const upload = async (account) => {
+      const form = new FormData();
+      form.set('file', new Blob([png], { type: 'image/png' }), 'point.png');
+      return await account('/media', 'POST', form, 201);
+    };
+    const ownerMedia = await upload(owner);
+    const memberMedia = await upload(existing);
+    const mediaRoute = (url) => url.slice(new URL(base).pathname.length);
+    await existing(mediaRoute(ownerMedia.url), 'GET', undefined, 404);
+    const content = (url) => [
+      { id: -1, name: 'Медиа', fields: [{ id: -1, type: 'image', value: [url] }] },
+    ];
+    const unchanged = await existing('/cards/' + card.id);
+    await existing(
+      '/cards/' + card.id,
+      'PUT',
+      { ...unchanged, content: content(ownerMedia.url) },
+      422,
+    );
+    await owner('/cards/' + card.id, 'PUT', { ...unchanged, content: content(ownerMedia.url) });
+    assert.deepEqual(await existing(mediaRoute(ownerMedia.url)), png);
+    const note = await existing(route + '/cards', 'POST', { name: 'Запись участника' }, 201);
+    await existing('/cards/' + note.id, 'PUT', { ...note, content: content(memberMedia.url) });
+    assert.deepEqual(await owner(mediaRoute(memberMedia.url)), png);
+    assert.equal((await owner(route + '/export')).media.length, 2);
+
+    const firstInvite = await captureEmailToken(() =>
+      existing(route + '/invitations', 'POST', { email: freshEmail }, 201),
+    );
+    await existing('/auth/redeem-email-link', 'POST', { token: firstInvite }, 409);
+    const joined = await fresh('/auth/redeem-email-link', 'POST', { token: firstInvite });
+    assert.equal(joined.user.email, freshEmail);
+    assert.equal(joined.project, project.publicId);
+    assert.equal((await fresh(route)).access, 'editor');
+
+    const folder = await owner(
+      '/capture',
+      'POST',
+      { project: project.id, kind: 'folder', name: 'Другое полотно' },
+      201,
+    );
+    const visitorId = randomUUID();
+    const ownerId = randomUUID();
+    const memberId = randomUUID();
+    const cursor = { x: 110.2, y: -20 };
+    assert.deepEqual(
+      await existing(route + '/cursors', 'POST', { clientId: memberId, cursor }),
+      [],
+    );
+    const observer = { clientId: ownerId, cursor: null };
+    assert.deepEqual(await owner(route + '/cursors', 'POST', observer), [
+      { id: memberId, user: registered.user.id, name: existingEmail.split('@')[0], point: cursor },
+    ]);
+    assert.deepEqual(
+      await owner(route + '/cursors', 'POST', { ...observer, folder: folder.id }),
+      [],
+    );
+    await visitor(route + '/cursors', 'POST', { clientId: visitorId, cursor }, 401);
+    await existing(
+      `/projects/${privateProject.id}/cursors`,
+      'POST',
+      { clientId: memberId, cursor },
+      404,
+    );
+    await existing(route + '/cursors', 'POST', { clientId: memberId, cursor: null });
+    assert.deepEqual(await owner(route + '/cursors', 'POST', observer), []);
+    await fresh('/auth/logout', 'POST');
+    const login = await captureEmailToken(() =>
+      fresh('/auth/email-link', 'POST', { email: freshEmail }),
+    );
+    assert.deepEqual(
+      (await fresh('/auth/redeem-email-link', 'POST', { token: login })).user,
+      joined.user,
+    );
+    assert.equal((await fresh(route)).access, 'editor');
+    await owner(route, 'DELETE');
+    await fresh('/cards/' + card.publicId + '?includeDeleted=1', 'GET', undefined, 404);
+    await owner(route + '/restore', 'POST', {});
+
+    await existing('/auth/logout', 'POST');
+    await existing('/auth/login', 'POST', { email: existingEmail, password });
+    await existing(route, 'GET', undefined, 404);
+  },
+);
 
 test('guest transfer is private, preserves a complete board and deduplicates retries', async () => {
   const owner = client();

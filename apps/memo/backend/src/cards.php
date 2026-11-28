@@ -2,28 +2,42 @@
 declare(strict_types=1);
 namespace Memo;
 
+require_once __DIR__ . '/access.php';
+
 function project(int $id, int $owner, bool $lock = false): array
 {
-    $row = query('SELECT p.id,p.public_id,p.name,p.owner_id,COALESCE(d.inbox,0) AS inbox FROM projects p LEFT JOIN project_details d ON d.project_id=p.id WHERE p.id=? AND p.owner_id=? AND d.deleted_at IS NULL' . ($lock ? ' FOR UPDATE' : ''), [$id, $owner])->fetch();
+    $row = query('SELECT p.id,p.public_id,p.name,p.owner_id,COALESCE(d.inbox,0) AS inbox FROM projects p LEFT JOIN project_details d ON d.project_id=p.id WHERE p.id=? AND ' . projectAccess('p') . ' AND d.deleted_at IS NULL' . ($lock || database()->inTransaction() ? ' FOR UPDATE' : ''), [$id, $owner, memberAccount($owner)])->fetch();
     if (!$row) fail(404, 'Проект не найден.');
     return ['id' => (int) $row['id'], 'publicId' => ensurePublicId('projects', $row),
-        'name' => $row['name'], 'inbox' => (bool) $row['inbox'], 'deletedAt' => null];
+        'name' => $row['name'], 'inbox' => (bool) $row['inbox'], 'deletedAt' => null,
+        'access' => (int) $row['owner_id'] === $owner ? 'owner' : 'editor'];
 }
 
 function cardRow(int $id, int $owner, bool $includeDeleted = false): array
 {
-    $visible = $includeDeleted ? '' : ' AND d.deleted_at IS NULL AND pd.deleted_at IS NULL';
-    $row = query('SELECT c.* FROM cards c JOIN projects p ON p.id=c.project_id LEFT JOIN card_details d ON d.card_id=c.id LEFT JOIN project_details pd ON pd.project_id=p.id WHERE c.id=? AND p.owner_id=?' . $visible, [$id, $owner])->fetch();
+    $visible = $includeDeleted ? ' AND (pd.deleted_at IS NULL OR p.owner_id=?)' : ' AND d.deleted_at IS NULL AND pd.deleted_at IS NULL';
+    $params = [$id, $owner, memberAccount($owner)];
+    if ($includeDeleted) $params[] = $owner;
+    $row = query('SELECT c.* FROM cards c JOIN projects p ON p.id=c.project_id LEFT JOIN card_details d ON d.card_id=c.id LEFT JOIN project_details pd ON pd.project_id=p.id WHERE c.id=? AND ' . projectAccess('p') . $visible, $params)->fetch();
     if (!$row) fail(404, 'Карточка не найдена.');
+    if (database()->inTransaction()) {
+        lockProject((int) $row['project_id']);
+        $locked = query('SELECT * FROM cards WHERE id=? AND project_id=? FOR UPDATE', [$id, $row['project_id']])->fetch();
+        if (!$locked) fail(409, 'Карточка уже на другом полотне.');
+        if (!$includeDeleted) project((int) $locked['project_id'], $owner);
+        if (!$includeDeleted && query('SELECT 1 FROM card_details WHERE card_id=? AND deleted_at IS NOT NULL FOR UPDATE', [$id])->fetch()) fail(404, 'Карточка не найдена.');
+        $row = $locked;
+    }
     return $row;
 }
 
-function cardOutput(array $row): array
+function cardOutput(array $row, ?int $viewer = null): array
 {
     $details = query('SELECT * FROM card_details WHERE card_id=?', [$row['id']])->fetch();
     $document = query('SELECT document FROM card_documents WHERE card_id=?', [$row['id']])->fetchColumn();
     $parent = $row['parent_id'];
-    if ($parent !== null && !query('SELECT c.id FROM cards c LEFT JOIN card_details d ON d.card_id=c.id LEFT JOIN project_details pd ON pd.project_id=c.project_id WHERE c.id=? AND d.deleted_at IS NULL AND pd.deleted_at IS NULL', [$parent])->fetch()) $parent = null;
+    if ($parent !== null && !query('SELECT c.id FROM cards c JOIN projects p ON p.id=c.project_id LEFT JOIN card_details d ON d.card_id=c.id LEFT JOIN project_details pd ON pd.project_id=c.project_id WHERE c.id=? AND d.deleted_at IS NULL AND pd.deleted_at IS NULL'
+        . ($viewer === null ? '' : ' AND ' . projectAccess('p')), $viewer === null ? [$parent] : [$parent, $viewer, memberAccount($viewer)])->fetch()) $parent = null;
     $groups = query('SELECT * FROM field_groups WHERE card_id=? ORDER BY sort_order,id', [$row['id']])->fetchAll();
     $content = [];
     foreach ($groups as $group) {
@@ -219,8 +233,7 @@ function saveCard(int $id, int $owner, array $body, bool $positionOnly = false):
     unset($body['publicId']);
     return receipted($owner, ($positionOnly ? 'position:' : 'save:') . $id, $body, static function () use ($id, $owner, $body, $positionOnly): array {
         $row = cardRow($id, $owner);
-        project((int) $row['project_id'], $owner, true);
-        $row = query('SELECT * FROM cards WHERE id=? FOR UPDATE', [$id])->fetch();
+        $project = project((int) $row['project_id'], $owner);
         if ((int) ($body['version'] ?? 0) !== (int) $row['version']) fail(409, 'Карточка уже изменилась. Обновите проект перед сохранением.');
         $point = coordinates($body['coordinates'] ?? null);
         if ($positionOnly) {
@@ -232,7 +245,7 @@ function saveCard(int $id, int $owner, array $body, bool $positionOnly = false):
         }
         else {
             $name = text($body['name'] ?? '');
-            $parent = array_key_exists('parent', $body) ? (empty($body['parent']) ? null : positiveId($body['parent'])) : ($row['parent_id'] === null ? null : (int) $row['parent_id']);
+            $parent = array_key_exists('parent', $body) && $project['access'] === 'owner' ? (empty($body['parent']) ? null : positiveId($body['parent'])) : ($row['parent_id'] === null ? null : (int) $row['parent_id']);
             if ($parent !== ($row['parent_id'] === null ? null : (int) $row['parent_id'])) {
                 validateParent($parent, (int) $row['project_id'], $id);
                 if ($row['parent_id'] !== null) query("DELETE FROM card_links WHERE source_id=? AND target_id=?", [$row['parent_id'], $id]);
@@ -244,9 +257,10 @@ function saveCard(int $id, int $owner, array $body, bool $positionOnly = false):
                 if (isset($body['document'])) saveDocument($id, $body['document']);
                 elseif (query('SELECT 1 FROM card_documents WHERE card_id=?', [$id])->fetch()) fail(409, 'Обновите Memo, чтобы сохранить визуальный документ.');
                 else saveContent($id, $body['content'] ?? []);
+                syncCardMedia($id, $owner);
             }
         }
         touchCard($id);
-        return cardOutput(cardRow($id, $owner));
+        return cardOutput(cardRow($id, $owner), $owner);
     });
 }

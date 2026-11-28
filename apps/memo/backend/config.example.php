@@ -7,4 +7,6 @@ return [
     'DB_NAME' => 'YOUR_DATABASE',
     'DB_USER' => 'YOUR_DATABASE_USER',
     'DB_PASSWORD' => '',
+    'MEMO_PUBLIC_URL' => 'https://cj999935.tw1.ru/memo/',
+    'MEMO_MAIL_FROM' => '',
 ];

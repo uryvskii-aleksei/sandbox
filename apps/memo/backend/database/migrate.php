@@ -3,9 +3,16 @@ declare(strict_types=1);
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 $source = dirname(__DIR__) . '/src/bootstrap.php';
 require_once is_file($source) ? $source : dirname(__DIR__) . '/backend/bootstrap.php';
+$backend = is_file($source) ? dirname($source) : dirname(__DIR__) . '/backend';
+require_once $backend . '/cards.php';
+require_once $backend . '/media.php';
 $schema = file_get_contents(__DIR__ . '/schema.sql');
 \Memo\database()->exec($schema);
 $pdo = \Memo\database();
+$passwordHash = $pdo->query("SHOW COLUMNS FROM users WHERE Field = 'password_hash'")->fetch();
+if ($passwordHash && $passwordHash['Null'] === 'NO') {
+    $pdo->exec('ALTER TABLE users MODIFY COLUMN password_hash VARCHAR(255) NULL');
+}
 // Старые карточки остаются записями на корневом полотне.
 if (!$pdo->query("SHOW COLUMNS FROM cards WHERE Field = 'kind'")->fetch()) {
     $pdo->exec("ALTER TABLE cards ADD COLUMN kind ENUM('record','folder') NOT NULL DEFAULT 'record'");
@@ -68,6 +75,8 @@ try {
         ) activity ON activity.project_id=p.id
         SET p.updated_at=activity.last_edit WHERE p.updated_at IS NULL AND activity.last_edit>p.created_at');
     }
+    $marker->execute(['card-media-v1']);
+    if ($marker->rowCount() === 1) \Memo\migrateCardMedia();
     $pdo->commit();
 } catch (\Throwable $error) {
     if ($pdo->inTransaction()) $pdo->rollBack();

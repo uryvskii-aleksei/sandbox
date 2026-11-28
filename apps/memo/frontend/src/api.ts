@@ -4,6 +4,7 @@ import type { EntityRef } from './routes';
 import type {
   Card,
   CardLink,
+  BoardCursor,
   BoardMark,
   BoardMarkUpdate,
   BoardMove,
@@ -18,7 +19,6 @@ import type {
   Project,
   SearchResult,
   Session,
-  Template,
   Trash,
   User,
 } from './types';
@@ -39,6 +39,12 @@ const number = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
 const point = (value: unknown): value is Card['coordinates'] =>
   record(value) && number(value.x) && number(value.y);
+const isBoardCursor = (value: unknown): value is BoardCursor =>
+  record(value) &&
+  typeof value.id === 'string' &&
+  number(value.user) &&
+  typeof value.name === 'string' &&
+  point(value.point);
 const isDocument = (value: unknown): value is MemoDocument =>
   record(value) && value.type === 'doc' && Array.isArray(value.content);
 const isMark = (value: unknown): value is BoardMark =>
@@ -57,9 +63,12 @@ const isSession = (value: unknown): value is Session =>
   record(value) &&
   (value.user === null || isUser(value.user)) &&
   typeof value.csrfToken === 'string';
+const isEmailLinkSession = (value: unknown): value is Session & { project: string | null } =>
+  record(value) && (value.project === null || isPublicId(value.project)) && isSession(value);
 // Старые квитанции и локальные черновики могли сохраниться без publicId.
 const isProject = (value: unknown): value is Project =>
   record(value) &&
+  (value.access === undefined || value.access === 'owner' || value.access === 'editor') &&
   number(value.id) &&
   (value.publicId === undefined || isPublicId(value.publicId)) &&
   typeof value.name === 'string' &&
@@ -177,17 +186,26 @@ async function request<T>(
   route: string,
   validate: (value: unknown) => value is T,
   options: RequestInit = {},
+  refreshSession = true,
 ): Promise<T> {
   const headers = new Headers(options.headers);
   if (options.body && !(options.body instanceof FormData))
     headers.set('Content-Type', 'application/json');
-  if (options.method && options.method !== 'GET') headers.set('X-CSRF-Token', csrfToken);
+  const mutation = options.method && options.method !== 'GET';
+  if (mutation) {
+    if (!csrfToken) await session('/session', { signal: options.signal });
+    headers.set('X-CSRF-Token', csrfToken);
+  }
   const response = await fetch(`${base}${route}`, {
     ...options,
     credentials: 'same-origin',
     signal: options.signal ?? AbortSignal.timeout(20000),
     headers,
   });
+  if (mutation && refreshSession && response.headers.get('X-Memo-CSRF-Expired') === '1') {
+    await session('/session', { signal: options.signal });
+    return request(route, validate, options, false);
+  }
   let envelope: unknown;
   try {
     envelope = await response.json();
@@ -214,16 +232,43 @@ async function session(route: string, options?: RequestInit): Promise<Session> {
 
 export const api = {
   session: () => session('/session'),
+  requestEmailLink: (email: string) =>
+    request('/auth/email-link', isNull, { method: 'POST', body: JSON.stringify({ email }) }),
+  redeemEmailLink: async (token: string) => {
+    const result = await request('/auth/redeem-email-link', isEmailLinkSession, {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+    csrfToken = result.csrfToken;
+    return result;
+  },
+  invite: (project: number, email: string) =>
+    request(`/projects/${project}/invitations`, isNull, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+  cursors: (
+    project: number,
+    folder: number | null,
+    clientId: string,
+    cursor: BoardCursor['point'] | null,
+    signal: AbortSignal,
+  ) =>
+    request(`/projects/${project}/cursors`, array(isBoardCursor), {
+      method: 'POST',
+      body: JSON.stringify({ folder, clientId, cursor }),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(4500)]),
+    }),
   auth: (mode: 'login' | 'register', email: string, password: string) =>
     session(`/auth/${mode}`, { method: 'POST', body: JSON.stringify({ email, password }) }),
   logout: () => session('/auth/logout', { method: 'POST', body: '{}' }),
   projects: (signal?: AbortSignal) => request('/projects', array(isProject), { signal }),
   project: (id: EntityRef, signal?: AbortSignal) =>
     request(`/projects/${id}`, isProject, { signal }),
-  createProject: (name: string, template: Template, requestId: string) =>
+  createProject: (name: string, requestId: string) =>
     request('/projects', isProject, {
       method: 'POST',
-      body: JSON.stringify({ name, template, requestId }),
+      body: JSON.stringify({ name, requestId }),
     }),
   importGuest: (snapshot: GuestProjectSnapshot, requestId: string) =>
     request('/projects/import-guest', isImportedGuestProject, {

@@ -363,7 +363,7 @@ button {
 .nav-item[aria-current='page'] {
   border-color: var(--accent);
 }
-.nav-item > span:not(.project-dot) {
+.nav-item > span:not(.project-symbol) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -373,12 +373,32 @@ button {
   color: var(--muted);
   font-size: 11px;
 }
-.project-dot {
-  width: 7px;
-  height: 7px;
-  background: currentColor;
-  border-radius: 50%;
-  flex-shrink: 0;
+.project-symbol {
+  display: grid;
+  flex: 0 0 18px;
+  height: 22px;
+  place-items: center;
+}
+.sidebar-project-edit {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.sidebar-project-edit > input {
+  width: 100%;
+  min-width: 0;
+  height: var(--workspace-control-height);
+  padding-inline: 9px;
+  color: var(--accent);
+  background: #fff;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font-size: 13px;
+}
+.sidebar-project-edit > span {
+  padding-inline: 4px;
+  color: #a62431;
+  font-size: 12px;
 }
 .sidebar-account {
   position: relative;
@@ -528,6 +548,14 @@ button {
 }
 .board-context-menu button:is(:hover, :focus-visible):not(:disabled) {
   background: #e8eef9;
+}
+.sidebar-context-menu {
+  width: min(158px, calc(100vw - 16px));
+}
+.sidebar-context-menu button {
+  gap: 7px;
+  min-height: 30px;
+  padding: 5px 7px;
 }
 .lead {
   color: var(--muted);
@@ -1398,6 +1426,50 @@ kbd {
   text-align: left;
   padding: 8px;
 }
+.project-toolbar-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+.project-invite-button {
+  color: var(--accent);
+}
+.board-peer-cursor {
+  position: absolute;
+  z-index: 8;
+  inset: 0 auto auto 0;
+  display: grid;
+  align-items: start;
+  justify-items: start;
+  pointer-events: none;
+  transition: transform 140ms ease-out;
+}
+.board-peer-cursor path {
+  fill: var(--peer-color);
+  stroke: #fff;
+  stroke-width: 1.35;
+  stroke-linejoin: round;
+}
+.board-peer-cursor span {
+  max-width: 150px;
+  margin: -4px 0 0 13px;
+  padding: 2px 6px;
+  overflow: hidden;
+  color: #fff;
+  background: var(--peer-color);
+  border: 1px solid #fff;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .board-peer-cursor {
+    transition: none;
+  }
+}
 .view-switch {
   display: flex;
   margin-inline-start: auto;
@@ -1427,30 +1499,31 @@ kbd {
 .ui-modal::backdrop {
   background: #10274f60;
 }
-.project-create-dialog {
-  width: min(440px, calc(100% - 32px));
-  padding: 24px;
-}
-.project-create-dialog h2 {
-  margin: 0 0 18px;
-  color: var(--accent);
-  font-size: 22px;
-}
-.project-create-dialog form {
-  display: grid;
-  gap: 16px;
-}
-.project-create-dialog label {
-  font-size: 13px;
-}
-.project-create-dialog .alert {
-  margin: 0;
-}
 .project-create-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.project-invite-dialog {
+  position: relative;
+  width: min(430px, calc(100vw - 32px));
+}
+.project-invite-dialog .auth-form {
+  padding: 28px 32px 32px;
+}
+.project-invite-dialog .auth-form form {
+  margin-top: 12px;
+}
+.email-link-page {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 16px;
+}
+.email-link-page .auth-form {
+  max-width: 420px;
 }
 .button-row {
   display: flex;
@@ -2569,9 +2642,6 @@ select {
 .sidebar-toggle {
   color: var(--accent);
 }
-.project-dot > span {
-  display: none;
-}
 .application .sidebar-collapsed {
   --sidebar-inset: 8px;
   padding-inline: var(--sidebar-inset);
@@ -2605,18 +2675,6 @@ select {
   min-height: 36px;
   justify-content: center;
   padding-inline: 4px;
-}
-.sidebar-collapsed .project-dot {
-  display: grid;
-  width: 22px;
-  height: 22px;
-  place-items: center;
-  background: transparent;
-  font-size: 16px;
-  line-height: 1;
-}
-.sidebar-collapsed .project-dot > span {
-  display: inline;
 }
 .record-dock {
   position: relative;

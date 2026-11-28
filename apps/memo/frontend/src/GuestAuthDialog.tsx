@@ -8,6 +8,7 @@ export function GuestAuthDialog({
   busy,
   transferring,
   error,
+  info,
   dismiss,
   authenticate,
   retry,
@@ -17,6 +18,7 @@ export function GuestAuthDialog({
   busy: boolean;
   transferring: boolean;
   error: string;
+  info: string;
   dismiss: () => void;
   authenticate: (event: FormEvent<HTMLFormElement>) => void;
   retry: () => void;
@@ -78,9 +80,10 @@ export function GuestAuthDialog({
             <p>
               {login
                 ? 'Войдите, чтобы продолжить работу с записями.'
-                : 'Все проекты и материалы будут доступны только вам.'}
+                : 'Сохраняйте свои проекты и принимайте приглашения.'}
             </p>
             {alert}
+            {info && <p role="status">{info}</p>}
             <form onSubmit={authenticate}>
               <label>
                 {import.meta.env.DEV && login ? 'Email или логин' : 'Email'}
@@ -112,6 +115,17 @@ export function GuestAuthDialog({
               >
                 {busy ? 'Подождите…' : login ? 'Войти' : 'Создать аккаунт'}
               </Button>
+              {login && (
+                <Button
+                  type="submit"
+                  variant="text"
+                  value="email-link"
+                  formNoValidate
+                  disabled={busy}
+                >
+                  Войти по ссылке из письма
+                </Button>
+              )}
             </form>
             <Button variant="text" disabled={busy} onClick={changeMode}>
               {login ? 'Нет аккаунта? Зарегистрироваться' : 'Уже есть аккаунт? Войти'}

@@ -27,7 +27,8 @@ function config(): array
     $local = is_file($file) ? require $file : [];
     $config = [];
     foreach (['DB_HOST' => 'db', 'DB_PORT' => '3306', 'DB_NAME' => 'mindassistant',
-        'DB_USER' => 'mindassistant', 'DB_PASSWORD' => '', 'APP_ENV' => 'production'] as $key => $default) {
+        'DB_USER' => 'mindassistant', 'DB_PASSWORD' => '', 'APP_ENV' => 'production',
+        'MEMO_PUBLIC_URL' => '', 'MEMO_MAIL_FROM' => '', 'MEMO_MAIL_DIRECTORY' => ''] as $key => $default) {
         $value = getenv($key);
         $config[$key] = $value !== false ? $value : ($local[$key] ?? $default);
     }
@@ -124,7 +125,10 @@ function startSession(): void
 function checkCsrf(): void
 {
     $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
-    if (!is_string($token) || !hash_equals($_SESSION['csrf'], $token)) fail(403, 'Сессия формы устарела. Обновите страницу.');
+    if (!is_string($token) || !hash_equals($_SESSION['csrf'], $token)) {
+        header('X-Memo-CSRF-Expired: 1');
+        fail(403, 'Сессия формы устарела. Повторите действие.');
+    }
 }
 
 function currentUser(): ?array
@@ -137,6 +141,14 @@ function currentUser(): ?array
 function requireUser(): array
 {
     return currentUser() ?? fail(401, 'Войдите в аккаунт.');
+}
+
+function startUserSession(int $user, bool $emailVerified = false): array
+{
+    session_regenerate_id(true);
+    $_SESSION = ['user' => $user, 'csrf' => bin2hex(random_bytes(32))];
+    if ($emailVerified) $_SESSION['verified_email_user'] = $user;
+    return ['user' => currentUser(), 'csrfToken' => $_SESSION['csrf']];
 }
 
 function respond(mixed $data, int $status = 200): never

@@ -7,9 +7,10 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    watch: { usePolling: true, interval: 200 },
     proxy: {
       '/memo/api': {
-        target: 'http://127.0.0.1:8081',
+        target: `http://127.0.0.1:${process.env.API_PORT ?? 8081}`,
         rewrite: (url) => url.replace(/^\/memo/, ''),
       },
     },

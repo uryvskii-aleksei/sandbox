@@ -4,7 +4,7 @@ One coordinator owns one branch and workspace. Inspect the absolute root, branch
 
 Continue an existing task in its owned workspace. For a new task, fetch `origin` when available and use the current default branch, normally `origin/main`. Use another base when requested. Report unknown freshness if access is unavailable. A free clean primary checkout may be updated with `git pull --ff-only` before branching. Never force an update.
 
-If the primary checkout is occupied by another task, create a uniquely named linked worktree under `.worktrees/` or the runtime's managed location. Check the destination is unused and the branch is not checked out elsewhere. Do not create a worktree for every small change. Use the selected absolute root in all commands and assignments.
+If the primary checkout is occupied by another task, use `git worktree add` to create a uniquely named linked worktree under the Sandbox checkout's `.worktrees/` directory. Check the destination is unused and the branch is not checked out elsewhere. A runtime-managed location outside Sandbox requires an explicit user request. Do not create a worktree for every small change. Use the selected absolute root in all commands and assignments.
 
 Immediately before staging, committing, changing branches or pushing, re-read root, branch and status. Fail on an identity mismatch rather than switching back automatically. Stop a command sequence after a failed Git command. Push the intended HEAD to the explicit source branch and read it back before claiming delivery.
 

@@ -21,8 +21,14 @@ try {
     query("UPDATE projects SET created_at='2024-01-01 00:00:00' WHERE id=?", [$project]);
     query("INSERT INTO card_details(card_id,updated_at) VALUES(?,'2024-02-01 00:00:00.123456')", [$parent]);
     query("INSERT INTO card_details(card_id,updated_at,opened_at) VALUES(?,'2024-03-01 00:00:00.000000','2024-03-01 00:00:00.000000')", [$child]);
-    query("DELETE FROM schema_migrations WHERE name IN ('card-links-v1','project-activity-v1','compact-card-height-v1','growing-card-title-v1')");
+    $media = bin2hex(random_bytes(16));
+    query('INSERT INTO media(id,owner_id,filename,mime,content) VALUES(?,?,?,?,?)', [$media,$owner,'fixture.png','image/png','synthetic']);
+    query('INSERT INTO field_groups(card_id,name) VALUES(?,?)', [$child,'Legacy media']);
+    $group = (int) database()->lastInsertId();
+    query('INSERT INTO fields(group_id,type,values_json) VALUES(?,?,?)', [$group,'image',json_encode(["/memo/api/media/$media"], JSON_THROW_ON_ERROR)]);
+    query("DELETE FROM schema_migrations WHERE name IN ('card-links-v1','project-activity-v1','compact-card-height-v1','growing-card-title-v1','card-media-v1')");
     require '/var/www/memo/database/migrate.php';
+    if (query('SELECT media_id FROM card_media WHERE card_id=?', [$child])->fetchColumn() !== $media) throw new RuntimeException('Legacy attachment did not remain associated with its card');
     $sizes = query('SELECT height FROM cards WHERE project_id=? ORDER BY id', [$project])->fetchAll(PDO::FETCH_COLUMN);
     if (array_map('intval', $sizes) !== [70,248]) throw new RuntimeException('Default card height did not compact or a custom height was changed');
     $geometry = query('SELECT width,auto_height FROM cards WHERE project_id=? ORDER BY id', [$project])->fetchAll(PDO::FETCH_NUM);

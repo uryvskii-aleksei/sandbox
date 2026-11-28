@@ -29,6 +29,8 @@ services:
       DB_NAME: ${DB_NAME:-mindassistant}
       DB_USER: ${DB_USER:-mindassistant}
       DB_PASSWORD: ${DB_PASSWORD:?Нужен локальный .env}
+      MEMO_PUBLIC_URL: ${MEMO_PUBLIC_URL:-http://127.0.0.1:5173/memo/}
+      MEMO_MAIL_DIRECTORY: /tmp/memo-mail
     volumes:
       - ./backend:/var/www/memo:ro
     depends_on:

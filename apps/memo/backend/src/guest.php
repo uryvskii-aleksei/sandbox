@@ -76,7 +76,10 @@ function importGuestProject(int $owner, array $body): array
                 [newPublicId(),$projectId,$card['kind'],$card['name'],$card['point']['x'],$card['point']['y'],
                     $card['size']['width'],$card['size']['height'],(int) $card['autoHeight']]);
             $map[$id] = (int) database()->lastInsertId();
-            if ($card['document'] !== null) saveDocument($map[$id], $card['document']);
+            if ($card['document'] !== null) {
+                saveDocument($map[$id], $card['document']);
+                syncCardMedia($map[$id], $owner);
+            }
         }
         foreach ($cards as $id => $card) {
             if ($card['folder'] !== null) query('UPDATE cards SET folder_id=? WHERE id=?', [$map[$card['folder']], $map[$id]]);

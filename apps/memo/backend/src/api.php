@@ -4,6 +4,10 @@ namespace Memo;
 
 ini_set('display_errors', '0');
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/access.php';
+require_once __DIR__ . '/invitations.php';
+require_once __DIR__ . '/media.php';
+require_once __DIR__ . '/presence.php';
 require_once __DIR__ . '/cards.php';
 require_once __DIR__ . '/workspace.php';
 require_once __DIR__ . '/guest.php';
@@ -14,10 +18,10 @@ function resolvePublicPath(string $path, int $owner): string
     if (!preg_match('~^/(projects|cards)/(m[a-f0-9]{32})(/.*)?$~D', $path, $match)) return $path;
     [, $entity, $publicId] = $match;
     if ($entity === 'projects') {
-        $id = query('SELECT id FROM projects WHERE public_id=? AND owner_id=?', [$publicId, $owner])->fetchColumn();
+        $id = query('SELECT p.id FROM projects p WHERE p.public_id=? AND ' . projectAccess('p'), [$publicId, $owner, memberAccount($owner)])->fetchColumn();
         if ($id === false) fail(404, 'Проект не найден.');
     } else {
-        $id = query('SELECT c.id FROM cards c JOIN projects p ON p.id=c.project_id WHERE c.public_id=? AND p.owner_id=?', [$publicId, $owner])->fetchColumn();
+        $id = query('SELECT c.id FROM cards c JOIN projects p ON p.id=c.project_id WHERE c.public_id=? AND ' . projectAccess('p'), [$publicId, $owner, memberAccount($owner)])->fetchColumn();
         if ($id === false) fail(404, 'Карточка не найдена.');
     }
     return "/$entity/$id" . ($match[3] ?? '');
@@ -53,12 +57,17 @@ function route(): never
             $id = (int) database()->lastInsertId();
         } else {
             $user = query('SELECT * FROM users WHERE email=?', [$email])->fetch();
-            if (!$user || !password_verify($password, $user['password_hash'])) fail(401, 'Неверный email или пароль.');
+            if (!$user || $user['password_hash'] === null || !password_verify($password, $user['password_hash'])) fail(401, 'Неверный email или пароль.');
             $id = (int) $user['id'];
         }
-        session_regenerate_id(true); $_SESSION['user'] = $id; $_SESSION['login_attempts'] = 0;
-        $_SESSION['csrf'] = bin2hex(random_bytes(32));
-        respond(['user' => currentUser(), 'csrfToken' => $_SESSION['csrf']]);
+        respond(startUserSession($id));
+    }
+    if ($method === 'POST' && $path === '/auth/email-link') {
+        requestEmailLogin(jsonBody()['email'] ?? '');
+        respond(null);
+    }
+    if ($method === 'POST' && $path === '/auth/redeem-email-link') {
+        respond(redeemEmailLink(jsonBody()['token'] ?? null));
     }
     if ($method === 'POST' && $path === '/auth/logout') {
         $_SESSION = ['csrf' => bin2hex(random_bytes(32))]; session_regenerate_id(true);
@@ -86,6 +95,13 @@ function route(): never
     if ($path === '/projects' && $method === 'POST') {
         respond(templateProject($owner, jsonBody()), 201);
     }
+    if ($method === 'POST' && preg_match('~^/projects/(\d+)/invitations$~', $path, $match)) {
+        inviteToProject(positiveId($match[1]), $user, jsonBody());
+        respond(null, 201);
+    }
+    if ($method === 'POST' && preg_match('~^/projects/(\d+)/cursors$~', $path, $match)) {
+        respond(boardCursors(positiveId($match[1]), $owner, jsonBody()));
+    }
     if (preg_match('~^/projects/(\d+)/(restore|export)$~', $path, $match)) {
         $id = positiveId($match[1]);
         if ($match[2] === 'export' && $method === 'GET') respond(exportProject($id, $owner));
@@ -103,6 +119,7 @@ function route(): never
             $name = text(jsonBody()['name'] ?? '');
             respond(ownedTransaction($owner, static function () use ($id, $owner, $name): array {
                 $current = project($id, $owner);
+                requireProjectOwner($current);
                 if ($current['name'] === $name) return $current;
                 query('UPDATE projects SET name=?,updated_at=CURRENT_TIMESTAMP(6) WHERE id=? AND owner_id=?', [$name, $id, $owner]);
                 return project($id, $owner);
@@ -111,6 +128,7 @@ function route(): never
         if ($method === 'DELETE') {
             ownedTransaction($owner, static function () use ($id, $owner): void {
                 $current = project($id, $owner);
+                requireProjectOwner($current);
                 if ($current['inbox']) fail(422, 'Входящие нельзя удалить. Переместите или удалите отдельные записи.');
                 query('INSERT INTO project_details(project_id,deleted_at) VALUES(?,CURRENT_TIMESTAMP) ON DUPLICATE KEY UPDATE deleted_at=CURRENT_TIMESTAMP', [$id]);
             }); respond(null);
@@ -150,7 +168,7 @@ function route(): never
                 $filter = ' AND c.folder_id <=> ?';
                 $params[] = $folder;
             }
-            respond(array_map(__NAMESPACE__ . '\\cardOutput', query('SELECT c.* FROM cards c LEFT JOIN card_details d ON d.card_id=c.id WHERE c.project_id=? AND d.deleted_at IS NULL' . $filter . ' ORDER BY c.id', $params)->fetchAll()));
+            respond(array_map(static fn(array $row): array => cardOutput($row, $owner), query('SELECT c.* FROM cards c LEFT JOIN card_details d ON d.card_id=c.id WHERE c.project_id=? AND d.deleted_at IS NULL' . $filter . ' ORDER BY c.id', $params)->fetchAll()));
         }
         if ($method === 'POST') {
             $body = jsonBody(); $point = coordinates($body['coordinates'] ?? ['x' => 80, 'y' => 80]);
@@ -161,7 +179,7 @@ function route(): never
                 $cardId = (int) database()->lastInsertId();
                 if ($parent !== null) putLink($owner, ['source' => $parent, 'target' => $cardId]);
                 touchCard($cardId);
-                return cardOutput(cardRow($cardId, $owner));
+                return cardOutput(cardRow($cardId, $owner), $owner);
             });
             respond($created, 201);
         }
@@ -175,19 +193,20 @@ function route(): never
             $body = jsonBody();
             respond(ownedTransaction($owner, static function () use ($id, $owner, $operation, $body): array {
                 $row = cardRow($id, $owner, $operation === 'restore');
-                project((int) $row['project_id'], $owner);
+                $project = project((int) $row['project_id'], $owner);
                 if ($operation === 'restore') {
                     validateFolder(folderId($row['folder_id']), (int) $row['project_id'], $owner);
                     $restored = query('UPDATE card_details SET deleted_at=NULL WHERE card_id=? AND deleted_at IS NOT NULL', [$id]);
                     if ($restored->rowCount()) touchProject((int) $row['project_id']);
                 }
                 if ($operation === 'metadata') {
+                    requireProjectOwner($project);
                     if (!is_bool($body['pinned'] ?? null)) fail(422, 'Укажите состояние закрепления.');
                     query('INSERT INTO card_details(card_id,pinned) VALUES(?,?) ON DUPLICATE KEY UPDATE pinned=VALUES(pinned)', [$id, (int) $body['pinned']]);
                 }
-                if ($operation === 'visit') query('INSERT INTO card_details(card_id,opened_at) VALUES(?,CURRENT_TIMESTAMP(6)) ON DUPLICATE KEY UPDATE opened_at=CURRENT_TIMESTAMP(6)', [$id]);
+                if ($operation === 'visit' && $project['access'] === 'owner') query('INSERT INTO card_details(card_id,opened_at) VALUES(?,CURRENT_TIMESTAMP(6)) ON DUPLICATE KEY UPDATE opened_at=CURRENT_TIMESTAMP(6)', [$id]);
                 if ($operation === 'move') moveCardToBoard($row, $owner, $body);
-                return cardOutput(cardRow($id, $owner));
+                return cardOutput(cardRow($id, $owner), $owner);
             }));
         }
     }
@@ -195,7 +214,7 @@ function route(): never
         $id = positiveId($match[1]);
         $includeDeleted = $method === 'GET' && empty($match[2]) && ($_GET['includeDeleted'] ?? '') === '1';
         $row = cardRow($id, $owner, $includeDeleted);
-        if ($method === 'GET' && empty($match[2])) respond(cardOutput($row));
+        if ($method === 'GET' && empty($match[2])) respond(cardOutput($row, $owner));
         if ($method === 'PUT' && empty($match[2])) respond(saveCard($id, $owner, jsonBody()));
         if ($method === 'PATCH' && !empty($match[2])) respond(saveCard($id, $owner, jsonBody(), true));
         if ($method === 'DELETE' && empty($match[2])) {
@@ -217,7 +236,7 @@ function route(): never
         respond(['url' => $prefix . '/api/media/' . $id], 201);
     }
     if ($method === 'GET' && preg_match('~^/media/([a-f0-9]{32})$~', $path, $match)) {
-        $file = query('SELECT mime,content FROM media WHERE id=? AND owner_id=?', [$match[1], $owner])->fetch();
+        $file = accessibleMedia($match[1], $owner);
         if (!$file) fail(404, 'Файл не найден.');
         header('Content-Type: ' . $file['mime']); header('Content-Length: ' . strlen($file['content']));
         header('Content-Disposition: inline'); echo $file['content']; exit;

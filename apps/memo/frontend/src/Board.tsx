@@ -3,6 +3,8 @@ import type { CSSProperties, PointerEvent } from 'react';
 import { ApiError } from './api';
 import { useWorkspaceClient } from './WorkspaceClient';
 import { BoardContextMenu } from './BoardContextMenu';
+import { BoardCursors } from './BoardCursors';
+import type { LocalBoardCursor } from './BoardCursors';
 import type { BoardMenuItem } from './BoardContextMenu';
 import { MarkLayer, useCanvasMarks } from './CanvasMarks';
 import type { StartShapeDrag } from './CanvasMarks';
@@ -32,6 +34,7 @@ interface Props {
   links: CardLink[];
   projectId: number;
   folderId: number | null;
+  sharedPresence: boolean;
   drawingTool: (typeof markTools)[number]['kind'] | null;
   consumeDrawingTool: () => void;
   setMoveError: (message: string) => void;
@@ -202,6 +205,7 @@ export function Board({
   links,
   projectId,
   folderId,
+  sharedPresence,
   drawingTool,
   consumeDrawingTool,
   setMoveError,
@@ -274,6 +278,7 @@ export function Board({
     | null
   >(null);
   const root = useRef<HTMLElement>(null);
+  const participantPointer = useRef<LocalBoardCursor>(null);
   const viewport = useRef<{
     width: number;
     height: number;
@@ -1474,14 +1479,33 @@ export function Board({
         const cardId = owner?.getAttribute('data-card-id');
         start(event, cardId ? (visible.find((card) => card.id === Number(cardId)) ?? null) : null);
       }}
-      onPointerMove={move}
+      onPointerMove={(event) => {
+        if (sharedPresence)
+          participantPointer.current = { point: worldPoint(event), movedAt: performance.now() };
+        move(event);
+      }}
       onPointerLeave={() => {
+        participantPointer.current = null;
         mousePosition.current = null;
         showNearbyControls(null);
       }}
-      onPointerUp={(event) => void end(event)}
-      onPointerCancel={(event) => void end(event, true)}
+      onPointerUp={(event) => {
+        if (event.pointerType === 'touch') participantPointer.current = null;
+        void end(event);
+      }}
+      onPointerCancel={(event) => {
+        participantPointer.current = null;
+        void end(event, true);
+      }}
     >
+      {sharedPresence && (
+        <BoardCursors
+          project={projectId}
+          folder={folderId}
+          pointer={participantPointer}
+          camera={camera}
+        />
+      )}
       {contextMenu && (
         <BoardContextMenu
           x={contextMenu.clientX}

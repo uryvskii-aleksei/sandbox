@@ -4,6 +4,7 @@ namespace Memo;
 
 function ownedTransaction(int $owner, callable $work): mixed
 {
+    query('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
     database()->beginTransaction();
     try {
         // Один порядок блокировок для связей, карточек, корзины и создания входящих.
@@ -44,11 +45,13 @@ function projectList(int $owner, bool $trash = false): array
 {
     $deleted = $trash ? 'IS NOT NULL' : 'IS NULL';
     $order = $trash ? 'p.id DESC' : 'COALESCE(p.updated_at,p.created_at) DESC,p.id DESC';
-    $rows = query("SELECT p.id,p.public_id,p.name,COALESCE(d.inbox,0) AS inbox,d.deleted_at,
+    $scope = $trash ? "p.owner_id=?" : projectAccess("p");
+    $params = $trash ? [$owner] : [$owner, memberAccount($owner)];
+    $rows = query("SELECT p.id,p.public_id,p.name,p.owner_id,COALESCE(d.inbox,0) AS inbox,d.deleted_at,
         (SELECT COUNT(*) FROM cards c LEFT JOIN card_details cd ON cd.card_id=c.id WHERE c.project_id=p.id AND cd.deleted_at IS NULL) AS cards
         FROM projects p LEFT JOIN project_details d ON d.project_id=p.id
-        WHERE p.owner_id=? AND d.deleted_at $deleted ORDER BY COALESCE(d.inbox,0) DESC,$order", [$owner])->fetchAll();
-    return array_map(static fn(array $row): array => ['id' => (int) $row['id'], 'publicId' => ensurePublicId('projects', $row), 'name' => $row['name'],
+        WHERE $scope AND d.deleted_at $deleted ORDER BY COALESCE(d.inbox,0) DESC,$order", $params)->fetchAll();
+    return array_map(static fn(array $row): array => ['access' => (int) $row['owner_id'] === $owner ? 'owner' : 'editor', 'id' => (int) $row['id'], 'publicId' => ensurePublicId('projects', $row), 'name' => $row['name'],
         'inbox' => (bool) $row['inbox'], 'deletedAt' => $row['deleted_at'], 'cards' => (int) $row['cards']], $rows);
 }
 
@@ -102,7 +105,11 @@ function moveCardToBoard(array $row, int $owner, array $body): void
 {
     $project = positiveId($body['project'] ?? null);
     $folder = folderId($body['folder'] ?? null);
-    project($project, $owner);
+    $destination = project($project, $owner);
+    if ($project !== (int) $row['project_id']) {
+        requireProjectOwner($destination);
+        requireProjectOwner(project((int) $row['project_id'], $owner));
+    }
     if ((int) ($body['version'] ?? 0) !== (int) $row['version']) fail(409, 'Карточка изменилась. Сначала обновите её.');
     validateFolder($folder, $project, $owner);
     if ($row['kind'] === 'folder') {
@@ -196,7 +203,7 @@ function moveBoardSelection(int $project, int $owner, array $body): array
             [$x, $y] = $shift($row['x'], $row['y']);
             query('UPDATE cards SET folder_id=?,x=?,y=?,version=version+1 WHERE id=?', [$destination, $x, $y, $id]);
             touchCard($id);
-            $savedCards[] = cardOutput(cardRow($id, $owner));
+            $savedCards[] = cardOutput(cardRow($id, $owner), $owner);
         }
         $savedMarks = [];
         foreach ($markRows as $id => $row) {
@@ -240,19 +247,31 @@ function linkRows(int $owner, bool $includeDeleted = false): array
         JOIN projects sp ON sp.id=s.project_id JOIN projects tp ON tp.id=t.project_id
         LEFT JOIN card_details sd ON sd.card_id=s.id LEFT JOIN card_details td ON td.card_id=t.id
         LEFT JOIN project_details spd ON spd.project_id=sp.id LEFT JOIN project_details tpd ON tpd.project_id=tp.id
-        WHERE sp.owner_id=? AND tp.owner_id=?' . $visible . ' ORDER BY l.source_id,l.target_id', [$owner, $owner])->fetchAll();
+        WHERE ' . projectAccess('sp') . ' AND ' . projectAccess('tp') . $visible . ' ORDER BY l.source_id,l.target_id', [$owner, memberAccount($owner), $owner, memberAccount($owner)])->fetchAll();
     return array_map(static fn(array $row): array => ['source' => (int) $row['source_id'], 'target' => (int) $row['target_id'],
         'label' => $row['label'], 'sourceName' => $row['source_name'], 'targetName' => $row['target_name'],
         'sourceProject' => (int) $row['source_project'], 'targetProject' => (int) $row['target_project']], $rows);
 }
 
+function linkProjects(int $actor, int $source, int $target): array
+{
+    $from = (int) cardRow($source, $actor)['project_id'];
+    $to = (int) cardRow($target, $actor)['project_id'];
+    if ($from !== $to) {
+        requireProjectOwner(project($from, $actor));
+        requireProjectOwner(project($to, $actor));
+    }
+    return [$from, $to];
+}
+
 function validateLink(int $owner, int $source, int $target): void
 {
-    cardRow($source, $owner); cardRow($target, $owner);
+    [$project] = linkProjects($owner, $source, $target);
+    $projectOwner = (int) query('SELECT owner_id FROM projects WHERE id=?', [$project])->fetchColumn();
     if ($source === $target) fail(422, 'Нельзя связать карточку с самой собой.');
     $outgoing = [];
     // Учитываем также корзину: восстановление не должно возвращать цикл.
-    foreach (linkRows($owner, true) as $link) {
+    foreach (linkRows($projectOwner, true) as $link) {
         $outgoing[$link['source']][] = $link['target'];
     }
     $pending = [$target]; $visited = [];
@@ -284,7 +303,7 @@ function putLink(int $owner, array $body): array
 function deleteLink(int $owner, array $body): void
 {
     $source = positiveId($body['source'] ?? null); $target = positiveId($body['target'] ?? null);
-    cardRow($source, $owner); cardRow($target, $owner);
+    linkProjects($owner, $source, $target);
     $deleted = query('DELETE FROM card_links WHERE source_id=? AND target_id=?', [$source, $target])->rowCount();
     $next = query('SELECT source_id FROM card_links WHERE target_id=? ORDER BY source_id LIMIT 1', [$target])->fetchColumn();
     query('UPDATE cards SET parent_id=? WHERE id=?', [$next === false ? null : (int) $next, $target]);
@@ -301,7 +320,12 @@ function rewireLink(int $owner, array $body): array
     return receipted($owner, 'rewire-link', $body, static function () use ($owner, $body): array {
         $source = positiveId($body['source'] ?? null); $target = positiveId($body['target'] ?? null);
         $newSource = positiveId($body['newSource'] ?? null); $newTarget = positiveId($body['newTarget'] ?? null);
-        cardRow($source, $owner); cardRow($target, $owner);
+        [$originalProject] = linkProjects($owner, $source, $target);
+        [$newProject] = linkProjects($owner, $newSource, $newTarget);
+        if ($originalProject !== $newProject) {
+            requireProjectOwner(project($originalProject, $owner));
+            requireProjectOwner(project($newProject, $owner));
+        }
         $previous = query('SELECT label FROM card_links WHERE source_id=? AND target_id=? FOR UPDATE', [$source, $target])->fetch();
         if (!$previous) fail(404, 'Связь не найдена.');
         if ($source === $newSource && $target === $newTarget) {
@@ -350,10 +374,11 @@ function captureCard(int $owner, array $body): array
         if ($kind === 'record') {
             saveContent($id, $content);
             if (isset($body['document'])) saveDocument($id, $body['document']);
+            syncCardMedia($id, $owner);
         }
         touchCard($id);
         if ($parent !== null) putLink($owner, ['source' => $parent, 'target' => $id]);
-        return cardOutput(cardRow($id, $owner));
+        return cardOutput(cardRow($id, $owner), $owner);
     });
 }
 
@@ -363,7 +388,11 @@ function copyBoardCard(int $source, int $owner, array $body): array
         $root = cardRow($source, $owner);
         $project = positiveId($body['project'] ?? null);
         $folder = folderId($body['folder'] ?? null);
-        project($project, $owner);
+        $destination = project($project, $owner);
+        if ($project !== (int) $root['project_id']) {
+            requireProjectOwner($destination);
+            requireProjectOwner(project((int) $root['project_id'], $owner));
+        }
         validateFolder($folder, $project, $owner);
         $point = coordinates($body['coordinates'] ?? null);
         $children = [];
@@ -389,6 +418,7 @@ function copyBoardCard(int $source, int $owner, array $body): array
             touchCard($id);
             query('INSERT INTO card_documents(card_id,document,search_text)
                 SELECT ?,document,search_text FROM card_documents WHERE card_id=?', [$id, $original]);
+            query('INSERT INTO card_media(card_id,media_id) SELECT ?,media_id FROM card_media WHERE card_id=?', [$id, $original]);
             foreach (query('SELECT * FROM field_groups WHERE card_id=? ORDER BY sort_order,id', [$original])->fetchAll() as $group) {
                 query('INSERT INTO field_groups(card_id,name,sort_order,collapsed) VALUES(?,?,?,?)',
                     [$id, $group['name'], $group['sort_order'], $group['collapsed']]);
@@ -414,7 +444,7 @@ function copyBoardCard(int $source, int $owner, array $body): array
                 query('UPDATE cards SET parent_id=COALESCE(parent_id,?) WHERE id=?', [$from, $to]);
             }
         }
-        return cardOutput(cardRow($copies[$source], $owner));
+        return cardOutput(cardRow($copies[$source], $owner), $owner);
     });
 }
 
@@ -423,7 +453,8 @@ function searchCards(int $owner): array
     $term = text($_GET['q'] ?? '', 128, true);
     $filter = $_GET['filter'] ?? 'all';
     if (!in_array($filter, ['all', 'pinned', 'recent', 'inbox', 'rediscover'], true)) fail(422, 'Неизвестный фильтр.');
-    $where = ''; $params = [$owner];
+    $scope = $filter === 'all' ? projectAccess('p') : 'p.owner_id=?';
+    $where = ''; $params = $filter === 'all' ? [$owner, memberAccount($owner)] : [$owner];
     if ($term !== '') {
         $like = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $term) . '%';
         $where .= " AND (c.name LIKE ? ESCAPE '!' OR cd.search_text LIKE ? ESCAPE '!' OR (cd.card_id IS NULL AND EXISTS(SELECT 1 FROM field_groups g LEFT JOIN fields f ON f.group_id=g.id WHERE g.card_id=c.id AND (g.name LIKE ? ESCAPE '!' OR f.title LIKE ? ESCAPE '!' OR f.values_json LIKE ? ESCAPE '!'))))";
@@ -435,8 +466,8 @@ function searchCards(int $owner): array
     if ($filter === 'rediscover') $order = 'COALESCE(d.opened_at,d.updated_at,p.created_at) ASC,c.id ASC';
     $rows = query('SELECT c.* FROM cards c JOIN projects p ON p.id=c.project_id
         LEFT JOIN card_details d ON d.card_id=c.id LEFT JOIN project_details pd ON pd.project_id=p.id LEFT JOIN card_documents cd ON cd.card_id=c.id
-        WHERE p.owner_id=? AND d.deleted_at IS NULL AND pd.deleted_at IS NULL' . $where . ' ORDER BY ' . $order . ' LIMIT 101', $params)->fetchAll();
-    return ['cards' => array_map(__NAMESPACE__ . '\\cardOutput', array_slice($rows, 0, 100)), 'hasMore' => count($rows) > 100];
+        WHERE ' . $scope . ' AND d.deleted_at IS NULL AND pd.deleted_at IS NULL' . $where . ' ORDER BY ' . $order . ' LIMIT 101', $params)->fetchAll();
+    return ['cards' => array_map(static fn(array $row): array => cardOutput($row, $owner), array_slice($rows, 0, 100)), 'hasMore' => count($rows) > 100];
 }
 
 function templateProject(int $owner, array $body): array
@@ -532,22 +563,15 @@ function trashBoardSelection(int $projectId, int $owner, array $body): void
 function exportProject(int $id, int $owner): array
 {
     $project = project($id, $owner);
+    requireProjectOwner($project);
     $cards = array_map(__NAMESPACE__ . '\\cardOutput', query('SELECT c.* FROM cards c LEFT JOIN card_details d ON d.card_id=c.id WHERE c.project_id=? AND d.deleted_at IS NULL ORDER BY c.id', [$id])->fetchAll());
     $links = array_values(array_filter(linkRows($owner), static fn(array $link): bool => $link['sourceProject'] === $id || $link['targetProject'] === $id));
     $media = [];
-    $values = [];
     foreach ($cards as $card) {
-        foreach ($card['content'] as $group) foreach ($group['fields'] as $field) array_push($values, ...$field['value']);
-        if (isset($card['document'])) {
-            array_walk_recursive($card['document'], static function ($value, $key) use (&$values): void {
-                if (in_array($key, ['src', 'href'], true)) $values[] = $value;
-            });
-        }
-    }
-    foreach ($values as $value) {
-        if (preg_match('~/api/media/([a-f0-9]{32})$~', $value, $match) && !isset($media[$match[1]])) {
-            $file = query('SELECT filename,mime,content FROM media WHERE id=? AND owner_id=?', [$match[1], $owner])->fetch();
-            if ($file) $media[$match[1]] = ['url' => $value, 'filename' => $file['filename'], 'mime' => $file['mime'], 'base64' => base64_encode($file['content'])];
+        foreach (mediaReferences($card) as $id => $url) {
+            if (isset($media[$id])) continue;
+            $file = accessibleMedia($id, $owner);
+            if ($file) $media[$id] = ['url' => $url, 'filename' => $file['filename'], 'mime' => $file['mime'], 'base64' => base64_encode($file['content'])];
         }
     }
     return ['format' => 'memo-project', 'version' => 1, 'exportedAt' => gmdate('c'), 'project' => $project,
@@ -613,13 +637,18 @@ function insertBoardMark(int $project, ?int $folder, string $kind, array $at, ?a
 function changeBoardMark(int $id, int $owner, ?array $body): ?array
 {
     return ownedTransaction($owner, static function () use ($id, $owner, $body): ?array {
-        $row = query('SELECT m.* FROM board_marks m JOIN projects p ON p.id=m.project_id WHERE m.id=? AND p.owner_id=?', [$id, $owner])->fetch();
+        $row = query('SELECT m.* FROM board_marks m JOIN projects p ON p.id=m.project_id WHERE m.id=? AND ' . projectAccess('p'), [$id, $owner, memberAccount($owner)])->fetch();
         if (!$row) {
             if ($body === null) return null;
             fail(404, 'Элемент полотна не найден.');
         }
         $project = (int) $row['project_id'];
         project($project, $owner);
+        $row = query('SELECT * FROM board_marks WHERE id=? AND project_id=? FOR UPDATE', [$id, $project])->fetch();
+        if (!$row) {
+            if ($body === null) return null;
+            fail(404, 'Элемент полотна не найден.');
+        }
         validateFolder(folderId($row['folder_id']), $project, $owner);
         if ($body === null) {
             query('DELETE FROM board_marks WHERE id=?', [$id]);

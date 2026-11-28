@@ -71,6 +71,7 @@ try {
   run(process.execPath, ['--test', 'tests/api.test.mjs'], {
     ...process.env,
     MEMO_TEST_URL: `http://127.0.0.1:${port}/api`,
+    MEMO_TEST_MAIL_CONTAINER: `${project}-api-1`,
   });
   run('docker', [
     'run',
@@ -88,6 +89,10 @@ try {
     'DB_HOST=db',
     '--env',
     'APP_ENV=development',
+    '--env',
+    'MEMO_MAIL_DIRECTORY=/tmp/memo-mail',
+    '--env',
+    'MEMO_PUBLIC_URL=http://127.0.0.1:5173/memo/',
     '--volume',
     `${path.join(app, 'dist')}:/var/www/memo/public/memo:ro`,
     `${project}-api`,
@@ -126,6 +131,7 @@ try {
     `workspace/m${'a'.repeat(32)}/folder/m${'b'.repeat(32)}`,
     `record/m${'c'.repeat(32)}`,
     'workplace/123/folder/456',
+    'email-link',
   ]) {
     const deepPage = await fetch(`${base}/${route}`);
     assert.equal(deepPage.status, 200);
@@ -146,6 +152,7 @@ try {
   run(process.execPath, ['--test', 'tests/api.test.mjs'], {
     ...process.env,
     MEMO_TEST_URL: `${base}/api`,
+    MEMO_TEST_MAIL_CONTAINER: artifactName,
   });
   const backup = path.join(temporary, 'synthetic-workspace.sql');
   const dump = spawnSync(

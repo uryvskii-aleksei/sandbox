@@ -17,12 +17,14 @@ export function BoardContextMenu({
   label,
   items,
   dismiss,
+  compact = false,
 }: {
   x: number;
   y: number;
   label: string;
   items: BoardMenuItem[];
   dismiss: () => void;
+  compact?: boolean;
 }) {
   const menu = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -40,7 +42,7 @@ export function BoardContextMenu({
   }, [x, y]);
   return createPortal(
     <Popover
-      className="board-context-menu"
+      className={compact ? 'board-context-menu sidebar-context-menu' : 'board-context-menu'}
       role="menu"
       aria-label={label}
       elementRef={menu}
@@ -83,7 +85,7 @@ export function BoardContextMenu({
             action();
           }}
         >
-          <Icon name={icon} size={24} />
+          <Icon name={icon} size={compact ? 18 : 24} />
           {label}
         </button>
       ))}

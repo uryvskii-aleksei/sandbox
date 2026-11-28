@@ -59,17 +59,20 @@ const signedArea = (a: Point, b: Point, p: Point) =>
   (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
 
 function segmentsCross(a: Point, b: Point, c: Point, d: Point) {
-  if (
-    Math.max(a.x, b.x) < Math.min(c.x, d.x) ||
-    Math.max(c.x, d.x) < Math.min(a.x, b.x) ||
-    Math.max(a.y, b.y) < Math.min(c.y, d.y) ||
-    Math.max(c.y, d.y) < Math.min(a.y, b.y)
-  )
-    return false;
+  const sharedX =
+    Math.min(Math.max(a.x, b.x), Math.max(c.x, d.x)) -
+    Math.max(Math.min(a.x, b.x), Math.min(c.x, d.x));
+  const sharedY =
+    Math.min(Math.max(a.y, b.y), Math.max(c.y, d.y)) -
+    Math.max(Math.min(a.y, b.y), Math.min(c.y, d.y));
+  if (sharedX < 0 || sharedY < 0) return false;
+
   const first = signedArea(a, b, c);
   const last = signedArea(a, b, d);
-  const across = signedArea(c, d, a) * signedArea(c, d, b);
-  return first * last <= 0 && across <= 0 && Math.abs(first - last) > 0.000001;
+  const from = signedArea(c, d, a);
+  const to = signedArea(c, d, b);
+  if (first === 0 && last === 0 && from === 0 && to === 0) return sharedX > 0.01 || sharedY > 0.01;
+  return first * last <= 0 && from * to <= 0;
 }
 
 const pathsCross = (path: Segment[], others: Segment[]) =>
@@ -106,11 +109,18 @@ function trafficCost(a: Point, b: Point, traffic: Segment[]) {
   return cost;
 }
 
-function shortestPath(a: Point, b: Point, obstacles: Rect[], traffic: Segment[]): Point[] | null {
+function shortestPath(
+  a: Point,
+  b: Point,
+  obstacles: Rect[],
+  traffic: Segment[],
+  detour?: Point[],
+): Point[] | null {
   if (obstacles.some((r) => inside(a, r) || inside(b, r))) return null;
   const active = new Set(obstacles.filter((r) => entersRect(a, b, r)));
-  const directCost = trafficCost(a, b, traffic);
-  if (!active.size && !directCost) return [a, b];
+  const directCost = detour ? 0 : trafficCost(a, b, traffic);
+  if (!active.size && !directCost && (!detour || !pathsCross([{ from: a, to: b }], traffic)))
+    return [a, b];
 
   const length = distance(a, b);
   const guides =
@@ -136,7 +146,9 @@ function shortestPath(a: Point, b: Point, obstacles: Rect[], traffic: Segment[])
         { x: right + gap, y: bottom + gap },
       ]),
     );
-    const candidates = [...corners, ...guides].filter((p) => !rects.some((r) => inside(p, r)));
+    const candidates = [...corners, ...guides, ...(detour ?? [])].filter(
+      (p) => !rects.some((r) => inside(p, r)),
+    );
     const nodes = [a, b, ...candidates];
     const previous = nodes.map(() => -1);
     const costs = nodes.map((_, index) => (index === 0 ? 0 : Infinity));
@@ -158,7 +170,9 @@ function shortestPath(a: Point, b: Point, obstacles: Rect[], traffic: Segment[])
       const from = nodes[next];
       for (const [index, to] of nodes.entries()) {
         if (visited.has(index) || rects.some((r) => entersRect(from, to, r))) continue;
-        const total = costs[next] + distance(from, to) + trafficCost(from, to, traffic);
+        if (detour && pathsCross([{ from, to }], traffic)) continue;
+        const total =
+          costs[next] + distance(from, to) + (detour ? 0 : trafficCost(from, to, traffic));
         if (total < costs[index]) {
           costs[index] = total;
           previous[index] = next;
@@ -178,7 +192,13 @@ function shortestPath(a: Point, b: Point, obstacles: Rect[], traffic: Segment[])
   }
 }
 
-function polyline(start: Endpoint, end: Endpoint, blocks: Block[], traffic: Segment[]) {
+function polyline(
+  start: Endpoint,
+  end: Endpoint,
+  blocks: Block[],
+  traffic: Segment[],
+  detour?: Point[],
+) {
   const bare = blocks.map((block) => rect(block));
   const room = start.direction && end.direction ? Math.min(80, distance(start.at, end.at) / 3) : 0;
   const approach = (port: Endpoint, other: Endpoint, minimum: number) => {
@@ -190,7 +210,7 @@ function polyline(start: Endpoint, end: Endpoint, blocks: Block[], traffic: Segm
     for (const portion of extra ? [1, 0.67, 0.33, 0] : [0]) {
       const at = leadFrom(port, minimum + portion * extra);
       if (bare.some((r) => entersRect(port.at, at, r))) continue;
-      if (portion && pathsCross([{ from: port.at, to: at }], traffic)) continue;
+      if ((portion || detour) && pathsCross([{ from: port.at, to: at }], traffic)) continue;
       return at;
     }
     return null;
@@ -203,7 +223,7 @@ function polyline(start: Endpoint, end: Endpoint, blocks: Block[], traffic: Segm
       const padded = rect(block, padding);
       return inside(a, padded) || inside(b, padded) ? bare[index] : padded;
     });
-    const path = shortestPath(a, b, obstacles, traffic);
+    const path = shortestPath(a, b, obstacles, traffic, detour);
     if (path) return [start.at, ...path, end.at];
   }
   // Если карточки перекрывают порт, у связи может не быть прохода.
@@ -390,11 +410,35 @@ function overlapPorts(
   return curved ?? nearby;
 }
 
+function detourGuides(samples: Point[]) {
+  const clearance = 24;
+  const left = Math.min(...samples.map(({ x }) => x)) - clearance;
+  const right = Math.max(...samples.map(({ x }) => x)) + clearance;
+  const top = Math.min(...samples.map(({ y }) => y)) - clearance;
+  const bottom = Math.max(...samples.map(({ y }) => y)) + clearance;
+  const stride = Math.max(1, Math.ceil(samples.length / 12));
+  return [
+    { x: left, y: top },
+    { x: right, y: top },
+    { x: left, y: bottom },
+    { x: right, y: bottom },
+    ...samples
+      .filter((_, index) => index % stride === 0 || index === samples.length - 1)
+      .flatMap(({ x, y }) => [
+        { x: x - clearance, y },
+        { x: x + clearance, y },
+        { x, y: y - clearance },
+        { x, y: y + clearance },
+      ]),
+  ];
+}
+
 export function routeConnection(
   start: Endpoint,
   end: Endpoint,
   blocks: Block[],
   traffic: Segment[] = [],
+  detour?: Point[],
 ) {
   const commands = ['M' + xy(start.at)];
   const samples = [start.at];
@@ -413,7 +457,7 @@ export function routeConnection(
   if (direct) {
     curve(direct);
   } else {
-    const vertices = polyline(start, end, blocks, traffic).filter(
+    const vertices = polyline(start, end, blocks, traffic, detour).filter(
       (at, index, all) => index === 0 || !closeTo(at, all[index - 1]),
     );
     for (let index = 1; index < vertices.length - 1; index++) {
@@ -518,6 +562,39 @@ export function routeBoardLinks(links: CardLink[], blocks: Block[]) {
       if (improved || attempts >= attemptLimit) break;
     }
     if (!improved) break;
+  }
+
+  let remainingDetours = attemptLimit;
+  // Если смена порядка не помогла, ищем обход по обе стороны уже проведённой линии.
+  while (crossings.length && remainingDetours > 0) {
+    let rerouted = false;
+    for (const pair of crossings) {
+      for (const index of pair) {
+        if (remainingDetours-- <= 0) break;
+        const { start, end, source, target, link } = plan[index];
+        const traffic = routes.flatMap(({ segments }, other) => (index === other ? [] : segments));
+        const blocker = routes[index === pair[0] ? pair[1] : pair[0]];
+        const ports = overlapPorts(source, target, start, end, bounds, traffic);
+        const candidate = routeConnection(
+          ports.start,
+          ports.end,
+          blocks,
+          traffic,
+          detourGuides(blocker.samples),
+        );
+        if (
+          pathsCross(candidate.segments, traffic) ||
+          candidate.segments.some(({ from, to }) => bounds.some((r) => entersRect(from, to, r)))
+        )
+          continue;
+        routes[index] = { key: linkKey(link), link, ...candidate };
+        crossings = crossings.filter((pair) => !pair.includes(index));
+        rerouted = true;
+        break;
+      }
+      if (rerouted || remainingDetours <= 0) break;
+    }
+    if (!rerouted) break;
   }
 
   const byLink = new Map(routes.map((route) => [route.link, route]));

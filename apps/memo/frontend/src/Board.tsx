@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent } from 'react';
 import { ApiError } from './api';
 import { useWorkspaceClient } from './WorkspaceClient';
@@ -9,11 +9,11 @@ import type { BoardMenuItem } from './BoardContextMenu';
 import { MarkLayer, useCanvasMarks } from './CanvasMarks';
 import type { StartShapeDrag } from './CanvasMarks';
 import { nearbyControls } from './canvasControls';
-import { CardTitleEditor } from './CardTitleEditor';
+import { CardTitleEditor, CardTitleFit } from './CardTitleEditor';
 import { linkPort, routeBoardLinks, routeConnection } from './connectionRoutes';
 import { LinkControl } from './LinkControl';
 import { IconButton } from './ui';
-import { canConnect, cardDimensions, cardHeight, clampCardSize } from './graph';
+import { canConnect, cardDimensions, clampCardSize } from './graph';
 import { isTextInput, markTools } from './shortcuts';
 import { readLocal, writeLocal } from './storage';
 import { TrashDialog } from './TrashDialog';
@@ -27,7 +27,8 @@ import type {
   NewBoardMark,
 } from './types';
 
-export type BoardFocus = { id: number; center: boolean };
+export type BoardFocus = { id: number; center: boolean; editTitle?: boolean };
+type TitleEdit = { id: number; initialText?: string; selectText?: boolean };
 
 interface Props {
   cards: Card[];
@@ -43,6 +44,7 @@ interface Props {
   keyboardDisabled: boolean;
   storageKey: string;
   focus: BoardFocus | null;
+  consumeTitleFocus: (focus: BoardFocus) => void;
   editingCardId: number | null;
   sidebarWidth: number;
   clipboard: BoardClipboard | null;
@@ -51,7 +53,7 @@ interface Props {
   createBlock: (kind: 'record' | 'folder', at: Card['coordinates']) => void;
   open: (card: Card, editing?: boolean) => void;
   enter: (card: Card) => void;
-  rename: (id: number, name: string, height?: number) => Promise<Card>;
+  rename: (id: number, name: string) => Promise<Card>;
   moveSelection: (cards: Card[], marks: number[], move: BoardMove) => Promise<BoardMark[]>;
   remove: (card: Card) => Promise<void>;
   removeSelection: (selection: BoardSelection, requestId: string) => Promise<void>;
@@ -115,11 +117,7 @@ const nativeContextTargets =
   'input,textarea,select,[contenteditable],.mark-error,.zoom-controls,.connection-control,.link-hit';
 type MenuTarget = { card: Card } | { mark: BoardMark } | null;
 type MenuPosition = { clientX: number; clientY: number };
-const isAutoHeight = (card: Card) => card.autoHeight ?? cardDimensions(card).height === cardHeight;
 const coordinateLimit = 100000;
-// Вертикальные отступы карточки вместе с рамкой и высота строки названия.
-const cardVerticalInsets = 41;
-const cardTitleLineHeight = 25.3;
 
 function markAt(mark: NewBoardMark, point: Card['coordinates']): NewBoardMark {
   if (mark.kind === 'label') return { ...mark, at: point };
@@ -214,6 +212,7 @@ export function Board({
   keyboardDisabled,
   storageKey,
   focus,
+  consumeTitleFocus,
   editingCardId,
   sidebarWidth,
   clipboard,
@@ -267,7 +266,7 @@ export function Board({
   } | null>(null);
   const [selectedId, setSelectedId] = useState(focus?.id ?? null);
   const [dismissedCardActions, setDismissedCardActions] = useState<number | null>(null);
-  const [titleCardId, setTitleCardId] = useState<number | null>(null);
+  const [titleEdit, setTitleEdit] = useState<TitleEdit | null>(null);
   const [hoveredLink, setHoveredLink] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const [contextMenu, setContextMenu] = useState<
@@ -322,56 +321,23 @@ export function Board({
     if (card.kind === 'folder') enter(card);
     else open(card);
   };
-  const saveTitle = async (id: number, name: string, height?: number) => {
-    const renamed = await rename(id, name, height);
+  const saveTitle = async (id: number, name: string) => {
+    const renamed = await rename(id, name);
     setExternal((items) => items.map((item) => (item.id === id ? renamed : item)));
   };
   const point = (card: Card) =>
     resizePreview?.id === card.id
       ? resizePreview.coordinates
       : (temporary[card.id] ?? card.coordinates);
-  const [autoHeights, setAutoHeights] = useState<Record<number, number>>({});
-  const observer = useRef<ResizeObserver | null>(null);
-  const observeCard = useCallback((element: HTMLElement | null) => {
-    if (!element) return;
-    const current = (observer.current ??= new ResizeObserver((entries) => {
-      setAutoHeights((previous) => {
-        const next = { ...previous };
-        let changed = false;
-        for (const entry of entries) {
-          if (
-            !(entry.target instanceof HTMLElement) ||
-            !entry.target.hasAttribute('data-auto-height')
-          )
-            continue;
-          const id = Number(entry.target.dataset.cardId);
-          const height = entry.target.offsetHeight;
-          if (height > 0 && height !== previous[id]) {
-            next[id] = height;
-            changed = true;
-          }
-        }
-        return changed ? next : previous;
-      });
-    }));
-    current.observe(element, { box: 'border-box' });
-    return () => current.unobserve(element);
-  }, []);
-  useEffect(() => () => observer.current?.disconnect(), []);
-  const displayedSize = (card: Card) => {
-    const saved = cardDimensions(card);
-    return isAutoHeight(card) ? { ...saved, height: autoHeights[card.id] ?? saved.height } : saved;
-  };
   const size = (card: Card) =>
-    resizePreview?.id === card.id ? resizePreview.size : displayedSize(card);
+    resizePreview?.id === card.id ? resizePreview.size : cardDimensions(card);
   const centerCard = (card: Card) => {
     const board = root.current;
     if (!board) return;
     const { x, y } = point(card);
     const { width, height } = size(card);
-    const element = board.querySelector<HTMLElement>(`[data-card-id="${card.id}"]`);
     const cx = x + width / 2;
-    const cy = y + (element?.offsetHeight ?? height) / 2;
+    const cy = y + height / 2;
     setCamera((current) => ({
       ...current,
       x: board.clientWidth / 2 - cx * current.scale,
@@ -414,7 +380,7 @@ export function Board({
   const visible = allCards;
   const blocks = useMemo(
     () => visible.map((card) => ({ id: card.id, ...point(card), ...size(card) })),
-    [visible, temporary, resizePreview, autoHeights],
+    [visible, temporary, resizePreview],
   );
   const routedLinks = useMemo(() => routeBoardLinks(links, blocks), [links, blocks]);
   useEffect(() => {
@@ -510,7 +476,25 @@ export function Board({
     appliedFocus.current = focus;
     setSelectedId(card.id);
     if (focus.center) centerCard(card);
-  }, [allCards, focus]);
+    if (focus.editTitle) {
+      const board = root.current?.getBoundingClientRect();
+      const bounds = root.current
+        ?.querySelector(`[data-card-id="${card.id}"]`)
+        ?.getBoundingClientRect();
+      if (
+        !focus.center &&
+        board &&
+        bounds &&
+        (bounds.left < board.left ||
+          bounds.top < board.top ||
+          bounds.right > board.right ||
+          bounds.bottom > board.bottom)
+      )
+        centerCard(card);
+      setTitleEdit({ id: card.id, selectText: true });
+      consumeTitleFocus(focus);
+    }
+  }, [allCards, focus, consumeTitleFocus]);
   useLayoutEffect(() => {
     const board = root.current;
     if (!board) return;
@@ -528,7 +512,7 @@ export function Board({
       const anchor = allCards.find((card) => card.id === (editingCardId ?? before.editingCardId));
       setCamera((current) => {
         if (anchor) {
-          const { width: cardWidth, height: cardHeight } = displayedSize(anchor);
+          const { width: cardWidth, height: cardHeight } = cardDimensions(anchor);
           const cx = (anchor.coordinates.x + cardWidth / 2) * current.scale + current.x;
           const cy = (anchor.coordinates.y + cardHeight / 2) * current.scale + current.y;
           return {
@@ -559,7 +543,7 @@ export function Board({
     const observer = new ResizeObserver(resizeViewport);
     observer.observe(board);
     return () => observer.disconnect();
-  }, [allCards, autoHeights, cards, editingCardId, selectedId, sidebarWidth]);
+  }, [allCards, cards, editingCardId, selectedId, sidebarWidth]);
   useEffect(() => {
     const element = root.current;
     if (!element) return;
@@ -861,7 +845,7 @@ export function Board({
     };
   };
   const resized = (event: PointerEvent<HTMLElement>, current: ResizeGesture): Bounds => {
-    const { width, height } = displayedSize(current.card);
+    const { width, height } = cardDimensions(current.card);
     const left = current.edge.includes('left');
     const top = current.edge.includes('top');
     const horizontal = left ? -1 : current.edge.includes('right') ? 1 : 0;
@@ -879,7 +863,7 @@ export function Board({
     };
   };
   const saveSize = async (card: Card, next: Bounds) => {
-    const original = displayedSize(card);
+    const original = cardDimensions(card);
     if (original.width === next.size.width && original.height === next.size.height) return;
     setResizePreview({ id: card.id, ...next });
     try {
@@ -1204,7 +1188,7 @@ export function Board({
       } else if (current.card) {
         const card = current.card;
         const coordinates = { x: current.startX + offset.x, y: current.startY + offset.y };
-        if (onThisBoard(card)) await position({ ...card, size: displayedSize(card), coordinates });
+        if (onThisBoard(card)) await position({ ...card, size: cardDimensions(card), coordinates });
         else
           setReferences((value) => ({
             ...value,
@@ -1286,6 +1270,21 @@ export function Board({
           cancelLink();
           setSource(card.id);
         }
+      }
+      if (
+        !event.defaultPrevented &&
+        card &&
+        !marks.tool &&
+        !marks.draft &&
+        !group.cards.length &&
+        !group.marks.length &&
+        event.key.length === 1 &&
+        event.key !== ' ' &&
+        event.target instanceof Node &&
+        root.current?.contains(event.target)
+      ) {
+        event.preventDefault();
+        setTitleEdit({ id: card.id, initialText: event.key });
       }
     };
     window.addEventListener('keydown', keyboard);
@@ -1617,25 +1616,18 @@ export function Board({
           const isFolder = card.kind === 'folder';
           const grouped = highlightedGroup.cards.includes(card.id);
           const cardSize = size(card);
-          const autoHeight = isAutoHeight(card) && resizePreview?.id !== card.id;
-          const style: CSSProperties & { '--card-title-lines': number } = {
+          const style = {
             left: point(card).x,
             top: point(card).y,
             width: cardSize.width,
-            height: autoHeight ? undefined : cardSize.height,
-            '--card-title-lines': Math.max(
-              1,
-              Math.floor((cardSize.height - cardVerticalInsets) / cardTitleLineHeight),
-            ),
+            height: cardSize.height,
           };
           return (
             <article
               key={card.id}
-              ref={observeCard}
               data-card-id={card.id}
               data-card-kind={card.kind}
               data-actions-dismissed={dismissedCardActions === card.id || undefined}
-              data-auto-height={autoHeight || undefined}
               className={`mind-card ${local ? '' : 'reference-card'} ${connected ? (validTarget(source ?? card.id, card.id) ? 'valid-target' : 'invalid-target') : ''} ${grouped ? 'grouped-card' : selection === card.id ? 'focused-card' : neighbors.has(card.id) ? 'related-card' : ''} ${dropFolder?.id === card.id ? (dropFolder.allowed ? 'folder-drop-target' : 'folder-drop-rejected') : ''} ${temporary[card.id] ? 'dragging-card' : ''}`}
               style={style}
               onPointerDown={(event) => start(event, card)}
@@ -1644,58 +1636,69 @@ export function Board({
                 if (!event.detail || click?.id !== card.id) return;
                 mouseClick.current = null;
                 if (busy || source !== null || marks.tool) return;
-                if (click.title) setTitleCardId(card.id);
-                else {
+                if (click.title) {
+                  highlightCard(card.id);
+                  setTitleEdit({ id: card.id });
+                } else {
                   const doubleClick = event.detail === 2 && previousBodyClick.current === card.id;
                   previousBodyClick.current = card.id;
                   if (doubleClick) selectCard(card);
                   else if (!grouped) {
                     highlightCard(card.id);
+                    event.currentTarget.querySelector<HTMLButtonElement>('.card-title')?.focus({
+                      preventScroll: true,
+                    });
                     // Карточка остаётся под указателем до второго клика.
                     centerAfterClick.current = window.setTimeout(() => centerCard(card), 500);
                   }
                 }
               }}
             >
-              {titleCardId === card.id ? (
+              {titleEdit?.id === card.id ? (
                 <CardTitleEditor
                   card={card}
-                  save={(name, height) => saveTitle(card.id, name, height)}
-                  close={() => setTitleCardId((id) => (id === card.id ? null : id))}
+                  size={cardSize}
+                  initialText={titleEdit.initialText}
+                  selectText={titleEdit.selectText}
+                  save={(name) => saveTitle(card.id, name)}
+                  close={() => setTitleEdit((edit) => (edit?.id === card.id ? null : edit))}
                 />
               ) : (
-                <button
-                  className="card-title"
-                  disabled={busy}
-                  title={card.name}
-                  aria-keyshortcuts={source === null ? 'F2' : undefined}
-                  aria-label={
-                    source !== null
-                      ? `Связать с ${card.name}`
-                      : isFolder
-                        ? `Открыть папку ${card.name}`
-                        : `Открыть запись ${card.name}`
-                  }
-                  aria-pressed={source === null ? grouped || selection === card.id : undefined}
-                  onFocus={() => {
-                    if (source !== null) setTarget(card.id);
-                  }}
-                  onBlur={() => {
-                    if (!linking.current) setTarget(null);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key !== 'F2' || busy || source !== null || marks.tool) return;
-                    event.preventDefault();
-                    setTitleCardId(card.id);
-                  }}
-                  onClick={(event) => {
-                    if (event.ctrlKey || event.metaKey) return;
-                    if (source !== null && !linking.current) void finishLink(source, card.id);
-                    else if (event.detail === 0) selectCard(card);
-                  }}
-                >
-                  <span>{card.name}</span>
-                </button>
+                <CardTitleFit text={card.name} size={cardSize}>
+                  <button
+                    className="card-title"
+                    disabled={busy}
+                    title={card.name}
+                    aria-keyshortcuts={source === null ? 'F2' : undefined}
+                    aria-label={
+                      source !== null
+                        ? `Связать с ${card.name}`
+                        : isFolder
+                          ? `Открыть папку ${card.name}`
+                          : `Открыть запись ${card.name}`
+                    }
+                    aria-pressed={source === null ? grouped || selection === card.id : undefined}
+                    onFocus={() => {
+                      if (source !== null) setTarget(card.id);
+                    }}
+                    onBlur={() => {
+                      if (!linking.current) setTarget(null);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'F2' || busy || source !== null || marks.tool) return;
+                      event.preventDefault();
+                      highlightCard(card.id);
+                      setTitleEdit({ id: card.id });
+                    }}
+                    onClick={(event) => {
+                      if (event.ctrlKey || event.metaKey) return;
+                      if (source !== null && !linking.current) void finishLink(source, card.id);
+                      else if (event.detail === 0) selectCard(card);
+                    }}
+                  >
+                    <span className="card-title-text">{card.name}</span>
+                  </button>
+                </CardTitleFit>
               )}
               {local &&
                 !marks.tool &&

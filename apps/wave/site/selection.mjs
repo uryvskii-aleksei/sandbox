@@ -1,3 +1,21 @@
+const genres = new Set([
+  'pop',
+  'rock',
+  'metal',
+  'indie',
+  'hip-hop',
+  'electronic',
+  'folk',
+  'jazz',
+  'blues',
+  'classical',
+  'chanson',
+]);
+
+export function clipGenre(clip) {
+  return clip.tags.find((tag) => genres.has(tag)) ?? 'other';
+}
+
 function normalizeName(value) {
   return value
     .normalize('NFKC')
@@ -8,29 +26,30 @@ function normalizeName(value) {
 }
 
 function describeClip(clip) {
-  const names =
-    clip.artist === clip.credit && clip.provider === 'rutube'
-      ? []
-      : clip.artist
-          .split(/\s+(?:feat\.?|ft\.?|x|×|&|и)\s+|\s*,\s*/iu)
-          .map(normalizeName)
-          .filter(Boolean);
+  const names = clip.artist
+    .split(/\s+(?:feat\.?|ft\.?|x|×|&|и)\s+|\s*,\s*/iu)
+    .map(normalizeName)
+    .filter(Boolean);
   const artists = new Set(names);
   const song =
     artists.size && clip.title
       ? `${[...artists].sort().join(',')}|${normalizeName(clip.title)}`
       : clip.id;
-  return { clip, song, artists, tags: new Set(clip.tags) };
+  return { clip, song, artists, tags: new Set(clip.tags), genre: clipGenre(clip) };
+}
+
+function sharesArtist(clip, other) {
+  return [...clip.artists].some((artist) => other.artists.has(artist));
 }
 
 function similarity(clip, rated, tagWeights) {
-  const sameArtist = [...clip.artists].some((artist) => rated.artists.has(artist));
   let sharedTags = 0;
   for (const tag of clip.tags) {
     if (rated.tags.has(tag)) sharedTags += tagWeights.get(tag);
   }
   return (
-    (sameArtist ? 1.35 : 0) + (0.95 * sharedTags) / Math.max(1, clip.tags.size, rated.tags.size)
+    (sharesArtist(clip, rated) ? 1.35 : 0) +
+    (0.95 * sharedTags) / Math.max(1, clip.tags.size, rated.tags.size)
   );
 }
 
@@ -60,7 +79,7 @@ function preference(clip, ratedClips, watchedClips, tagWeights) {
 export function pickClip(
   catalog,
   ratings,
-  { recent = [], unavailable = new Set(), playback = {}, random = Math.random } = {},
+  { recent = [], unavailable = new Set(), playback = {}, afterDislike, random = Math.random } = {},
 ) {
   const tracks = catalog.map(describeClip);
   const byId = new Map(tracks.map((track) => [track.clip.id, track]));
@@ -98,7 +117,22 @@ export function pickClip(
     .reverse()
     .filter((song) => available.has(song));
   const excluded = new Set([...new Set(recentSongs)].slice(0, cooldown));
-  const candidates = [...available.values()].filter(({ song }) => !excluded.has(song));
+  let candidates = [...available.values()].filter(({ song }) => !excluded.has(song));
+  const rejected = byId.get(afterDislike);
+  if (rejected) {
+    const otherArtists = candidates.filter((track) => !sharesArtist(track, rejected));
+    const otherGenres = otherArtists.filter(({ genre }) => genre !== rejected.genre);
+    const rejectedGenres = new Set(
+      recent
+        .slice(-5)
+        .filter((id) => ratings[id] === -1)
+        .map((id) => byId.get(id)?.genre),
+    );
+    const newGenres = otherGenres.filter(({ genre }) => !rejectedGenres.has(genre));
+    if (newGenres.length) candidates = newGenres;
+    else if (otherGenres.length) candidates = otherGenres;
+    else if (otherArtists.length) candidates = otherArtists;
+  }
 
   const tagCounts = new Map();
   for (const { tags } of tracks) {
@@ -110,9 +144,16 @@ export function pickClip(
       Math.max(0.2, Math.min(1, Math.log((tracks.length + 1) / (count + 1)))),
     ]),
   );
-  const providerCounts = new Map();
-  for (const { clip } of candidates) {
-    providerCounts.set(clip.provider, (providerCounts.get(clip.provider) ?? 0) + 1);
+  const genreCounts = new Map();
+  for (const { genre } of candidates) {
+    genreCounts.set(genre, (genreCounts.get(genre) ?? 0) + 1);
+  }
+  const recentGenres = new Map();
+  for (const id of recent.slice(-5)) {
+    const track = byId.get(id);
+    if (track && !unavailable.has(id)) {
+      recentGenres.set(track.genre, (recentGenres.get(track.genre) ?? 0) + 1);
+    }
   }
 
   let rankedTotal = 0;
@@ -122,8 +163,11 @@ export function pickClip(
     const affinity = preference(track, ratedClips, watchedClips, tagWeights);
     const ranked = Math.exp(affinity);
     const familiar = affinity >= 0.7 ? ranked : 0;
-    // При поиске нового тоже учитываем дизлайки, иначе редкий источник может перекрыть оценку.
-    const discovery = Math.exp(Math.min(0, affinity)) / providerCounts.get(track.clip.provider);
+    const repeated = Math.max(0, (recentGenres.get(track.genre) ?? 0) - 1);
+    // Доля жанра в поиске нового зависит от предпочтений, а не от длины его списка.
+    const discovery =
+      Math.exp(Math.min(0.7, affinity)) /
+      (Math.max(4, genreCounts.get(track.genre)) * (1 + repeated));
     rankedTotal += ranked;
     familiarTotal += familiar;
     discoveryTotal += discovery;
@@ -132,10 +176,12 @@ export function pickClip(
 
   // Близкие совпадения получают отдельную долю выдачи даже при большом общем каталоге.
   const familiarShare = familiarTotal ? 0.5 : 0;
+  const discoveryShare = familiarTotal ? 0.25 : 0.65;
+  const rankedShare = 1 - familiarShare - discoveryShare;
   let remaining = random();
   for (const [index, { ranked, familiar, discovery }] of weights.entries()) {
     remaining -=
-      ((0.85 - familiarShare) * ranked) / rankedTotal + (0.15 * discovery) / discoveryTotal;
+      (rankedShare * ranked) / rankedTotal + (discoveryShare * discovery) / discoveryTotal;
     if (familiarShare) remaining -= (familiarShare * familiar) / familiarTotal;
     if (remaining < 0) return candidates[index].clip;
   }

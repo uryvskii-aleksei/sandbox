@@ -219,7 +219,7 @@ test('реакции сохраняются для встроенного кли
     `$db = new PDO('sqlite:' . $argv[1]);
      $db->prepare('INSERT INTO catalog_cache VALUES (1, ?, ?)')->execute([$argv[2], time() + 3600]);`,
     dbPath,
-    JSON.stringify([published]),
+    JSON.stringify([published, { ...published, id: 'backstage', title: 'Фильм о клипе' }]),
   ]);
   const response = await fetch(root + '/wave/api.php?catalog=1');
   assert.equal(response.status, 200);
@@ -230,6 +230,40 @@ test('реакции сохраняются для встроенного кли
   assert.deepEqual((await visit()).ratings, { [embedded.id]: 1, [published.id]: -1 });
   await visit({ action: 'playback', id: published.id, value: 1 });
   assert.deepEqual((await visit()).playback, { [published.id]: 1 });
+});
+
+test('лента принимает полный музыкальный клип и отбрасывает материалы о нём', () => {
+  const id = 'c'.repeat(32);
+  const item = {
+    id,
+    title: 'Эпидемия—Паладин (официальное видео)',
+    duration: 245,
+    author: { id: 69154722, name: 'ЭПИДЕМИЯ' },
+    embed_url: `https://rutube.ru/play/embed/${id}`,
+    is_adult: false,
+    is_hidden: false,
+  };
+  const items = [
+    item,
+    { ...item, title: 'Эпидемия — Паладин. Съёмки клипа' },
+    { ...item, title: 'Эпидемия — Анонс клипа «Паладин»' },
+    { ...item, title: 'Эпидемия — Паладин (Official Audio)' },
+  ];
+  const output = execFileSync(
+    'php',
+    [
+      '-r',
+      `require 'site/catalog-feeds.php';
+       echo json_encode(array_map(fn($item) => rutubeClip($item, 69154722), json_decode($argv[1], true)));`,
+      JSON.stringify(items),
+    ],
+    { cwd: app, encoding: 'utf8' },
+  );
+  const [clip, ...excluded] = JSON.parse(output);
+  assert.equal(clip.artist, 'Эпидемия');
+  assert.equal(clip.title, 'Паладин');
+  assert.deepEqual(clip.tags, ['metal', 'rock']);
+  assert.deepEqual(excluded, [null, null, null]);
 });
 
 test('имя пользователя и оценки существующего аккаунта сохранены', async (t) => {

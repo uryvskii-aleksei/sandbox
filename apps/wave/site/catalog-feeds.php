@@ -14,7 +14,24 @@ const RUTUBE_CHANNELS = [
     56355807 => ['pop', 'folk'],       // integration.media
     83425727 => ['indie', 'pop'],      // OUR ANGELS
     56728450 => ['indie', 'pop'],      // Chemodanov Music Label
+    38742928 => ['metal', 'rock'],     // Ария
+    69154722 => ['metal', 'rock'],     // Эпидемия
+    46667656 => ['rock', 'punk'],      // КняZz
+    25846259 => ['rock'],              // Мураками
+    23335299 => ['folk'],              // Отава Ё
+    24272084 => ['folk', 'electronic'], // Theodor Bastard
+    56879133 => ['folk', 'electronic'], // Zventa Sventana
+    41019278 => ['electronic', 'rock'], // Дельфин
+    61548788 => ['metal', 'rock'],     // МЫНЕМЫ
 ];
+
+function isAncillaryVideo(string $title): bool
+{
+    return (bool) preg_match(
+        '/тизер|сниппет|shorts|трейлер|б[эе]кстейдж|back[\s-]*stage|making[\s-]+of|съ[её]мк[аи]\s+клипа|фильм\s+о\s+клипе|как\s+снимали|анонс\s+(?:клипа|концерта)|сбор\s+средств|реакция\s+на|интервью|разбор\s+(?:клипа|песни|трека)|сборник|подборка|\baudio\b/iu',
+        $title
+    );
+}
 
 function rutubeGenres(array $item, int $channel): array
 {
@@ -50,8 +67,8 @@ function rutubeClip(array $item, int $channel): ?array
     $duration = $item['duration'] ?? 0;
     if (
         !is_string($id) || !preg_match('/^[a-f0-9]{32}$/D', $id) ||
-        !is_string($name) || !preg_match('/клип|(?:official|music|lyric|mood)\s+video/iu', $name) ||
-        preg_match('/тизер|сниппет|shorts|бэкстейдж|реакция|интервью|сборник|подборка|официальный трейлер/iu', $name) ||
+        !is_string($name) || !preg_match('/клип|официальное\s+видео|(?:official(?:\s+live)?|music)\s+video/iu', $name) ||
+        isAncillaryVideo($name) ||
         !is_int($duration) || $duration < 90 || $duration > 540 ||
         ($item['author']['id'] ?? null) !== $channel ||
         ($item['embed_url'] ?? null) !== 'https://rutube.ru/play/embed/' . $id ||
@@ -63,15 +80,21 @@ function rutubeClip(array $item, int $channel): ?array
 
     $credit = (string) $item['author']['name'];
     $name = trim(preg_replace('/\s+/u', ' ', $name));
-    $parts = preg_split('/\s+[—–-]\s+/u', $name, 2);
-    [$artist, $title] = count($parts) === 2 ? $parts : [$credit, $name];
-    $title = trim(preg_replace('/\s*[([][^)\]]*(?:клип|(?:official|music|lyric|mood)\s+video)[^)\]]*[)\]].*$/iu', '', $title));
+    $parts = preg_split('/\s*[—–]\s*|\s+-\s*|-\s+/u', $name, 2);
+    if (count($parts) !== 2 || in_array('', $parts, true)) {
+        return null;
+    }
+    [$artist, $title] = $parts;
+    $title = trim(preg_replace('/\s*[([][^)\]]*(?:клип|официальное\s+видео|(?:official(?:\s+live)?|music)\s+video)[^)\]]*[)\]].*$/iu', '', $title));
+    if ($title === '') {
+        return null;
+    }
     $poster = $item['thumbnail_url'] ?? '';
     return [
         'id' => 'rutube-' . $id,
         'provider' => 'rutube',
         'artist' => $artist,
-        'title' => $title ?: $name,
+        'title' => $title,
         'tags' => rutubeGenres($item, $channel),
         'credit' => $credit,
         'source' => 'https://rutube.ru/video/' . $id . '/',
@@ -130,6 +153,10 @@ function cachedClips(PDO $db, bool $refresh = false): array
 {
     $stored = $db->query('SELECT clips, next_refresh FROM catalog_cache WHERE id = 1')->fetch(PDO::FETCH_ASSOC);
     $previous = json_decode($stored['clips'] ?? '[]', true, 512, JSON_THROW_ON_ERROR);
+    $previous = array_values(array_filter(
+        $previous,
+        static fn(array $clip): bool => !isAncillaryVideo($clip['title'])
+    ));
     $now = time();
     if (!$refresh || ($stored['next_refresh'] ?? 0) > $now || !function_exists('curl_multi_init')) {
         return $previous;

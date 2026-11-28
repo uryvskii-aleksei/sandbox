@@ -39,6 +39,7 @@ export function setupSoundscape(video, canvas, glow) {
   let palette = 330;
   let hue = palette;
   let playing = false;
+  let embeddedPlaying = false;
 
   function cue(themeHue) {
     palette = themeHue;
@@ -64,10 +65,10 @@ export function setupSoundscape(video, canvas, glow) {
       graphics.setTransform(scale, 0, 0, scale, 0, 0);
     }
 
-    analyser.getByteFrequencyData(spectrum);
-    const low = bandEnergy(spectrum, hzPerBin, 40, 185);
-    const mid = bandEnergy(spectrum, hzPerBin, 185, 2200);
-    const high = bandEnergy(spectrum, hzPerBin, 2200, 8000);
+    if (!embeddedPlaying) analyser.getByteFrequencyData(spectrum);
+    const low = embeddedPlaying ? 0.12 : bandEnergy(spectrum, hzPerBin, 40, 185);
+    const mid = embeddedPlaying ? 0.2 : bandEnergy(spectrum, hzPerBin, 185, 2200);
+    const high = embeddedPlaying ? 0.05 : bandEnergy(spectrum, hzPerBin, 2200, 8000);
     const brightness = (mid * 0.42 + high) / Math.max(0.14, low + mid + high);
     // Плавная огибающая передаёт общий бас, разница с недавним уровнем подчёркивает удары.
     bass += (low - bass) * 0.23;
@@ -79,14 +80,10 @@ export function setupSoundscape(video, canvas, glow) {
   }
 
   function sync() {
+    const audioPlaying =
+      analyser && audio.state === 'running' && playing && !video.muted && video.volume > 0;
     const active =
-      analyser &&
-      audio.state === 'running' &&
-      playing &&
-      !video.muted &&
-      video.volume > 0 &&
-      !reduceMotion.matches &&
-      !document.hidden;
+      art && (embeddedPlaying || audioPlaying) && !reduceMotion.matches && !document.hidden;
     canvas.classList.toggle('is-playing', Boolean(active));
     if (!active) {
       cancelAnimationFrame(frame);
@@ -156,5 +153,12 @@ export function setupSoundscape(video, canvas, glow) {
     sync();
   });
 
-  return { activate, cue };
+  return {
+    activate,
+    cue,
+    setEmbeddedPlaying(value) {
+      embeddedPlaying = value;
+      sync();
+    },
+  };
 }

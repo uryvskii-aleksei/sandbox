@@ -2,9 +2,13 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/catalog-feeds.php';
+
 final class RequestError extends RuntimeException
 {
 }
+
+const PASSWORD_HASH_PREFIX = 'bcrypt-sha384:';
 
 function respond(array $body, int $status = 200): never
 {
@@ -60,19 +64,31 @@ function database(): PDO
             value INTEGER NOT NULL CHECK (value IN (-1, 1)),
             PRIMARY KEY (user_id, clip_id)
         );
+        CREATE TABLE IF NOT EXISTS playback_preferences (
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            clip_id TEXT NOT NULL,
+            value INTEGER NOT NULL CHECK (value IN (-1, 1)),
+            PRIMARY KEY (user_id, clip_id)
+        );
         CREATE TABLE IF NOT EXISTS auth_attempts (
             client TEXT NOT NULL,
             bucket INTEGER NOT NULL,
             count INTEGER NOT NULL,
             PRIMARY KEY (client, bucket)
+        );
+        CREATE TABLE IF NOT EXISTS catalog_cache (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            clips TEXT NOT NULL,
+            next_refresh INTEGER NOT NULL
         );'
     );
     return $db;
 }
 
-function knownClips(): array
+function knownClips(PDO $db): array
 {
-    return array_column(json_decode(file_get_contents(__DIR__ . '/catalog.json'), true, 512, JSON_THROW_ON_ERROR), 'id');
+    $base = json_decode(file_get_contents(__DIR__ . '/catalog.json'), true, 512, JSON_THROW_ON_ERROR);
+    return array_column(array_merge($base, cachedClips($db)), 'id');
 }
 
 function throttleAuth(PDO $db): void
@@ -96,8 +112,9 @@ function readBody(): array
     if ($type !== 'application/json') {
         throw new RequestError('Ожидается запрос JSON.', 415);
     }
-    $raw = file_get_contents('php://input', false, null, 0, 8193);
-    if (strlen($raw) > 8192) {
+    $limit = 131072;
+    $raw = file_get_contents('php://input', false, null, 0, $limit + 1);
+    if (strlen($raw) > $limit) {
         throw new RequestError('Запрос слишком большой.', 413);
     }
     try {
@@ -114,15 +131,20 @@ function readBody(): array
 function sessionState(?PDO $db = null): array
 {
     $ratings = [];
+    $playback = [];
     if (isset($_SESSION['user_id'])) {
         $db ??= database();
         $query = $db->prepare('SELECT clip_id, value FROM ratings WHERE user_id = ?');
         $query->execute([$_SESSION['user_id']]);
         $ratings = $query->fetchAll(PDO::FETCH_KEY_PAIR);
+        $query = $db->prepare('SELECT clip_id, value FROM playback_preferences WHERE user_id = ?');
+        $query->execute([$_SESSION['user_id']]);
+        $playback = $query->fetchAll(PDO::FETCH_KEY_PAIR);
     }
     return [
         'username' => $_SESSION['username'] ?? null,
         'ratings' => (object) $ratings,
+        'playback' => (object) $playback,
         'csrf' => $_SESSION['csrf'],
     ];
 }
@@ -133,6 +155,21 @@ function rotateSession(array $state): void
         throw new RuntimeException('Could not rotate session');
     }
     $_SESSION = $state + ['csrf' => bin2hex(random_bytes(32))];
+}
+
+function passwordMaterial(string $password): string
+{
+    // SHA-384 в Base64 укладывается в 72 байта bcrypt с учётом всего пароля.
+    return base64_encode(hash('sha384', "Wave password\0" . $password, true));
+}
+
+function verifyPassword(string $password, string $hash): bool
+{
+    if (str_starts_with($hash, PASSWORD_HASH_PREFIX)) {
+        return password_verify(passwordMaterial($password), substr($hash, strlen(PASSWORD_HASH_PREFIX)));
+    }
+    // Ограничения старого формата не дают bcrypt принять обрезанный пароль.
+    return strlen($password) <= 72 && !str_contains($password, "\0") && password_verify($password, $hash);
 }
 
 function authenticate(PDO $db, array $body, bool $register): void
@@ -148,11 +185,8 @@ function authenticate(PDO $db, array $body, bool $register): void
     if (!$isEmail && ($register || !preg_match('/^[a-z0-9_]{3,24}$/D', $login))) {
         throw new RequestError($loginError, 400);
     }
-    if (strlen($password) > 72 || str_contains($password, "\0") || $password === '') {
-        throw new RequestError('Пароль должен занимать не больше 72 байт.', 400);
-    }
-    if ($register && preg_match_all('/./us', $password) < 12) {
-        throw new RequestError('В пароле должно быть не меньше 12 символов.', 400);
+    if ($password === '') {
+        throw new RequestError('Введите пароль.', 400);
     }
 
     throttleAuth($db);
@@ -160,12 +194,14 @@ function authenticate(PDO $db, array $body, bool $register): void
         $query = $db->prepare('SELECT id, password_hash FROM users WHERE username = ?');
         $query->execute([$login]);
         $user = $query->fetch(PDO::FETCH_ASSOC);
-        if (!$user || !password_verify($password, $user['password_hash'])) {
+        if (!$user || !verifyPassword($password, $user['password_hash'])) {
             throw new RequestError('Логин или пароль не совпадают.', 401);
         }
     }
-    $hash = $register ? password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]) : null;
 
+    $hash = $register
+        ? PASSWORD_HASH_PREFIX . password_hash(passwordMaterial($password), PASSWORD_BCRYPT, ['cost' => 12])
+        : null;
     $db->beginTransaction();
     try {
         if ($register) {
@@ -176,14 +212,20 @@ function authenticate(PDO $db, array $body, bool $register): void
             }
         }
         $id = $register ? (int) $db->lastInsertId() : (int) $user['id'];
-        $ratings = $body['ratings'] ?? [];
-        if (is_array($ratings) && $ratings !== []) {
+        $known = null;
+        foreach (['ratings' => 'ratings', 'playback' => 'playback_preferences'] as $field => $table) {
+            $signals = $body[$field] ?? [];
+            if (!is_array($signals) || $signals === []) {
+                continue;
+            }
             $insert = $db->prepare(
-                'INSERT INTO ratings (user_id, clip_id, value) VALUES (?, ?, ?) ON CONFLICT (user_id, clip_id) DO NOTHING'
+                "INSERT INTO $table (user_id, clip_id, value) VALUES (?, ?, ?)
+                 ON CONFLICT (user_id, clip_id) DO NOTHING"
             );
-            foreach (knownClips() as $clip) {
-                if (in_array($ratings[$clip] ?? null, [-1, 1], true)) {
-                    $insert->execute([$id, $clip, $ratings[$clip]]);
+            $known ??= knownClips($db);
+            foreach ($known as $clip) {
+                if (in_array($signals[$clip] ?? null, [-1, 1], true)) {
+                    $insert->execute([$id, $clip, $signals[$clip]]);
                 }
             }
         }
@@ -195,11 +237,24 @@ function authenticate(PDO $db, array $body, bool $register): void
     rotateSession(['user_id' => $id, 'username' => $login]);
 }
 
+function recordPlayback(PDO $db, array $body): void
+{
+    $clip = $body['id'] ?? null;
+    $value = $body['value'] ?? null;
+    if (!in_array($clip, knownClips($db), true) || !in_array($value, [-1, 1], true)) {
+        throw new RequestError('Некорректный результат просмотра.', 400);
+    }
+    $db->prepare(
+        'INSERT INTO playback_preferences (user_id, clip_id, value) VALUES (?, ?, ?)
+         ON CONFLICT (user_id, clip_id) DO UPDATE SET value = excluded.value'
+    )->execute([$_SESSION['user_id'], $clip, $value]);
+}
+
 function rate(PDO $db, array $body): void
 {
     $clip = $body['id'] ?? null;
     $value = $body['value'] ?? null;
-    if (!in_array($clip, knownClips(), true) || !in_array($value, [-1, 0, 1], true)) {
+    if (!in_array($clip, knownClips($db), true) || !in_array($value, [-1, 0, 1], true)) {
         throw new RequestError('Некорректная оценка клипа.', 400);
     }
     $id = $_SESSION['user_id'];
@@ -222,6 +277,10 @@ try {
     if (!in_array($method, ['GET', 'POST'], true)) {
         header('Allow: GET, POST');
         throw new RequestError('Метод недоступен.', 405);
+    }
+
+    if ($method === 'GET' && ($_GET['catalog'] ?? null) === '1') {
+        respond(['clips' => cachedClips(database(), true)]);
     }
 
     session_name('wave_session');
@@ -261,6 +320,12 @@ try {
             $db = database();
             rate($db, $body);
             respond(sessionState($db));
+        case 'playback':
+            if (!isset($_SESSION['user_id'])) {
+                throw new RequestError('Войдите, чтобы сохранить предпочтения в аккаунте.', 401);
+            }
+            recordPlayback(database(), $body);
+            respond(['saved' => true]);
         default:
             throw new RequestError('Неизвестное действие.', 400);
     }

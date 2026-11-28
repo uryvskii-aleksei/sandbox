@@ -7,11 +7,12 @@
     <meta name="theme-color" content="#141116" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <title>Wave — видеорадио Amodu</title>
-    <link rel="stylesheet" href="./styles.css?v=2" />
-    <script type="module" src="./radio.mjs?v=2"></script>
+    <link rel="stylesheet" href="./styles.css?v=3" />
+    <script type="module" src="./radio.mjs?v=3"></script>
   </head>
   <body>
     <canvas class="soundscape" id="soundscape" aria-hidden="true"></canvas>
+    <div class="viewport-glow" id="viewport-glow" aria-hidden="true"></div>
     <header class="page-header">
       <h1 class="wordmark">wave</h1>
       <div class="account">
@@ -24,7 +25,7 @@
     <main class="station">
       <div class="player-stage">
         <section class="deck" aria-label="Плеер Wave">
-          <div class="screen">
+          <div class="screen" id="video-screen">
             <video
               class="video"
               id="video"

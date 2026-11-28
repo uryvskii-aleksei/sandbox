@@ -1,8 +1,14 @@
-const storageKey = 'wave:ratings';
+const ratingsKey = 'wave:ratings';
+const playbackKey = 'wave:playback';
+const ratingFeedback = {
+  1: 'Похожие клипы будут появляться чаще.',
+  0: 'Оценка снята.',
+  '-1': 'Клип скрыт из подборки. Похожие будут появляться реже.',
+};
 
-function readGuestRatings() {
+function readGuestSignals(key) {
   try {
-    const saved = JSON.parse(localStorage.getItem(storageKey));
+    const saved = JSON.parse(localStorage.getItem(key));
     return Object.fromEntries(
       Object.entries(saved ?? {}).filter(
         ([id, value]) => /^[a-z0-9-]{1,64}$/.test(id) && (value === 1 || value === -1),
@@ -25,9 +31,12 @@ export function setupAccount(onChange) {
   const modeButton = document.querySelector('#account-mode');
   const errorMessage = document.querySelector('#form-message');
 
-  let guestRatings = readGuestRatings();
+  let guestRatings = readGuestSignals(ratingsKey);
+  let guestPlayback = readGuestSignals(playbackKey);
   let account = null;
   let accountRatings = {};
+  let accountPlayback = {};
+  let playbackWrites = Promise.resolve();
   let csrf = '';
   let register = false;
   let busy = false;
@@ -61,6 +70,7 @@ export function setupAccount(onChange) {
   }
 
   function apply(data) {
+    if (csrf !== data.csrf || account !== data.username) accountPlayback = data.playback ?? {};
     account = data.username;
     accountRatings = data.ratings;
     csrf = data.csrf;
@@ -77,11 +87,7 @@ export function setupAccount(onChange) {
     submit.textContent = action;
     modeButton.textContent = register ? 'Уже есть аккаунт? Войти' : 'Создать аккаунт';
     login.type = register ? 'email' : 'text';
-    document.querySelector('#password-hint').hidden = !register;
-    if (register) password.setAttribute('aria-describedby', 'password-hint');
-    else password.removeAttribute('aria-describedby');
     password.autocomplete = register ? 'new-password' : 'current-password';
-    password.minLength = register ? 12 : 1;
     errorMessage.textContent = '';
   }
 
@@ -96,6 +102,7 @@ export function setupAccount(onChange) {
     busy = true;
     render();
     try {
+      await playbackWrites;
       apply(await request({ action: 'logout' }));
       message.textContent = 'Вы вышли из аккаунта.';
     } catch (error) {
@@ -111,8 +118,13 @@ export function setupAccount(onChange) {
     login.focus();
   });
 
+  button.addEventListener('blur', () => button.classList.remove('restored-focus'));
+
+  dialog.addEventListener('cancel', () => button.classList.add('restored-focus'));
+
   dialog.addEventListener('close', () => {
     password.value = '';
+    if (document.activeElement !== button) button.classList.remove('restored-focus');
   });
 
   form.addEventListener('submit', async (event) => {
@@ -129,16 +141,19 @@ export function setupAccount(onChange) {
           action: register ? 'register' : 'login',
           ...credentials,
           ratings: guestRatings,
+          playback: guestPlayback,
         }),
       );
       guestRatings = {};
+      guestPlayback = {};
       try {
-        localStorage.removeItem(storageKey);
+        localStorage.removeItem(ratingsKey);
+        localStorage.removeItem(playbackKey);
       } catch {
-        // Сервер уже сохранил оценки.
+        // Сервер уже сохранил предпочтения.
       }
       dialog.close();
-      message.textContent = 'Оценки будут сохраняться в вашем аккаунте.';
+      message.textContent = '';
     } catch (error) {
       errorMessage.textContent = error.status
         ? error.message
@@ -154,7 +169,7 @@ export function setupAccount(onChange) {
 
   // Восстанавливаем профиль, пока гостевой плеер загружает каталог.
   busy = true;
-  restoreAccount()
+  const ready = restoreAccount()
     .catch(() => {})
     .finally(() => {
       busy = false;
@@ -162,32 +177,69 @@ export function setupAccount(onChange) {
     });
 
   return {
+    ready,
     get ratings() {
       return account ? accountRatings : guestRatings;
     },
+    get playback() {
+      return account ? accountPlayback : guestPlayback;
+    },
+    recordPlayback(id, value) {
+      if (!account) {
+        guestPlayback[id] = value;
+        try {
+          localStorage.setItem(playbackKey, JSON.stringify(guestPlayback));
+        } catch {
+          // Предпочтение доступно до закрытия страницы.
+        }
+        return;
+      }
+      accountPlayback[id] = value;
+      const token = csrf;
+      playbackWrites = playbackWrites.then(async () => {
+        if (csrf !== token) return;
+        try {
+          await request({ action: 'playback', id, value });
+        } catch (error) {
+          if (csrf !== token || (error.status && error.status < 500)) return;
+          // Повторная запись того же сигнала безопасна после сетевого сбоя.
+          try {
+            await request({ action: 'playback', id, value });
+          } catch {}
+        }
+      });
+    },
     get busy() {
-      return busy && account !== null;
+      return busy;
     },
     async rate(id, direction) {
+      if (busy) return;
       const value = this.ratings[id] === direction ? 0 : direction;
+      const ratings = { ...this.ratings };
+      if (value) ratings[id] = value;
+      else delete ratings[id];
       message.textContent = '';
+      const feedback = ratingFeedback[value];
       if (!account) {
-        if (value) guestRatings[id] = value;
-        else delete guestRatings[id];
+        guestRatings = ratings;
         try {
-          localStorage.setItem(storageKey, JSON.stringify(guestRatings));
+          localStorage.setItem(ratingsKey, JSON.stringify(guestRatings));
+          message.textContent = feedback;
         } catch {
           message.textContent = 'Браузер сохранит оценки только до закрытия страницы.';
         }
         render();
         return;
       }
-      if (busy) return;
+      const previousRatings = accountRatings;
+      accountRatings = ratings;
       busy = true;
       render();
       try {
         apply(await request({ action: 'rate', id, value }));
+        message.textContent = feedback;
       } catch (error) {
+        accountRatings = previousRatings;
         if (error.status === 401 || error.status === 403) {
           account = null;
           csrf = '';

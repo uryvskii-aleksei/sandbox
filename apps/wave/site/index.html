@@ -7,8 +7,8 @@
     <meta name="theme-color" content="#141116" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <title>Wave — видеорадио Amodu</title>
-    <link rel="stylesheet" href="./styles.css?v=3" />
-    <script type="module" src="./radio.mjs?v=3"></script>
+    <link rel="stylesheet" href="./styles.css?v=6" />
+    <script type="module" src="./radio.mjs?v=9"></script>
   </head>
   <body>
     <canvas class="soundscape" id="soundscape" aria-hidden="true"></canvas>
@@ -37,6 +37,16 @@
               title="Полноэкранный режим · F"
               hidden
             ></video>
+            <button
+              class="clip-preview"
+              id="clip-preview"
+              type="button"
+              aria-label="Воспроизвести клип"
+              hidden
+            >
+              <img id="clip-poster" alt="" hidden />
+              <span class="symbol" aria-hidden="true"></span>
+            </button>
             <p class="message player-message" id="player-message" role="status"></p>
             <noscript
               ><p class="message player-message">
@@ -136,9 +146,7 @@
       <p id="clip-credit" class="clip-credit"></p>
       <p class="clip-links">
         <a id="video-source" target="_blank" rel="noopener">Wikimedia Commons</a>
-        <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener"
-          >CC BY 3.0</a
-        >
+        <a id="clip-license" target="_blank" rel="noopener"></a>
       </p>
     </dialog>
 
@@ -163,18 +171,15 @@
           required
           autofocus
         />
-        <label for="password">Пароль</label>
         <input
           id="password"
           name="password"
           type="password"
+          aria-label="Пароль"
+          placeholder="Пароль"
           autocomplete="current-password"
           required
-          maxlength="72"
         />
-        <small id="password-hint" hidden
-          >От 12 символов. Используйте пароль, который сможете сохранить.</small
-        >
         <p class="message form-error" id="form-message" role="alert"></p>
         <button class="submit accent-button" id="account-submit" type="submit">Войти</button>
         <button class="text-button mode-button" id="account-mode" type="button">

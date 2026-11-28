@@ -8,9 +8,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 
 const app = new URL('../', import.meta.url);
-const [first, second, third] = JSON.parse(
-  await readFile(new URL('site/catalog.json', app), 'utf8'),
-);
+const catalog = JSON.parse(await readFile(new URL('site/catalog.json', app), 'utf8'));
+const [first, second, third] = catalog;
 
 function client(url) {
   let cookie = '';
@@ -107,7 +106,7 @@ test('гостевые оценки переносятся, а данные ак
   const guest = await visit();
   assert.equal(guest.username, null);
   assert.deepEqual(guest.ratings, {});
-  const credentials = { login: ' ClipTester@Example.com ', password: 'testing-only-passphrase' };
+  const credentials = { login: ' ClipTester@Example.com ', password: 'ж' };
   await visit({ action: 'register', ...credentials, csrf: 'invalid' }, 403);
   await visit({ action: 'rate', id: first.id, value: 1 }, 401);
   await visit({ action: 'register', ...credentials, login: 'ClipTester' }, 400);
@@ -147,6 +146,90 @@ test('гостевые оценки переносятся, а данные ак
     login: 'SecondTester@example.com',
   });
   assert.deepEqual(separate.ratings, {});
+});
+
+test('длинный пароль проверяется целиком, пустой не принимается', async (t) => {
+  const temp = await mkdtemp(path.join(tmpdir(), 'wave-password-test-'));
+  const root = await startPreview(t, temp, { dbPath: path.join(temp, 'wave.sqlite3') });
+  const visit = client(root + '/wave/api.php');
+  const login = 'PasswordTester@example.com';
+  const prefix = 'длинный пароль 🎵 '.repeat(20);
+  const password = prefix + 'конец!';
+
+  await visit();
+  await visit({ action: 'register', login, password: '' }, 400);
+  assert.equal(
+    (await visit({ action: 'register', login, password })).username,
+    login.toLowerCase(),
+  );
+  await visit({ action: 'logout' });
+  await visit({ action: 'login', login, password: prefix + 'другой конец!' }, 401);
+  assert.equal((await visit({ action: 'login', login, password })).username, login.toLowerCase());
+});
+
+test('пропуски и досмотры переносятся в аккаунт и сохраняются отдельно от оценок', async (t) => {
+  const temp = await mkdtemp(path.join(tmpdir(), 'wave-playback-test-'));
+  const root = await startPreview(t, temp, { dbPath: path.join(temp, 'wave.sqlite3') });
+  const visit = client(root + '/wave/api.php');
+  const credentials = { login: 'playback@example.invalid', password: 'test' };
+  assert.deepEqual((await visit()).playback, {});
+  await visit({ action: 'playback', id: first.id, value: 1 }, 401);
+  const account = await visit({
+    action: 'register',
+    ...credentials,
+    ratings: { [first.id]: 1 },
+    playback: { [first.id]: -1, unknown: 1, [third.id]: 0 },
+  });
+  assert.deepEqual(account.playback, { [first.id]: -1 });
+  await visit({ action: 'playback', id: 'unknown', value: 1 }, 400);
+  await visit({ action: 'playback', id: first.id, value: 0 }, 400);
+  await visit({ action: 'playback', id: first.id, value: 1, csrf: 'invalid' }, 403);
+  await visit({ action: 'playback', id: first.id, value: 1 });
+  await visit({ action: 'playback', id: first.id, value: 1 });
+  assert.deepEqual((await visit({ action: 'logout' })).playback, {});
+  const signedIn = await visit({
+    action: 'login',
+    ...credentials,
+    playback: { [first.id]: -1, [second.id]: -1 },
+  });
+  assert.deepEqual(signedIn.playback, { [first.id]: 1, [second.id]: -1 });
+  assert.deepEqual(signedIn.ratings, { [first.id]: 1 });
+  await visit({ action: 'logout' });
+  const other = await visit({ action: 'register', ...credentials, login: 'other@example.invalid' });
+  assert.deepEqual(other.playback, {});
+});
+
+test('реакции сохраняются для встроенного клипа и клипа из обновлённой ленты', async (t) => {
+  const temp = await mkdtemp(path.join(tmpdir(), 'wave-catalog-test-'));
+  const dbPath = path.join(temp, 'wave.sqlite3');
+  const root = await startPreview(t, temp, { dbPath });
+  const embedded = catalog.find(({ provider }) => provider === 'rutube');
+  const rutubeId = 'a'.repeat(32);
+  const published = {
+    ...embedded,
+    id: `rutube-${rutubeId}`,
+    source: `https://rutube.ru/video/${rutubeId}/`,
+    embed: `https://rutube.ru/play/embed/${rutubeId}`,
+  };
+  const visit = client(root + '/wave/api.php');
+  await visit();
+  await visit({ action: 'register', login: 'catalog@example.invalid', password: 'test' });
+  execFileSync('php', [
+    '-r',
+    `$db = new PDO('sqlite:' . $argv[1]);
+     $db->prepare('INSERT INTO catalog_cache VALUES (1, ?, ?)')->execute([$argv[2], time() + 3600]);`,
+    dbPath,
+    JSON.stringify([published]),
+  ]);
+  const response = await fetch(root + '/wave/api.php?catalog=1');
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { clips: [published] });
+  await visit({ action: 'rate', id: embedded.id, value: 1 });
+  await visit({ action: 'rate', id: published.id, value: -1 });
+  await visit({ action: 'rate', id: `rutube-${'b'.repeat(32)}`, value: 1 }, 400);
+  assert.deepEqual((await visit()).ratings, { [embedded.id]: 1, [published.id]: -1 });
+  await visit({ action: 'playback', id: published.id, value: 1 });
+  assert.deepEqual((await visit()).playback, { [published.id]: 1 });
 });
 
 test('имя пользователя и оценки существующего аккаунта сохранены', async (t) => {

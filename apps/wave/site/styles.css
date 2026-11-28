@@ -95,6 +95,10 @@ button:disabled {
   outline-offset: 4px;
 }
 
+#account-button.restored-focus {
+  outline: none;
+}
+
 [hidden] {
   display: none !important;
 }
@@ -170,13 +174,14 @@ button:disabled {
 }
 
 .player-stage {
+  --video-gutter: max(var(--stage-gap), calc(9vw - 2.5rem));
   display: grid;
   place-items: center;
   container-type: size;
   min-height: 0;
   min-width: 0;
-  padding: var(--stage-gap) calc(var(--stage-gap) + env(safe-area-inset-right)) var(--stage-gap)
-    calc(var(--stage-gap) + env(safe-area-inset-left));
+  padding: var(--stage-gap) calc(var(--video-gutter) + env(safe-area-inset-right)) var(--stage-gap)
+    calc(var(--video-gutter) + env(safe-area-inset-left));
 }
 
 .deck {
@@ -184,7 +189,7 @@ button:disabled {
   --video-ratio: 16 / 9;
   display: grid;
   justify-items: center;
-  width: min(100%, 64rem);
+  width: 100%;
   min-height: 0;
   min-width: 0;
 }
@@ -200,13 +205,60 @@ button:disabled {
   background: #100d1159;
 }
 
-.video {
+.video,
+.embed-player,
+.clip-preview {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+.video {
   cursor: pointer;
   object-fit: contain;
+}
+
+.embed-player,
+.clip-preview {
+  border: 0;
+}
+
+.clip-preview {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: transparent;
+}
+
+.clip-preview img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.clip-preview .symbol {
+  position: relative;
+  display: grid;
+  width: 3.75rem;
+  height: 3.75rem;
+  place-items: center;
+  border-radius: 50%;
+  background: #241b24d9;
+}
+
+.clip-preview .symbol::before {
+  width: 1.45rem;
+  height: 1.45rem;
+  background: currentColor;
+  clip-path: polygon(21% 6%, 91% 50%, 21% 94%);
+  content: '';
+}
+
+.clip-preview:focus-visible {
+  outline-offset: -4px;
 }
 
 .deck-panel {
@@ -583,11 +635,11 @@ dialog::backdrop {
   }
 }
 
-.account-form label:not(:first-child) {
+#password {
   margin-top: 0.45rem;
 }
 
-.account-form small {
+.account-form input::placeholder {
   color: var(--muted);
 }
 
